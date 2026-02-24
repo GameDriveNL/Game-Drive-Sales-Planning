@@ -15,6 +15,18 @@ export interface GeneratedSale {
   is_event: boolean // Whether this is tied to a platform event
   event_name?: string
   cooldown_days: number // The cooldown that applies AFTER this sale
+  // AI prediction fields (populated after generation)
+  ai_prediction?: {
+    predicted_revenue: number
+    predicted_units: number
+    confidence: 'low' | 'medium' | 'high'
+    optimal_discount: number
+    optimal_duration: number
+    reasoning: string
+    statistical_revenue: number
+    sale_multiplier: number
+  } | null
+  use_ai_discount?: boolean // user toggle: accept AI discount or keep original
 }
 
 export interface CalendarVariation {
@@ -27,6 +39,14 @@ export interface CalendarVariation {
     percentageOnSale: number
     eventSales: number
     customSales: number
+  }
+  // AI prediction fields (populated after predictions complete)
+  is_ai_optimized?: boolean
+  revenue_forecast?: {
+    total_predicted_revenue: number
+    total_predicted_units: number
+    predictions_loaded: number
+    predictions_total: number
   }
 }
 

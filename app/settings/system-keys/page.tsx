@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/lib/auth-context'
+import { GEMINI_MODELS, type GeminiModelId } from '@/lib/gemini-config'
 
 interface ServiceKey {
   id: string
@@ -11,6 +12,8 @@ interface ServiceKey {
   client_id_value: string | null
   client_secret: string | null
   refresh_token: string | null
+  model_id: string | null
+  chatbot_model_id: string | null
   is_configured: boolean
   is_active: boolean
   last_tested_at: string | null
@@ -158,6 +161,28 @@ export default function SystemKeysPage() {
       setSaveMessage({ service: serviceName, type: 'error', text: 'Test request failed' })
     }
     setTesting(null)
+  }
+
+  const handleModelChange = async (serviceName: string, field: 'model_id' | 'chatbot_model_id', value: string) => {
+    setSaveMessage(null)
+    try {
+      const res = await fetch('/api/service-api-keys', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ service_name: serviceName, [field]: value || null })
+      })
+      if (res.ok) {
+        setSaveMessage({ service: serviceName, type: 'success', text: 'Model updated' })
+        fetchServices()
+        // Auto-dismiss success message after 2s
+        setTimeout(() => setSaveMessage(prev => prev?.service === serviceName && prev.type === 'success' ? null : prev), 2000)
+      } else {
+        const json = await res.json()
+        setSaveMessage({ service: serviceName, type: 'error', text: json.error || 'Failed to update model' })
+      }
+    } catch {
+      setSaveMessage({ service: serviceName, type: 'error', text: 'Network error' })
+    }
   }
 
   const formatDate = (date: string | null) => {
@@ -347,6 +372,65 @@ export default function SystemKeysPage() {
                       >
                         {saving ? 'Saving...' : 'Save Keys'}
                       </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Gemini Model Settings */}
+                {service.service_name === 'gemini' && service.is_configured && !isEditing && canEdit && (
+                  <div style={{
+                    marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #f1f5f9'
+                  }}>
+                    <div style={{ fontSize: '13px', fontWeight: 600, color: '#475569', marginBottom: '10px' }}>
+                      Model Settings
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#64748b', marginBottom: '4px' }}>
+                          Predictions & Enrichment Model
+                        </label>
+                        <select
+                          value={service.model_id || 'gemini-2.5-flash-lite'}
+                          onChange={e => handleModelChange('gemini', 'model_id', e.target.value as GeminiModelId)}
+                          style={{
+                            width: '100%', padding: '8px 12px', border: '1px solid #e2e8f0',
+                            borderRadius: '6px', fontSize: '14px', backgroundColor: 'white',
+                            color: '#1e293b', cursor: 'pointer', boxSizing: 'border-box'
+                          }}
+                        >
+                          {GEMINI_MODELS.map(m => (
+                            <option key={m.id} value={m.id}>
+                              {m.label} {m.tier === 'free' ? '(free tier)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <p style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>
+                          Used for revenue predictions, coverage scoring & enrichment
+                        </p>
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#64748b', marginBottom: '4px' }}>
+                          Chatbot Model
+                        </label>
+                        <select
+                          value={service.chatbot_model_id || service.model_id || 'gemini-2.5-flash-lite'}
+                          onChange={e => handleModelChange('gemini', 'chatbot_model_id', e.target.value as GeminiModelId)}
+                          style={{
+                            width: '100%', padding: '8px 12px', border: '1px solid #e2e8f0',
+                            borderRadius: '6px', fontSize: '14px', backgroundColor: 'white',
+                            color: '#1e293b', cursor: 'pointer', boxSizing: 'border-box'
+                          }}
+                        >
+                          {GEMINI_MODELS.map(m => (
+                            <option key={m.id} value={m.id}>
+                              {m.label} {m.tier === 'free' ? '(free tier)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <p style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>
+                          Used for the AI assistant chatbot
+                        </p>
+                      </div>
                     </div>
                   </div>
                 )}

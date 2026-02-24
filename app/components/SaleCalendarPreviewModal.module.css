@@ -977,3 +977,288 @@
     flex: 1;
   }
 }
+
+/* ======================================= */
+/* AI Revenue Predictions                  */
+/* ======================================= */
+
+/* Config screen AI toggle section */
+.aiSection {
+  margin-bottom: 24px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #f5f3ff, #ede9fe);
+  border: 1px solid #c4b5fd;
+  border-radius: 12px;
+}
+
+.aiSection h3 {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #4c1d95;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.aiSectionDesc {
+  margin: 0 0 12px;
+  font-size: 0.85rem;
+  color: #6d28d9;
+  line-height: 1.4;
+}
+
+.aiToggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.aiToggle input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  accent-color: #7c3aed;
+  cursor: pointer;
+}
+
+.aiToggleLabel {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #4c1d95;
+}
+
+.aiToggleHint {
+  font-size: 0.8rem;
+  color: #7c3aed;
+  font-weight: 400;
+}
+
+/* Revenue Forecast Bar */
+.revenueForecast {
+  padding: 16px 24px;
+  background: linear-gradient(135deg, #f5f3ff, #ede9fe);
+  border-bottom: 1px solid #c4b5fd;
+  flex-shrink: 0;
+}
+
+.forecastHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.forecastTitle {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #4c1d95;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.forecastProgress {
+  font-size: 0.75rem;
+  color: #7c3aed;
+  font-weight: 500;
+}
+
+.forecastCards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.forecastCard {
+  background: white;
+  border-radius: 10px;
+  padding: 12px 14px;
+  text-align: center;
+  border: 1px solid #ddd6fe;
+}
+
+.forecastValue {
+  display: block;
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #4c1d95;
+}
+
+.forecastLabel {
+  display: block;
+  font-size: 0.7rem;
+  color: #7c3aed;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+}
+
+.forecastProgressBar {
+  margin-top: 10px;
+  height: 4px;
+  background: #ddd6fe;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.forecastProgressFill {
+  height: 100%;
+  background: linear-gradient(90deg, #7c3aed, #a78bfa);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+/* Per-sale AI prediction row */
+.aiPredictionRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed #e5e7eb;
+  flex-wrap: wrap;
+}
+
+.aiDiscountBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: linear-gradient(135deg, #f5f3ff, #ede9fe);
+  color: #6d28d9;
+  border: 1px solid #c4b5fd;
+}
+
+.aiDiscountBadge.accepted {
+  background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+  color: #065f46;
+  border-color: #6ee7b7;
+}
+
+.aiRevenue {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #4c1d95;
+}
+
+.aiConfidence {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.confidence_high {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.confidence_medium {
+  background: #fef9c3;
+  color: #854d0e;
+}
+
+.confidence_low {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* Accept/reject toggle for AI discounts */
+.aiAcceptToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  cursor: pointer;
+  font-size: 0.7rem;
+  color: #6b7280;
+}
+
+.aiAcceptToggle input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: #7c3aed;
+  cursor: pointer;
+}
+
+.aiAcceptToggle:hover {
+  color: #4c1d95;
+}
+
+/* AI spinner for loading predictions */
+.aiSpinner {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.7rem;
+  color: #7c3aed;
+}
+
+.aiSpinnerDot {
+  width: 6px;
+  height: 6px;
+  background: #7c3aed;
+  border-radius: 50%;
+  animation: aiPulse 1s ease-in-out infinite;
+}
+
+@keyframes aiPulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+/* 3-card variation grid adjustment */
+.variationCards.threeCards {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+/* AI-Optimized variation card purple theme */
+.variationCard.aiCard {
+  border-color: #c4b5fd;
+  background: linear-gradient(to bottom, #f5f3ff, white);
+}
+
+.variationCard.aiCard:hover {
+  border-color: #a78bfa;
+}
+
+.variationCard.aiCard.selectedCard {
+  border-color: #7c3aed;
+  box-shadow: 0 8px 25px rgba(124, 58, 237, 0.2);
+}
+
+/* AI error state */
+.aiError {
+  font-size: 0.7rem;
+  color: #dc2626;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Responsive overrides for AI features */
+@media (max-width: 768px) {
+  .forecastCards {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .variationCards.threeCards {
+    grid-template-columns: 1fr;
+  }
+
+  .aiPredictionRow {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .aiAcceptToggle {
+    margin-left: 0;
+  }
+}

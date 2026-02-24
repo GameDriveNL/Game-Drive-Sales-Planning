@@ -60,7 +60,7 @@ export async function PUT(request: NextRequest) {
   try {
     const supabase = getSupabase()
     const body = await request.json()
-    const { service_name, api_key, client_id_value, client_secret, refresh_token } = body
+    const { service_name, api_key, client_id_value, client_secret, refresh_token, model_id, chatbot_model_id } = body
 
     if (!service_name) {
       return NextResponse.json({ error: 'service_name is required' }, { status: 400 })
@@ -75,6 +75,8 @@ export async function PUT(request: NextRequest) {
     if (client_id_value !== undefined) updates.client_id_value = client_id_value || null
     if (client_secret !== undefined) updates.client_secret = client_secret || null
     if (refresh_token !== undefined) updates.refresh_token = refresh_token || null
+    if (model_id !== undefined) updates.model_id = model_id || null
+    if (chatbot_model_id !== undefined) updates.chatbot_model_id = chatbot_model_id || null
 
     // Check if at least one key is now configured
     const hasAnyKey = !!(api_key || client_id_value || client_secret)

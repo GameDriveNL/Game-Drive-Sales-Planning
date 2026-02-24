@@ -5,6 +5,7 @@ import { format, parseISO, differenceInDays, addMonths } from 'date-fns'
 import html2canvas from 'html2canvas'
 import * as XLSX from 'xlsx'
 import { CalendarVariation, GeneratedSale } from '@/lib/sale-calendar-generator'
+import type { BatchPredictionResult } from '@/app/api/sales/predict-batch/route'
 import styles from './CalendarExport.module.css'
 
 interface CalendarExportProps {
@@ -14,6 +15,7 @@ interface CalendarExportProps {
   launchDate: string
   endDate?: string // Optional custom end date
   variations: CalendarVariation[]
+  predictions?: Map<string, BatchPredictionResult>
 }
 
 export default function CalendarExport({
@@ -22,7 +24,8 @@ export default function CalendarExport({
   productName,
   launchDate,
   endDate,
-  variations
+  variations,
+  predictions
 }: CalendarExportProps) {
   const exportRef = useRef<HTMLDivElement>(null)
   const [isExporting, setIsExporting] = useState(false)
@@ -86,6 +89,8 @@ export default function CalendarExport({
       // Create workbook
       const wb = XLSX.utils.book_new()
 
+      const hasPredictions = predictions && predictions.size > 0
+
       // Create a sheet for each variation
       variations.forEach((variation, vIdx) => {
         const headers = [
@@ -96,23 +101,68 @@ export default function CalendarExport({
           'Duration (Days)',
           'Discount %',
           'Type',
-          'Is Event'
+          'Is Event',
+          ...(hasPredictions ? ['AI Discount %', 'Est. Revenue', 'Est. Units', 'AI Confidence'] : [])
         ]
 
         const rows = variation.sales
           .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime())
-          .map(sale => [
-            sale.platform_name,
-            sale.sale_name,
-            format(parseISO(sale.start_date), 'yyyy-MM-dd'),
-            format(parseISO(sale.end_date), 'yyyy-MM-dd'),
-            differenceInDays(parseISO(sale.end_date), parseISO(sale.start_date)) + 1,
-            sale.discount_percentage,
-            sale.is_event ? 'Event' : 'Custom',
-            sale.is_event ? 'Yes' : 'No'
-          ])
+          .map(sale => {
+            const pred = predictions?.get(sale.id)
+            return [
+              sale.platform_name,
+              sale.sale_name,
+              format(parseISO(sale.start_date), 'yyyy-MM-dd'),
+              format(parseISO(sale.end_date), 'yyyy-MM-dd'),
+              differenceInDays(parseISO(sale.end_date), parseISO(sale.start_date)) + 1,
+              sale.discount_percentage,
+              sale.is_event ? 'Event' : 'Custom',
+              sale.is_event ? 'Yes' : 'No',
+              ...(hasPredictions ? [
+                pred?.optimal_discount ?? '',
+                pred ? `€${pred.predicted_revenue.toFixed(2)}` : '',
+                pred?.predicted_units ?? '',
+                pred?.confidence ?? ''
+              ] : [])
+            ]
+          })
+
+        // Calculate revenue totals for this variation if predictions exist
+        let variationRevenue = 0
+        let variationUnits = 0
+        let predictionCount = 0
+        if (hasPredictions) {
+          variation.sales.forEach(sale => {
+            const pred = predictions?.get(sale.id)
+            if (pred) {
+              variationRevenue += pred.predicted_revenue
+              variationUnits += pred.predicted_units
+              predictionCount++
+            }
+          })
+        }
 
         // Create worksheet data
+        const statsRows: (string | number)[][] = [
+          ['Summary Statistics'],
+          ['Total Sales', variation.stats.totalSales],
+          ['Days on Sale', variation.stats.totalDaysOnSale],
+          ['Event Sales', variation.stats.eventSales],
+          ['Custom Sales', variation.stats.customSales],
+          ['Coverage', `${variation.stats.percentageOnSale}%`],
+        ]
+
+        // Add AI revenue forecast to stats if available
+        if (hasPredictions && predictionCount > 0) {
+          statsRows.push(
+            [],
+            ['AI Revenue Forecast'],
+            ['Est. Total Revenue', `€${variationRevenue.toFixed(2)}`],
+            ['Est. Total Units', Math.round(variationUnits)],
+            ['Predictions Available', `${predictionCount} / ${variation.sales.length}`],
+          )
+        }
+
         const wsData = [
           // Title rows
           [`Sale Calendar Proposal: ${productName}`],
@@ -120,13 +170,7 @@ export default function CalendarExport({
           [`Period: ${format(periodStart, 'MMM d, yyyy')} - ${format(periodEnd, 'MMM d, yyyy')}`],
           [`Generated: ${format(new Date(), 'MMMM d, yyyy')}`],
           [],
-          // Statistics
-          ['Summary Statistics'],
-          ['Total Sales', variation.stats.totalSales],
-          ['Days on Sale', variation.stats.totalDaysOnSale],
-          ['Event Sales', variation.stats.eventSales],
-          ['Custom Sales', variation.stats.customSales],
-          ['Coverage', `${variation.stats.percentageOnSale}%`],
+          ...statsRows,
           [],
           // Sales data headers and rows
           headers,
@@ -145,6 +189,12 @@ export default function CalendarExport({
           { wch: 10 }, // Discount
           { wch: 10 }, // Type
           { wch: 10 }, // Is Event
+          ...(hasPredictions ? [
+            { wch: 12 }, // AI Discount
+            { wch: 14 }, // Est. Revenue
+            { wch: 10 }, // Est. Units
+            { wch: 12 }, // Confidence
+          ] : [])
         ]
 
         // Add sheet with variation name (truncated if too long)
@@ -161,7 +211,8 @@ export default function CalendarExport({
         'End Date',
         'Duration (Days)',
         'Discount %',
-        'Type'
+        'Type',
+        ...(hasPredictions ? ['AI Discount %', 'Est. Revenue', 'Est. Units', 'AI Confidence'] : [])
       ]
 
       const allRows: (string | number)[][] = []
@@ -169,6 +220,7 @@ export default function CalendarExport({
         variation.sales
           .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime())
           .forEach(sale => {
+            const pred = predictions?.get(sale.id)
             allRows.push([
               variation.name,
               sale.platform_name,
@@ -177,7 +229,13 @@ export default function CalendarExport({
               format(parseISO(sale.end_date), 'yyyy-MM-dd'),
               differenceInDays(parseISO(sale.end_date), parseISO(sale.start_date)) + 1,
               sale.discount_percentage,
-              sale.is_event ? 'Event' : 'Custom'
+              sale.is_event ? 'Event' : 'Custom',
+              ...(hasPredictions ? [
+                pred?.optimal_discount ?? '',
+                pred ? `€${pred.predicted_revenue.toFixed(2)}` : '',
+                pred?.predicted_units ?? '',
+                pred?.confidence ?? ''
+              ] : [])
             ])
           })
       })
@@ -201,6 +259,12 @@ export default function CalendarExport({
         { wch: 10 }, // Duration
         { wch: 10 }, // Discount
         { wch: 10 }, // Type
+        ...(hasPredictions ? [
+          { wch: 12 }, // AI Discount
+          { wch: 14 }, // Est. Revenue
+          { wch: 10 }, // Est. Units
+          { wch: 12 }, // Confidence
+        ] : [])
       ]
       XLSX.utils.book_append_sheet(wb, allWs, 'All Strategies')
 
@@ -305,6 +369,22 @@ export default function CalendarExport({
                         <span className={styles.statValue}>{variation.stats.percentageOnSale}%</span>
                         <span className={styles.statLabel}>Coverage</span>
                       </div>
+                      {variation.revenue_forecast && variation.revenue_forecast.predictions_loaded > 0 && (
+                        <>
+                          <div className={styles.stat}>
+                            <span className={styles.statValue}>
+                              €{variation.revenue_forecast.total_predicted_revenue.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                            </span>
+                            <span className={styles.statLabel}>Est. Revenue</span>
+                          </div>
+                          <div className={styles.stat}>
+                            <span className={styles.statValue}>
+                              {variation.revenue_forecast.total_predicted_units.toLocaleString()}
+                            </span>
+                            <span className={styles.statLabel}>Est. Units</span>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                   

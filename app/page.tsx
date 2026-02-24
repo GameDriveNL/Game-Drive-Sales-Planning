@@ -35,7 +35,7 @@ interface SalePrefill { productId: string; platformId: string; startDate: string
 interface VersionSaleDisplay extends SaleWithDetails {
   _isSnapshot?: boolean  // Flag to identify snapshot sales in the display
 }
-interface CalendarGenerationState { productId: string; productName: string; launchDate: string; platformIds?: string[] }
+interface CalendarGenerationState { productId: string; productName: string; launchDate: string; platformIds?: string[]; clientId?: string }
 interface ClearSalesState { productId: string; productName: string }
 interface EditLaunchDateState { productId: string; productName: string; currentLaunchDate: string; currentLaunchSaleDuration?: number }
 type SaleStatus = 'planned' | 'submitted' | 'confirmed' | 'live' | 'ended'
@@ -366,7 +366,7 @@ export default function GameDriveDashboard() {
   }, [])
 
   const handleCloseAddModal = useCallback(() => { setShowAddModal(false); setSalePrefill(null) }, [])
-  const handleGenerateCalendar = useCallback((productId: string, productName: string, launchDate?: string, platformIds?: string[]) => { const effectiveLaunchDate = launchDate || format(new Date(), 'yyyy-MM-dd'); setCalendarGeneration({ productId, productName, launchDate: effectiveLaunchDate, platformIds }) }, [])
+  const handleGenerateCalendar = useCallback((productId: string, productName: string, launchDate?: string, platformIds?: string[]) => { const effectiveLaunchDate = launchDate || format(new Date(), 'yyyy-MM-dd'); const product = products.find(p => p.id === productId); const clientId = product?.game?.client_id || ''; setCalendarGeneration({ productId, productName, launchDate: effectiveLaunchDate, platformIds, clientId }) }, [products])
 
   const handleApplyCalendar = useCallback(async (generatedSales: GeneratedSale[]) => {
     setIsApplyingCalendar(true); setError(null)
@@ -731,7 +731,7 @@ export default function GameDriveDashboard() {
       <VersionManager isOpen={showVersionManager} onClose={() => setShowVersionManager(false)} currentSales={sales} platforms={platforms} onActivateVersion={handleActivateVersion} activeVersionId={activeVersionId} productId={filterProductId || null} productName={products.find(p => p.id === filterProductId)?.name || null} clientId={filterClientId || null} clientName={clients.find(c => c.id === filterClientId)?.name || null} hasUnsavedChanges={versionSnapshotModified} onSaveVersion={handleSaveVersionSnapshot} />
       {showProductManager && (<ProductManager clients={clients} games={games} products={products} platforms={platforms} onClientCreate={handleClientCreate} onGameCreate={handleGameCreate} onProductCreate={handleProductCreate} onClientDelete={handleClientDelete} onGameDelete={handleGameDelete} onProductDelete={handleProductDelete} onClientUpdate={handleClientUpdate} onGameUpdate={handleGameUpdate} onProductUpdate={handleProductUpdate} onGenerateCalendar={handleGenerateCalendar} onClose={() => setShowProductManager(false)} />)}
       <PlatformSettings isOpen={showPlatformSettings} onClose={() => setShowPlatformSettings(false)} onEventsChange={() => { fetchPlatformEvents(); fetchData() }} />
-      {calendarGeneration && (<SaleCalendarPreviewModal isOpen={true} onClose={() => setCalendarGeneration(null)} productId={calendarGeneration.productId} productName={calendarGeneration.productName} launchDate={calendarGeneration.launchDate} platforms={platforms} platformEvents={platformEvents} existingSales={sales} onApply={handleApplyCalendar} isApplying={isApplyingCalendar} initialPlatformIds={calendarGeneration.platformIds} />)}
+      {calendarGeneration && (<SaleCalendarPreviewModal isOpen={true} onClose={() => setCalendarGeneration(null)} productId={calendarGeneration.productId} productName={calendarGeneration.productName} launchDate={calendarGeneration.launchDate} platforms={platforms} platformEvents={platformEvents} existingSales={sales} onApply={handleApplyCalendar} isApplying={isApplyingCalendar} initialPlatformIds={calendarGeneration.platformIds} clientId={calendarGeneration.clientId} />)}
       {clearSalesState && (<ClearSalesModal isOpen={true} onClose={() => setClearSalesState(null)} productId={clearSalesState.productId} productName={clearSalesState.productName} platforms={platforms} sales={sales} onConfirm={handleConfirmClearSales} />)}
       {editLaunchDateState && (<EditLaunchDateModal isOpen={true} onClose={() => setEditLaunchDateState(null)} productId={editLaunchDateState.productId} productName={editLaunchDateState.productName} currentLaunchDate={editLaunchDateState.currentLaunchDate} currentLaunchSaleDuration={editLaunchDateState.currentLaunchSaleDuration || 7} onSave={handleSaveLaunchDate} salesCount={sales.filter(s => s.product_id === editLaunchDateState.productId).length} platforms={platforms} platformEvents={platformEvents} />)}
       <TimelineExportModal isOpen={showExportModal} onClose={() => setShowExportModal(false)} sales={filteredSales} products={filteredProducts} platforms={platforms} timelineStart={timelineStart} monthCount={monthCount} calendarVariations={lastGeneratedVariations} />

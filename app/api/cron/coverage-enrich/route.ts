@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { GoogleGenAI } from '@google/genai'
 import { sendDiscordNotification } from '@/lib/discord'
+import { getGeminiConfig } from '@/lib/gemini-config'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -31,19 +32,14 @@ export async function GET(request: NextRequest) {
   const supabase = getSupabase()
 
   try {
-    // Get Gemini API key
-    const { data: geminiKey } = await supabase
-      .from('service_api_keys')
-      .select('api_key')
-      .eq('service_name', 'gemini')
-      .eq('is_active', true)
-      .single()
+    // Get Gemini config (API key + model)
+    const gemini = await getGeminiConfig(supabase)
 
-    if (!geminiKey?.api_key) {
+    if (!gemini) {
       return NextResponse.json({ message: 'Gemini API key not configured, skipping enrichment' })
     }
 
-    const ai = new GoogleGenAI({ apiKey: geminiKey.api_key })
+    const ai = new GoogleGenAI({ apiKey: gemini.apiKey })
 
     // Fetch unscored items (max 10 per cron run — Gemini free tier = 15 RPM,
     // with 4.5s delay between calls, 10 items ≈ 45s, leaving headroom for the 60s function timeout)
@@ -166,7 +162,7 @@ Respond with ONLY valid JSON:
 {"relevance_score": <number>, "relevance_reasoning": "<string>", "suggested_type": "<string>", "sentiment": "<string>"}`
 
         const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash-lite',
+          model: gemini.modelId,
           contents: prompt,
           config: { responseMimeType: 'application/json' },
         })

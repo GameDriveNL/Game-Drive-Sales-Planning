@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { GoogleGenAI } from '@google/genai'
+import { getGeminiConfig } from '@/lib/gemini-config'
 
 function getSupabase() {
   return getServerSupabase()
@@ -22,6 +23,7 @@ interface EnrichmentResult {
 
 async function enrichItem(
   ai: GoogleGenAI,
+  modelId: string,
   item: Record<string, unknown>,
   keywords: string[],
   gameDescription: string
@@ -56,7 +58,7 @@ Respond with ONLY valid JSON in this exact format:
 {"relevance_score": <number 0-100>, "relevance_reasoning": "<string>", "suggested_type": "<string>", "sentiment": "<string>"}`
 
   const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash-lite',
+    model: modelId,
     contents: prompt,
     config: {
       responseMimeType: 'application/json',
@@ -82,19 +84,14 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { item_ids, limit: batchLimit } = body
 
-    // Get Gemini API key from service_api_keys
-    const { data: geminiKey } = await supabase
-      .from('service_api_keys')
-      .select('api_key')
-      .eq('service_name', 'gemini')
-      .eq('is_active', true)
-      .single()
+    // Get Gemini config (API key + model)
+    const gemini = await getGeminiConfig(supabase)
 
-    if (!geminiKey?.api_key) {
+    if (!gemini) {
       return NextResponse.json({ error: 'Gemini API key not configured. Add it in Coverage > API Keys.' }, { status: 400 })
     }
 
-    const ai = new GoogleGenAI({ apiKey: geminiKey.api_key })
+    const ai = new GoogleGenAI({ apiKey: gemini.apiKey })
 
     // Fetch items to enrich
     let query = supabase
@@ -163,7 +160,7 @@ export async function POST(request: NextRequest) {
         const keywords = keywordMap[pair] || []
         const gameDesc = gameDescMap[pair] || ''
 
-        const result = await enrichItem(ai, item as Record<string, unknown>, keywords, gameDesc)
+        const result = await enrichItem(ai, gemini.modelId, item as Record<string, unknown>, keywords, gameDesc)
 
         // Determine approval status based on score
         let approvalStatus: string
