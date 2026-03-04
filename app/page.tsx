@@ -7,6 +7,7 @@ import { parseISO, format, addDays } from 'date-fns'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import GanttChart, { CoverageDayData } from './components/GanttChart'
 import SalesTable from './components/SalesTable'
+import SaleAnalysis from './components/SaleAnalysis'
 import AddSaleModal from './components/AddSaleModal'
 import EditSaleModal from './components/EditSaleModal'
 import ProductManager from './components/ProductManager'
@@ -62,7 +63,7 @@ export default function GameDriveDashboard() {
   const [showVersionManager, setShowVersionManager] = useState(false)
   const [editingSale, setEditingSale] = useState<SaleWithDetails | null>(null)
   const [duplicatingSale, setDuplicatingSale] = useState<SaleWithDetails | null>(null)
-  const [viewMode, setViewMode] = useState<'gantt' | 'table'>('gantt')
+  const [viewMode, setViewMode] = useState<'gantt' | 'table' | 'analysis'>('gantt')
   const [showEvents, setShowEvents] = useState(true)
   const [showCoverage, setShowCoverage] = useState(false)
   const [coverageByDate, setCoverageByDate] = useState<Record<string, CoverageDayData>>({})
@@ -720,12 +721,12 @@ export default function GameDriveDashboard() {
       )}
 
       <div className={styles.toolbar}>
-        <div className={styles.viewToggle}><button className={`${styles.toggleBtn} ${viewMode === 'gantt' ? styles.active : ''}`} onClick={() => setViewMode('gantt')}>Timeline</button><button className={`${styles.toggleBtn} ${viewMode === 'table' ? styles.active : ''}`} onClick={() => setViewMode('table')}>Table</button></div>
+        <div className={styles.viewToggle}><button className={`${styles.toggleBtn} ${viewMode === 'gantt' ? styles.active : ''}`} onClick={() => setViewMode('gantt')}>Timeline</button><button className={`${styles.toggleBtn} ${viewMode === 'table' ? styles.active : ''}`} onClick={() => setViewMode('table')}>Table</button><button className={`${styles.toggleBtn} ${viewMode === 'analysis' ? styles.active : ''}`} onClick={() => setViewMode('analysis')}>Analysis</button></div>
         <div className={styles.actions}><button className={styles.primaryBtn} onClick={() => setShowAddModal(true)}>+ Add Sale</button>{!activeVersionId && <button className={styles.secondaryBtn} onClick={() => setShowImportModal(true)}>Import CSV</button>}<button className={styles.secondaryBtn} onClick={() => setShowVersionManager(true)}>📚 Versions</button>{!activeVersionId && <button className={styles.secondaryBtn} onClick={() => setShowProductManager(true)}>Manage Products</button>}{!activeVersionId && <button className={styles.secondaryBtn} onClick={() => setShowPlatformSettings(true)}>Platform Settings</button>}<button className={styles.secondaryBtn} onClick={() => setShowExportModal(true)}>Export</button>{!activeVersionId && <button className={styles.secondaryBtn} onClick={fetchData}>Refresh</button>}</div>
       </div>
 
       <div className={styles.mainContent}>
-        {viewMode === 'gantt' ? (<GanttChart sales={filteredSales} products={filteredProducts} platforms={platforms} platformEvents={platformEvents} timelineStart={timelineStart} monthCount={monthCount} onSaleUpdate={handleSaleUpdateWrapper} onSaleDelete={handleSaleDeleteWrapper} onSaleEdit={handleSaleEdit} onSaleDuplicate={handleSaleDuplicate} onCreateSale={handleTimelineCreate} onGenerateCalendar={handleGenerateCalendar} onClearSales={handleClearSales} onLaunchDateChange={handleLaunchDateChange} onEditLaunchDate={handleEditLaunchDate} onLaunchSaleDurationChange={handleLaunchSaleDurationChange} allSales={activeVersionId ? [] : sales} showEvents={showEvents} coverageByDate={coverageByDate} showCoverage={showCoverage} />) : (<SalesTable sales={filteredSales} platforms={platforms} onDelete={handleSaleDeleteWrapper} onEdit={handleSaleEdit} onDuplicate={handleSaleDuplicate} onBulkEdit={handleBulkEdit} />)}
+        {viewMode === 'gantt' ? (<GanttChart sales={filteredSales} products={filteredProducts} platforms={platforms} platformEvents={platformEvents} timelineStart={timelineStart} monthCount={monthCount} onSaleUpdate={handleSaleUpdateWrapper} onSaleDelete={handleSaleDeleteWrapper} onSaleEdit={handleSaleEdit} onSaleDuplicate={handleSaleDuplicate} onCreateSale={handleTimelineCreate} onGenerateCalendar={handleGenerateCalendar} onClearSales={handleClearSales} onLaunchDateChange={handleLaunchDateChange} onEditLaunchDate={handleEditLaunchDate} onLaunchSaleDurationChange={handleLaunchSaleDurationChange} allSales={activeVersionId ? [] : sales} showEvents={showEvents} coverageByDate={coverageByDate} showCoverage={showCoverage} />) : viewMode === 'table' ? (<SalesTable sales={filteredSales} platforms={platforms} onDelete={handleSaleDeleteWrapper} onEdit={handleSaleEdit} onUpdate={handleSaleUpdateWrapper} onDuplicate={handleSaleDuplicate} onBulkEdit={handleBulkEdit} />) : (<SaleAnalysis sales={filteredSales} platforms={platforms} />)}
       </div>
 
       {showCoverage && Object.keys(coverageByDate).length > 0 && (

@@ -1,0 +1,243 @@
+.container {
+  padding: 0;
+}
+
+.empty {
+  text-align: center;
+  padding: 40px;
+  color: #94a3b8;
+  font-size: 14px;
+}
+
+/* Metrics Row */
+.metricsRow {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.metricCard {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 16px;
+  text-align: center;
+}
+
+.metricValue {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1e293b;
+  line-height: 1.2;
+}
+
+.metricLabel {
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 4px;
+  font-weight: 500;
+}
+
+.metricSub {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+.dateRange {
+  font-size: 12px;
+  color: #94a3b8;
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+/* Panels Grid */
+.panelsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.panel {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.panelTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #334155;
+  margin: 0 0 12px;
+}
+
+.panelSubtitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+  margin: 16px 0 8px;
+}
+
+/* Bar Chart */
+.barList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.barItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.barLabel {
+  min-width: 100px;
+  font-size: 13px;
+  color: #475569;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.platformDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.gameLabelText {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100px;
+}
+
+.clientTag {
+  font-size: 10px;
+  color: #94a3b8;
+  background: #f8fafc;
+  padding: 1px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.barTrack {
+  flex: 1;
+  height: 8px;
+  background: #f1f5f9;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.barFill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+  min-width: 4px;
+}
+
+.barCount {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+  min-width: 24px;
+  text-align: right;
+}
+
+/* Status Section */
+.statusGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.statusItem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.statusBar {
+  height: 6px;
+  background: #f1f5f9;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.statusFill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.statusLabel {
+  font-size: 12px;
+  color: #64748b;
+}
+
+/* Goals */
+.goalList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.goalItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.goalBadge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: capitalize;
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.goalBadge.acquisition {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.goalBadge.visibility {
+  background: #f3e8ff;
+  color: #7c3aed;
+}
+
+.goalBadge.event {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.goalBadge.revenue {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.goalCount {
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .metricsRow {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .panelsGrid {
+    grid-template-columns: 1fr;
+  }
+}

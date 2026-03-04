@@ -459,6 +459,61 @@
   border-color: #fecaca;
 }
 
+/* Inline editing */
+.editableCell {
+  cursor: text;
+  position: relative;
+}
+
+.editableCell:hover {
+  background: #f0f9ff;
+  outline: 1px dashed #93c5fd;
+  outline-offset: -1px;
+}
+
+.cellInput {
+  width: 100%;
+  min-width: 80px;
+  padding: 0.25rem 0.375rem;
+  border: 2px solid #3b82f6;
+  border-radius: 4px;
+  font-size: 0.8125rem;
+  font-family: inherit;
+  background: white;
+  color: #1e293b;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.cellInput[type="date"] {
+  min-width: 130px;
+}
+
+.cellInput[type="number"] {
+  min-width: 60px;
+  max-width: 80px;
+}
+
+.toggleCell {
+  cursor: pointer;
+}
+
+.toggleCell:hover {
+  background: #f0f9ff;
+}
+
+.emptyCheck {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1px dashed #cbd5e1;
+  color: #cbd5e1;
+  border-radius: 4px;
+  font-size: 0.75rem;
+}
+
 @media (max-width: 768px) {
   .bulkControls {
     flex-direction: column;

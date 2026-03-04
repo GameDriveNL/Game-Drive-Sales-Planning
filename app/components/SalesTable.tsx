@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { format, parseISO, differenceInDays, addDays } from 'date-fns'
-import { SaleWithDetails, Platform } from '@/lib/types'
+import { Sale, SaleWithDetails, Platform } from '@/lib/types'
 import styles from './SalesTable.module.css'
 import * as XLSX from 'xlsx'
 
@@ -11,14 +11,77 @@ interface SalesTableProps {
   platforms: Platform[]
   onDelete: (saleId: string) => Promise<void>
   onEdit: (sale: SaleWithDetails) => void
+  onUpdate?: (saleId: string, updates: Partial<Sale>) => Promise<void>
   onDuplicate?: (sale: SaleWithDetails) => void
   onBulkEdit?: (selectedSales: SaleWithDetails[]) => void
 }
 
-export default function SalesTable({ sales, platforms, onDelete, onEdit, onDuplicate, onBulkEdit }: SalesTableProps) {
+type EditingCell = { saleId: string; field: string } | null
+
+export default function SalesTable({ sales, platforms, onDelete, onEdit, onUpdate, onDuplicate, onBulkEdit }: SalesTableProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [selectMode, setSelectMode] = useState(false)
-  
+  const [editingCell, setEditingCell] = useState<EditingCell>(null)
+  const [editValue, setEditValue] = useState('')
+
+  // Inline cell editing handlers
+  const handleCellClick = useCallback((saleId: string, field: string, currentValue: string, e: React.MouseEvent) => {
+    if (!onUpdate || selectMode) return
+    e.stopPropagation()
+    setEditingCell({ saleId, field })
+    setEditValue(currentValue)
+  }, [onUpdate, selectMode])
+
+  const handleCellSave = useCallback(async () => {
+    if (!editingCell || !onUpdate) return
+    const { saleId, field } = editingCell
+    const sale = sales.find(s => s.id === saleId)
+    if (!sale) { setEditingCell(null); return }
+
+    let updates: Partial<Sale> = {}
+
+    if (field === 'discount_percentage') {
+      const num = parseFloat(editValue)
+      if (isNaN(num) || num < 0 || num > 100) { setEditingCell(null); return }
+      if (num === (sale.discount_percentage || 0)) { setEditingCell(null); return }
+      updates = { discount_percentage: num }
+    } else if (field === 'sale_name') {
+      if (editValue === (sale.sale_name || '')) { setEditingCell(null); return }
+      updates = { sale_name: editValue }
+    } else if (field === 'comment') {
+      if (editValue === (sale.comment || sale.notes || '')) { setEditingCell(null); return }
+      updates = { comment: editValue }
+    } else if (field === 'start_date' || field === 'end_date') {
+      if (!editValue) { setEditingCell(null); return }
+      // Convert from dd/MM/yyyy input or yyyy-MM-dd input
+      const isoDate = editValue // date inputs give yyyy-MM-dd
+      if (isoDate === sale[field]) { setEditingCell(null); return }
+      updates = { [field]: isoDate }
+    }
+
+    if (Object.keys(updates).length > 0) {
+      await onUpdate(saleId, updates)
+    }
+    setEditingCell(null)
+  }, [editingCell, editValue, onUpdate, sales])
+
+  const handleCellKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      handleCellSave()
+    } else if (e.key === 'Escape') {
+      setEditingCell(null)
+    }
+  }, [handleCellSave])
+
+  const handleToggleField = useCallback(async (saleId: string, field: 'is_campaign' | 'is_submitted' | 'is_confirmed', currentValue: boolean) => {
+    if (!onUpdate) return
+    await onUpdate(saleId, { [field]: !currentValue })
+  }, [onUpdate])
+
+  const isEditing = (saleId: string, field: string) =>
+    editingCell?.saleId === saleId && editingCell?.field === field
+
   // Sort sales by start date
   const sortedSales = [...sales].sort((a, b) => 
     new Date(a.start_date).getTime() - new Date(b.start_date).getTime()
@@ -339,8 +402,40 @@ export default function SalesTable({ sales, platforms, onDelete, onEdit, onDupli
                         />
                       </td>
                     )}
-                    <td>{format(parseISO(sale.start_date), 'dd/MM/yyyy')}</td>
-                    <td>{format(parseISO(sale.end_date), 'dd/MM/yyyy')}</td>
+                    <td
+                      className={onUpdate && !selectMode ? styles.editableCell : ''}
+                      onClick={(e) => handleCellClick(sale.id, 'start_date', sale.start_date, e)}
+                    >
+                      {isEditing(sale.id, 'start_date') ? (
+                        <input
+                          type="date"
+                          className={styles.cellInput}
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onBlur={handleCellSave}
+                          onKeyDown={handleCellKeyDown}
+                          autoFocus
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      ) : format(parseISO(sale.start_date), 'dd/MM/yyyy')}
+                    </td>
+                    <td
+                      className={onUpdate && !selectMode ? styles.editableCell : ''}
+                      onClick={(e) => handleCellClick(sale.id, 'end_date', sale.end_date, e)}
+                    >
+                      {isEditing(sale.id, 'end_date') ? (
+                        <input
+                          type="date"
+                          className={styles.cellInput}
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onBlur={handleCellSave}
+                          onKeyDown={handleCellKeyDown}
+                          autoFocus
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      ) : format(parseISO(sale.end_date), 'dd/MM/yyyy')}
+                    </td>
                     <td>{days}</td>
                     <td>
                       <span 
@@ -350,18 +445,53 @@ export default function SalesTable({ sales, platforms, onDelete, onEdit, onDupli
                         {platform?.name || 'Unknown'}
                       </span>
                     </td>
-                    <td>{sale.sale_name || 'Custom'}</td>
+                    <td
+                      className={onUpdate && !selectMode ? styles.editableCell : ''}
+                      onClick={(e) => handleCellClick(sale.id, 'sale_name', sale.sale_name || '', e)}
+                    >
+                      {isEditing(sale.id, 'sale_name') ? (
+                        <input
+                          type="text"
+                          className={styles.cellInput}
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onBlur={handleCellSave}
+                          onKeyDown={handleCellKeyDown}
+                          autoFocus
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      ) : (sale.sale_name || 'Custom')}
+                    </td>
                     <td>
                       <div className={styles.productCell}>
                         <span className={styles.productName}>{sale.product?.name}</span>
                         <span className={styles.gameName}>{sale.product?.game?.name}</span>
                       </div>
                     </td>
-                    <td className={styles.discount}>
-                      {sale.discount_percentage ? `-${sale.discount_percentage}%` : '-'}
+                    <td
+                      className={`${styles.discount} ${onUpdate && !selectMode ? styles.editableCell : ''}`}
+                      onClick={(e) => handleCellClick(sale.id, 'discount_percentage', String(sale.discount_percentage || ''), e)}
+                    >
+                      {isEditing(sale.id, 'discount_percentage') ? (
+                        <input
+                          type="number"
+                          className={styles.cellInput}
+                          value={editValue}
+                          min="0"
+                          max="100"
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onBlur={handleCellSave}
+                          onKeyDown={handleCellKeyDown}
+                          autoFocus
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      ) : (sale.discount_percentage ? `-${sale.discount_percentage}%` : '-')}
                     </td>
-                    <td className={styles.checkCell}>
-                      {sale.is_campaign && <span className={styles.checkMark}>✓</span>}
+                    <td
+                      className={`${styles.checkCell} ${onUpdate && !selectMode ? styles.toggleCell : ''}`}
+                      onClick={(e) => { e.stopPropagation(); if (onUpdate && !selectMode) handleToggleField(sale.id, 'is_campaign', !!sale.is_campaign) }}
+                    >
+                      {sale.is_campaign ? <span className={styles.checkMark}>✓</span> : (onUpdate && !selectMode ? <span className={styles.emptyCheck}>-</span> : null)}
                     </td>
                     <td>
                       {sale.goal_type && (
@@ -370,11 +500,17 @@ export default function SalesTable({ sales, platforms, onDelete, onEdit, onDupli
                         </span>
                       )}
                     </td>
-                    <td className={styles.checkCell}>
-                      {sale.is_submitted && <span className={styles.checkMark}>✓</span>}
+                    <td
+                      className={`${styles.checkCell} ${onUpdate && !selectMode ? styles.toggleCell : ''}`}
+                      onClick={(e) => { e.stopPropagation(); if (onUpdate && !selectMode) handleToggleField(sale.id, 'is_submitted', !!sale.is_submitted) }}
+                    >
+                      {sale.is_submitted ? <span className={styles.checkMark}>✓</span> : (onUpdate && !selectMode ? <span className={styles.emptyCheck}>-</span> : null)}
                     </td>
-                    <td className={styles.checkCell}>
-                      {sale.is_confirmed && <span className={styles.checkMarkGreen}>✓</span>}
+                    <td
+                      className={`${styles.checkCell} ${onUpdate && !selectMode ? styles.toggleCell : ''}`}
+                      onClick={(e) => { e.stopPropagation(); if (onUpdate && !selectMode) handleToggleField(sale.id, 'is_confirmed', !!sale.is_confirmed) }}
+                    >
+                      {sale.is_confirmed ? <span className={styles.checkMarkGreen}>✓</span> : (onUpdate && !selectMode ? <span className={styles.emptyCheck}>-</span> : null)}
                     </td>
                     <td>{cooldownUntil}</td>
                     <td className={styles.actionCell}>
