@@ -107,7 +107,7 @@ export default function GameDriveDashboard() {
     try {
       const { data: platformsData, error: platformsError } = await supabase.from('platforms').select('*').order('name')
       if (platformsError) throw platformsError; setPlatforms(platformsData || [])
-      const { data: eventsData, error: eventsError } = await supabase.from('platform_events').select(`*, platform:platforms(*)`).order('start_date')
+      const { data: eventsData, error: eventsError } = await supabase.from('platform_events').select(`*, platform:platforms(*)`).order('start_date', { ascending: false })
       if (eventsError) throw eventsError; setPlatformEvents(eventsData || [])
       const { data: clientsData, error: clientsError } = await supabase.from('clients').select('*').order('name')
       if (clientsError) throw clientsError; setClients(clientsData || [])
@@ -122,7 +122,7 @@ export default function GameDriveDashboard() {
 
   async function fetchPlatformEvents() {
     try {
-      const { data: eventsData, error: eventsError } = await supabase.from('platform_events').select(`*, platform:platforms(*)`).order('start_date')
+      const { data: eventsData, error: eventsError } = await supabase.from('platform_events').select(`*, platform:platforms(*)`).order('start_date', { ascending: false })
       if (eventsError) throw eventsError; setPlatformEvents(eventsData || [])
     } catch (err) { console.error('Error fetching platform events:', err) }
   }

@@ -105,11 +105,12 @@ export default function EditSaleModal({
   }
 
   // Check duration warning (soft limit)
-  // Compare using exclusive day count (matching Excel DAYS formula / platform conventions)
+  // Compare using exclusive day count (matching Excel =DAYS() formula / platform conventions)
+  // e.g. Jan 15 to Jan 28 = DAYS() returns 13, our inclusive duration = 14
   useEffect(() => {
     const exclusiveDays = duration - 1
     if (selectedPlatform && exclusiveDays > selectedPlatform.max_sale_days) {
-      setDurationWarning(`Exceeds platform recommendation of ${selectedPlatform.max_sale_days} days`)
+      setDurationWarning(`Exceeds platform recommendation of ${selectedPlatform.max_sale_days} days (${duration} days inclusive, ${exclusiveDays} days Excel-style)`)
     } else {
       setDurationWarning(null)
     }
