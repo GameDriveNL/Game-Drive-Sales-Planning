@@ -332,6 +332,9 @@ export default function CoverageFeedPage() {
             <Link href="/coverage/clients" style={{ padding: '10px 20px', fontSize: '14px', fontWeight: 500, color: '#64748b', textDecoration: 'none', marginBottom: '-2px' }}>
               Clients &amp; Games
             </Link>
+            <Link href="/coverage/guide" style={{ padding: '10px 20px', fontSize: '14px', fontWeight: 500, color: '#64748b', textDecoration: 'none', marginBottom: '-2px' }}>
+              Guide
+            </Link>
           </div>
 
           {/* View mode toggle + stats */}

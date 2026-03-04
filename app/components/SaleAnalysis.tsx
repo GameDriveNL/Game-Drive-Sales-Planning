@@ -3,6 +3,7 @@
 import { useMemo } from 'react'
 import { format, parseISO, differenceInDays } from 'date-fns'
 import { SaleWithDetails, Platform } from '@/lib/types'
+import SaleComparison from './SaleComparison'
 import styles from './SaleAnalysis.module.css'
 
 interface SaleAnalysisProps {
@@ -253,6 +254,11 @@ export default function SaleAnalysis({ sales, platforms }: SaleAnalysisProps) {
             </>
           )}
         </div>
+      </div>
+
+      {/* Sale-over-Sale Comparison */}
+      <div className={styles.comparisonSection}>
+        <SaleComparison sales={sales} platforms={platforms} />
       </div>
     </div>
   )
