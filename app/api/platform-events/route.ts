@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
         *,
         platform:platforms(*)
       `)
-      .order('start_date', { ascending: true })
+      .order('start_date', { ascending: false })
     
     // Filter by date range if provided
     if (startDate) {

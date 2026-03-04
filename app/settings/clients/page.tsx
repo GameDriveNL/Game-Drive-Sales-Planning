@@ -22,6 +22,7 @@ export default function SettingsClientsPage() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [newClient, setNewClient] = useState({ name: '', email: '' })
   const [editingClient, setEditingClient] = useState<Client | null>(null)
+  const [addError, setAddError] = useState<string | null>(null)
 
   useEffect(() => {
     fetchClients()
@@ -42,16 +43,25 @@ export default function SettingsClientsPage() {
 
   const handleAddClient = async () => {
     if (!newClient.name.trim()) return
+    setAddError(null)
 
     const { error } = await supabase
       .from('clients')
       .insert({ name: newClient.name, email: newClient.email || null })
 
-    if (!error) {
-      setNewClient({ name: '', email: '' })
-      setShowAddModal(false)
-      fetchClients()
+    if (error) {
+      console.error('Error adding client:', error)
+      if (error.message.includes('row-level security')) {
+        setAddError('Permission denied. Please contact an admin to add clients.')
+      } else {
+        setAddError(error.message || 'Failed to add client')
+      }
+      return
     }
+
+    setNewClient({ name: '', email: '' })
+    setShowAddModal(false)
+    fetchClients()
   }
 
   const handleDeleteClient = async (id: string) => {
@@ -262,6 +272,19 @@ export default function SettingsClientsPage() {
                 }}
               />
             </div>
+            {addError && (
+              <div style={{
+                padding: '10px 14px',
+                backgroundColor: '#fef2f2',
+                border: '1px solid #fecaca',
+                borderRadius: '8px',
+                color: '#991b1b',
+                fontSize: '13px',
+                marginBottom: '16px'
+              }}>
+                {addError}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
               <button
                 onClick={() => setShowAddModal(false)}

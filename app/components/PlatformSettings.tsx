@@ -75,7 +75,7 @@ export default function PlatformSettings({ isOpen, onClose, onEventsChange }: Pl
     name: '',
     start_date: '',
     end_date: '',
-    event_type: 'seasonal' as PlatformEvent['event_type'],
+    event_type: 'custom' as PlatformEvent['event_type'],
     region: '',
     requires_cooldown: true,
     is_recurring: false,
@@ -209,14 +209,14 @@ export default function PlatformSettings({ isOpen, onClose, onEventsChange }: Pl
       name: '',
       start_date: '',
       end_date: '',
-      event_type: 'seasonal',
+      event_type: 'custom',
       region: '',
       requires_cooldown: true,
       is_recurring: false,
       notes: ''
     })
   }
-  
+
   const handleColorChange = (newColor: string) => {
     if (!editingPlatform) return
     setEditingPlatform({ ...editingPlatform, color_hex: newColor })

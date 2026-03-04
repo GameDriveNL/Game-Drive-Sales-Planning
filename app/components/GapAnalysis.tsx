@@ -218,8 +218,14 @@ export default function GapAnalysis({ sales, products, platforms, timelineStart,
   }, [sales, products, platforms, quarters])
 
   const filteredGaps = useMemo(() => {
-    let filtered = gapAnalysis.filter(g => g.longestGap >= minGapDays)
-    
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    // Only show gaps where the quarter end is in the future (skip fully past quarters)
+    let filtered = gapAnalysis
+      .filter(g => g.quarterEnd >= today)
+      .filter(g => g.longestGap >= minGapDays)
+
     if (filterPlatform !== 'all') {
       filtered = filtered.filter(g => g.platformId === filterPlatform)
     }

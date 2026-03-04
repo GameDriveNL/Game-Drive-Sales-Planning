@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { format } from 'date-fns'
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { Client, Game, Platform, Product } from '@/lib/types'
 import styles from './ProductManager.module.css'
 
@@ -48,11 +49,13 @@ export default function ProductManager({
   onGenerateCalendar,
   onClose
 }: ProductManagerProps) {
+  const supabase = createClientComponentClient()
   const [activeTab, setActiveTab] = useState<Tab>('clients')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: string; id: string; name: string } | null>(null)
   const [editing, setEditing] = useState<EditingState | null>(null)
+  const [editPlatformIds, setEditPlatformIds] = useState<string[]>([])
   
   // Client form
   const [clientName, setClientName] = useState('')
@@ -238,18 +241,24 @@ export default function ProductManager({
     })
   }
 
-  const startEditProduct = (product: Product & { game: Game & { client: Client } }) => {
+  const startEditProduct = async (product: Product & { game: Game & { client: Client } }) => {
     setEditing({
       type: 'product',
       id: product.id,
-      data: { 
-        name: product.name, 
-        game_id: product.game_id, 
+      data: {
+        name: product.name,
+        game_id: product.game_id,
         product_type: product.product_type,
         steam_product_id: product.steam_product_id || '',
         launch_date: product.launch_date || format(new Date(), 'yyyy-MM-dd')
       }
     })
+    // Fetch existing platform assignments
+    const { data } = await supabase
+      .from('product_platforms')
+      .select('platform_id')
+      .eq('product_id', product.id)
+    setEditPlatformIds(data ? data.map((pp: { platform_id: string }) => pp.platform_id) : [])
   }
 
   // Save edits
@@ -278,7 +287,7 @@ export default function ProductManager({
           product_type: editing.data.product_type,
           steam_product_id: editing.data.steam_product_id.trim() || undefined,
           launch_date: editing.data.launch_date
-        })
+        }, editPlatformIds.length > 0 ? editPlatformIds : undefined)
       }
       setEditing(null)
     } catch (err: any) {
@@ -842,6 +851,25 @@ export default function ProductManager({
                               onChange={(e) => updateEditData('steam_product_id', e.target.value)}
                               placeholder="Steam Product ID"
                             />
+                            <div className={styles.platformCheckboxes}>
+                              {platforms.map(platform => (
+                                <label key={platform.id} className={styles.platformCheckbox}>
+                                  <input
+                                    type="checkbox"
+                                    checked={editPlatformIds.includes(platform.id)}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setEditPlatformIds(prev => [...prev, platform.id])
+                                      } else {
+                                        setEditPlatformIds(prev => prev.filter(id => id !== platform.id))
+                                      }
+                                    }}
+                                  />
+                                  <span className={styles.platformColorDot} style={{ backgroundColor: platform.color_hex }} />
+                                  <span>{platform.name}</span>
+                                </label>
+                              ))}
+                            </div>
                             <div className={styles.editActions}>
                               <button className={styles.saveBtn} onClick={handleSaveEdit} disabled={loading}>
                                 {loading ? '...' : '✓'}

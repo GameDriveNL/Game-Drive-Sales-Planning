@@ -17,6 +17,9 @@ interface AddSaleModalProps {
   initialProductId?: string
   initialPlatformId?: string
   initialEndDate?: Date
+  initialSaleName?: string
+  initialDiscountPercentage?: number
+  initialSaleType?: string
 }
 
 // Database constraint: 'custom' | 'seasonal' | 'festival' | 'special'
@@ -31,11 +34,14 @@ export default function AddSaleModal({
   initialDate,
   initialProductId,
   initialPlatformId,
-  initialEndDate
+  initialEndDate,
+  initialSaleName,
+  initialDiscountPercentage,
+  initialSaleType
 }: AddSaleModalProps) {
   // Calculate initial duration from start and end dates
-  const initialDuration = initialDate && initialEndDate 
-    ? differenceInDays(initialEndDate, initialDate) + 1 
+  const initialDuration = initialDate && initialEndDate
+    ? differenceInDays(initialEndDate, initialDate) + 1
     : 7
 
   const [productId, setProductId] = useState(initialProductId || '')
@@ -45,13 +51,13 @@ export default function AddSaleModal({
   )
   const [duration, setDuration] = useState(initialDuration)
   const [endDate, setEndDate] = useState(
-    initialEndDate ? format(initialEndDate, 'yyyy-MM-dd') : 
+    initialEndDate ? format(initialEndDate, 'yyyy-MM-dd') :
     initialDate ? format(addDays(initialDate, initialDuration - 1), 'yyyy-MM-dd') :
     format(addDays(new Date(), 6), 'yyyy-MM-dd')
   )
-  const [discountPercentage, setDiscountPercentage] = useState(50)
-  const [saleName, setSaleName] = useState('')
-  const [saleType, setSaleType] = useState<SaleType>('custom')
+  const [discountPercentage, setDiscountPercentage] = useState(initialDiscountPercentage ?? 50)
+  const [saleName, setSaleName] = useState(initialSaleName || '')
+  const [saleType, setSaleType] = useState<SaleType>((initialSaleType as SaleType) || 'custom')
   const [goalType, setGoalType] = useState<'acquisition' | 'visibility' | 'event' | 'revenue' | ''>('')
   const [notes, setNotes] = useState('')
   // New fields matching client's Excel workflow
@@ -113,8 +119,10 @@ export default function AddSaleModal({
   }
 
   // Check duration warning (soft limit)
+  // Compare using exclusive day count (matching Excel DAYS formula / platform conventions)
   useEffect(() => {
-    if (selectedPlatform && duration > selectedPlatform.max_sale_days) {
+    const exclusiveDays = duration - 1
+    if (selectedPlatform && exclusiveDays > selectedPlatform.max_sale_days) {
       setDurationWarning(`Exceeds platform recommendation of ${selectedPlatform.max_sale_days} days`)
     } else {
       setDurationWarning(null)

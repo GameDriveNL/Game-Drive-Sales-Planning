@@ -600,7 +600,7 @@ export default function GanttChart(props: GanttChartProps) {
       saleName: sale.sale_name ?? null,
       discountPercentage: sale.discount_percentage ?? null,
       duration,
-      saleType: sale.sale_type || 'regular',
+      saleType: sale.sale_type || 'custom',
       platformId: sale.platform_id,
       platformName: sale.platform?.name || 'Unknown'
     })
@@ -632,28 +632,27 @@ export default function GanttChart(props: GanttChartProps) {
     })
   }, [])
   
-  // Handle paste from context menu - DIRECT CREATE without modal
+  // Handle paste from context menu - open AddSaleModal with prefilled data so user can review dates
   const handlePasteFromContextMenu = useCallback(() => {
     if (!clipboardSale || !onCreateSale || !contextMenu.visible) return
-    
+
     const startDate = format(days[contextMenu.dayIndex], 'yyyy-MM-dd')
     const endDate = format(addDays(days[contextMenu.dayIndex], clipboardSale.duration - 1), 'yyyy-MM-dd')
-    
-    // Pass directCreate: true to skip the modal and create immediately
+
+    // Open AddSaleModal with prefilled data (no directCreate) so user can verify dates & validation runs
     onCreateSale({
       productId: contextMenu.productId,
       platformId: contextMenu.platformId,
       startDate,
       endDate,
-      directCreate: true,
       saleName: clipboardSale.saleName ?? undefined,
       discountPercentage: clipboardSale.discountPercentage ?? undefined,
       saleType: clipboardSale.saleType
     })
-    
-    setCopyFeedback(`Pasted: ${clipboardSale.saleName || 'Sale'} at ${format(days[contextMenu.dayIndex], 'MMM d')}`)
+
+    setCopyFeedback(`Pasting: ${clipboardSale.saleName || 'Sale'} at ${format(days[contextMenu.dayIndex], 'MMM d')}`)
     setTimeout(() => setCopyFeedback(null), 2000)
-    
+
     // Close context menu
     setContextMenu(prev => ({ ...prev, visible: false }))
   }, [clipboardSale, onCreateSale, contextMenu, days])
