@@ -345,29 +345,37 @@ export default function CoverageReportPage() {
     setExporting(false)
   }
 
-  // CSV export — Flat list matching Bram's format (sorted by visitors desc, DD.MM.YYYY dates)
+  // CSV export — Exact match of Bram's PR report spreadsheet format
   const handleCSVExport = () => {
     setExporting(true)
     try {
       // Sort all items by visitors descending (flat, no grouping)
       const sorted = [...items].sort((a, b) => getVisitors(b) - getVisitors(a))
 
-      const headerRow = ['Date', 'Territory', 'Media Outlet', 'Tier', 'Type', 'Title', 'URL', 'Monthly Unique Visitors', 'Review Score', 'Quotes/Notes']
-      const csvRows: string[] = [headerRow.join(',')]
+      // Build title row: "Game Name - Campaign Name" or "Game Name" or "PR Report"
+      const gameName = selectedGame ? games.find(g => g.id === selectedGame)?.name || '' : ''
+      const campaignName = campaigns.length === 1 ? campaigns[0].name : ''
+      const titleText = gameName && campaignName ? `${gameName} - ${campaignName}` : gameName || 'PR Report'
+
+      // Bram's exact column structure
+      const csvRows: string[] = [
+        // Title row with empty trailing columns
+        `"${titleText.replace(/"/g, '""')}",,,,,`,
+        // Header row matching Bram's exact column names
+        'Date,Territory,Outlet Name,Type of Media,Link,Unique Monthly Visitors / Followers / Subscribers'
+      ]
 
       for (const item of sorted) {
         const visitors = getVisitors(item)
+        // Format visitors with commas (English style like Bram's "65,402,710") or "N/A"
+        const visitorsStr = visitors ? `"${visitors.toLocaleString('en-US')}"` : 'N/A'
         const row = [
           formatDateEU(item.publish_date),
           item.territory || item.outlet?.country || '',
           `"${(item.outlet?.name || '').replace(/"/g, '""')}"`,
-          item.outlet?.tier || '',
           item.coverage_type || '',
-          `"${(item.title || '').replace(/"/g, '""')}"`,
           `"${(item.url || '').replace(/"/g, '""')}"`,
-          visitors ? visitors.toLocaleString('nl-NL') : '',
-          item.review_score || '',
-          `"${(item.quotes || '').replace(/"/g, '""')}"`
+          visitorsStr
         ]
         csvRows.push(row.join(','))
       }
@@ -376,9 +384,12 @@ export default function CoverageReportPage() {
       const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
-      const clientName = selectedClient ? clients.find(c => c.id === selectedClient)?.name || 'coverage' : 'all-clients'
+
+      // Filename: "PR Report {Game Series} - {Game} - {Campaign}.csv" matching Bram's naming
+      const clientName = selectedClient ? clients.find(c => c.id === selectedClient)?.name || '' : ''
+      const fileTitle = [clientName, gameName, campaignName].filter(Boolean).join(' - ') || 'PR Report'
       link.href = url
-      link.download = `coverage-${clientName.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.csv`
+      link.download = `PR Report ${fileTitle}.csv`
       link.click()
       URL.revokeObjectURL(url)
     } catch (err) {
