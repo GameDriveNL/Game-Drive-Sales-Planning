@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
+import { inferTerritory } from '@/lib/territory'
 
 function getSupabase() {
   return getServerSupabase()
@@ -239,11 +240,12 @@ async function processInstagramPosts(
 
     const { data: existingOutlet } = await supabase
       .from('outlets')
-      .select('id')
+      .select('id, is_blacklisted')
       .eq('domain', creatorDomain)
       .limit(1)
 
     if (existingOutlet && existingOutlet.length > 0) {
+      if (existingOutlet[0].is_blacklisted) continue // Skip blacklisted outlets
       outletId = existingOutlet[0].id
     } else {
       const { data: newOutlet } = await supabase
@@ -270,7 +272,7 @@ async function processInstagramPosts(
       url: postUrl,
       publish_date: publishDate,
       coverage_type: isVideo ? 'video' : 'mention',
-      territory: null,
+      territory: 'International',
       source_type: 'instagram',
       source_metadata: {
         post_id: post.id || post.shortCode,

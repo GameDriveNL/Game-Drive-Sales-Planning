@@ -1025,6 +1025,18 @@ export default function SourcesPage() {
             }}>
               Clients &amp; Games
             </Link>
+            <Link href="/coverage/campaign-report" style={{
+              padding: '10px 20px', fontSize: '14px', fontWeight: 500, cursor: 'pointer',
+              color: '#64748b', textDecoration: 'none', marginBottom: '-2px'
+            }}>
+              Campaign Report
+            </Link>
+            <Link href="/coverage/guide" style={{
+              padding: '10px 20px', fontSize: '14px', fontWeight: 500, cursor: 'pointer',
+              color: '#64748b', textDecoration: 'none', marginBottom: '-2px'
+            }}>
+              Guide
+            </Link>
           </div>
 
           {/* Source Type Stats */}

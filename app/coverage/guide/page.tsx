@@ -29,12 +29,14 @@ const steps = [
   {
     number: 3,
     title: 'Configure Coverage Sources',
-    description: 'Sources determine where we look for coverage. Set up RSS feeds, web search, and social monitoring.',
+    description: 'Sources determine where we look for coverage. There are three discovery methods with different scopes.',
     details: [
       'Go to PR Coverage > Sources to manage all data sources',
-      'RSS Feeds: Add publication RSS URLs for automated monitoring (e.g., IGN, PC Gamer)',
-      'Web Search (Tavily): Enabled globally — searches the web for matching keywords',
-      'Social/Video (Apify): Monitors YouTube, Twitch, Reddit, Twitter/X for mentions',
+      'RSS Feeds: Monitor specific outlets by their RSS feed URL — only finds articles from those outlets (e.g., IGN, PC Gamer, Eurogamer)',
+      'Web Search (Tavily): Searches the entire web for matching keywords — discovers coverage from any outlet, even ones you haven\'t added yet',
+      'Social/Video (Apify): Monitors YouTube, Twitch, Reddit, Twitter/X, TikTok, Instagram for mentions and content',
+      'RSS gives you targeted monitoring of known outlets; Tavily casts a wide net to find unexpected coverage',
+      'New outlets found by Tavily or social scanners are auto-created in your Outlets list',
       'Each source can be enabled/disabled independently',
     ],
   },
@@ -65,17 +67,31 @@ const steps = [
   {
     number: 6,
     title: 'Review and Approve Coverage',
-    description: 'Not all discovered items are relevant. Review items and mark them as approved or dismissed.',
+    description: 'Not all discovered items are relevant. Review items and use filtering tools to manage quality.',
     details: [
       'Items start with an AI relevance score (1-100) to help prioritize',
-      'Click an item to see full details and the original article link',
+      'Articles flagged as AI-generated show an amber "AI" badge — use the AI Filter dropdown to show/hide them',
       'Approve relevant coverage to include it in client reports',
       'Dismiss false positives or irrelevant mentions',
+      'Use bulk actions: select multiple items, then bulk approve, reject, or delete',
       'Edit outlet information or coverage metadata if needed',
     ],
   },
   {
     number: 7,
+    title: 'Manage Blacklists & Quality',
+    description: 'Control what gets through the scanners with keyword and outlet blacklisting.',
+    details: [
+      'Keyword Blacklist: Go to Keywords and toggle a keyword to "Blacklist" type — scanners will skip articles containing these terms',
+      'Outlet Blacklist: Go to Outlets and click "Block" on any outlet — all scanners will skip coverage from that outlet entirely',
+      'Blocked outlets show a red "BLOCKED" label and a count appears in the stats bar',
+      'AI Detection: The AI enrichment automatically flags articles that appear to be AI-generated or AI-rewritten',
+      'Use the AI Filter on the Feed page to isolate AI-generated content for review',
+      'Blacklists apply to all future scans — existing items are not retroactively removed',
+    ],
+  },
+  {
+    number: 8,
     title: 'Generate Client Reports',
     description: 'Create professional reports to share with clients showing their media coverage.',
     details: [
@@ -88,7 +104,7 @@ const steps = [
     ],
   },
   {
-    number: 8,
+    number: 9,
     title: 'Share Live Coverage Feeds',
     description: 'Give clients a live, always-updated view of their coverage.',
     details: [

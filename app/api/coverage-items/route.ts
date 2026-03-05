@@ -28,6 +28,7 @@ export async function GET(request: NextRequest) {
     const sourceType = searchParams.get('source_type')
     const territory = searchParams.get('territory')
     const tier = searchParams.get('tier')
+    const isAiGenerated = searchParams.get('is_ai_generated')
     const search = searchParams.get('search')
     const dateFrom = searchParams.get('date_from')
     const dateTo = searchParams.get('date_to')
@@ -51,6 +52,8 @@ export async function GET(request: NextRequest) {
     if (approvalStatus) query = query.eq('approval_status', approvalStatus)
     if (sourceType) query = query.eq('source_type', sourceType)
     if (territory) query = query.eq('territory', territory)
+    if (isAiGenerated === 'true') query = query.eq('is_ai_generated', true)
+    else if (isAiGenerated === 'false') query = query.or('is_ai_generated.is.null,is_ai_generated.eq.false')
     if (search) query = query.ilike('title', `%${search}%`)
     if (dateFrom) query = query.gte('publish_date', dateFrom)
     if (dateTo) query = query.lte('publish_date', dateTo)
@@ -262,17 +265,37 @@ export async function PUT(request: NextRequest) {
   }
 }
 
-// DELETE - Delete a coverage item
+// DELETE - Delete coverage item(s) — single via ?id= or bulk via request body { bulk_ids: [...] }
 export async function DELETE(request: NextRequest) {
   try {
     const supabase = getSupabase()
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
 
+    // Bulk delete via request body
     if (!id) {
-      return NextResponse.json({ error: 'Item ID is required' }, { status: 400 })
+      try {
+        const body = await request.json()
+        if (body.bulk_ids && Array.isArray(body.bulk_ids) && body.bulk_ids.length > 0) {
+          const { error } = await supabase
+            .from('coverage_items')
+            .delete()
+            .in('id', body.bulk_ids)
+
+          if (error) {
+            console.error('Error bulk deleting coverage items:', error)
+            return NextResponse.json({ error: error.message }, { status: 500 })
+          }
+
+          return NextResponse.json({ success: true, deleted: body.bulk_ids.length })
+        }
+      } catch {
+        // No body or invalid JSON — fall through to error
+      }
+      return NextResponse.json({ error: 'Item ID or bulk_ids required' }, { status: 400 })
     }
 
+    // Single delete via query param
     const { error } = await supabase
       .from('coverage_items')
       .delete()

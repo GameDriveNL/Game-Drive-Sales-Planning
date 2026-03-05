@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
+import { inferTerritory } from '@/lib/territory'
 
 function getSupabase() {
   return getServerSupabase()
@@ -252,11 +253,12 @@ async function processRedditPosts(
 
     const { data: existingOutlet } = await supabase
       .from('outlets')
-      .select('id')
+      .select('id, is_blacklisted')
       .eq('domain', subredditDomain)
       .limit(1)
 
     if (existingOutlet && existingOutlet.length > 0) {
+      if (existingOutlet[0].is_blacklisted) continue // Skip blacklisted outlets
       outletId = existingOutlet[0].id
     } else {
       const { data: newOutlet } = await supabase
@@ -286,7 +288,7 @@ async function processRedditPosts(
       url,
       publish_date: publishDate,
       coverage_type: coverageType,
-      territory: null,
+      territory: 'International',
       source_type: 'reddit',
       source_metadata: {
         post_id: post.id,

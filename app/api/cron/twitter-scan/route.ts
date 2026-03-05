@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
+import { inferTerritory } from '@/lib/territory'
 
 function getSupabase() {
   return getServerSupabase()
@@ -246,11 +247,12 @@ async function processTwitterPosts(
 
     const { data: existingOutlet } = await supabase
       .from('outlets')
-      .select('id')
+      .select('id, is_blacklisted')
       .eq('domain', authorDomain)
       .limit(1)
 
     if (existingOutlet && existingOutlet.length > 0) {
+      if (existingOutlet[0].is_blacklisted) continue // Skip blacklisted outlets
       outletId = existingOutlet[0].id
     } else {
       const { data: newOutlet } = await supabase
@@ -278,7 +280,7 @@ async function processTwitterPosts(
       publish_date: publishDate,
       coverage_type: 'mention',
       monthly_unique_visitors: followers,
-      territory: tweet.lang || null,
+      territory: inferTerritory(null, null, tweet.lang) || 'International',
       source_type: 'twitter',
       source_metadata: {
         tweet_id: tweet.id,

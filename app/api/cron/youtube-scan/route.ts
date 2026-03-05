@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
+import { inferTerritory } from '@/lib/territory'
 
 function getSupabase() {
   return getServerSupabase()
@@ -116,15 +117,18 @@ export async function GET(request: NextRequest) {
             ? channelUrl.replace('https://', '').replace('http://', '')
             : `youtube.com/@${video.channelUsername || channelName}`
           let outletId: string | null = null
+          let outletCountry: string | null = null
 
           const { data: existingOutlet } = await supabase
             .from('outlets')
-            .select('id')
+            .select('id, is_blacklisted, country')
             .ilike('domain', `%${channelDomain}%`)
             .limit(1)
 
           if (existingOutlet && existingOutlet.length > 0) {
+            if (existingOutlet[0].is_blacklisted) continue // Skip blacklisted outlets
             outletId = existingOutlet[0].id
+            outletCountry = existingOutlet[0].country
           } else {
             const { data: newOutlet } = await supabase
               .from('outlets')
@@ -140,6 +144,10 @@ export async function GET(request: NextRequest) {
             if (newOutlet) outletId = newOutlet.id
           }
 
+          // Infer territory from video language, outlet country, or channel metadata
+          const videoLang = video.defaultLanguage || video.language || null
+          const territory = inferTerritory(null, outletCountry, videoLang)
+
           await supabase.from('coverage_items').insert({
             client_id: term.clientId,
             game_id: term.gameId,
@@ -149,7 +157,7 @@ export async function GET(request: NextRequest) {
             publish_date: publishDate,
             coverage_type: 'video',
             monthly_unique_visitors: subscribers,
-            territory: null,
+            territory,
             source_type: 'youtube',
             source_metadata: {
               video_id: video.id,
@@ -162,6 +170,7 @@ export async function GET(request: NextRequest) {
               comments: video.commentsCount || 0,
               duration: video.duration || null,
               hashtags: video.hashtags || [],
+              language: videoLang,
             },
             approval_status: 'pending_review',
             discovered_at: new Date().toISOString(),

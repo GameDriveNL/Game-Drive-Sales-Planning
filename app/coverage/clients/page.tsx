@@ -143,15 +143,16 @@ export default function CoverageClientsPage() {
       if (!res.ok) throw new Error('Failed to create game')
       const game = await res.json()
 
-      // If PR tracking is enabled, auto-create the game name as a keyword
+      // If PR tracking is enabled, auto-create the game name as a keyword + trigger backfill
       if (newGamePREnabled) {
         await autoCreateKeywords(newGameClientId, game.id, newGameName.trim())
+        triggerBackfill(game.id)
       }
 
       setNewGameName('')
       setNewGameSteamAppId('')
       setShowAddGame(false)
-      setActionMessage({ text: `Game created${newGamePREnabled ? ' with PR tracking' : ''}`, type: 'success' })
+      setActionMessage({ text: `Game created${newGamePREnabled ? ' with PR tracking — backfill started' : ''}`, type: 'success' })
       fetchData()
     } catch {
       setActionMessage({ text: 'Failed to create game', type: 'error' })
@@ -176,6 +177,15 @@ export default function CoverageClientsPage() {
     }
   }
 
+  // Fire-and-forget historical backfill when PR tracking is first enabled
+  const triggerBackfill = (gameId: string) => {
+    fetch('/api/coverage-backfill', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ game_id: gameId, max_queries: 20 })
+    }).catch(err => console.error('Backfill trigger failed:', err))
+  }
+
   const handleTogglePR = async (game: GameWithClient) => {
     const newValue = !game.pr_tracking_enabled
     try {
@@ -186,12 +196,16 @@ export default function CoverageClientsPage() {
       })
       if (!res.ok) throw new Error('Failed to update game')
 
-      // If enabling PR and no keywords exist, auto-create game name keyword
+      // If enabling PR and no keywords exist, auto-create game name keyword + backfill
       if (newValue && (!game.keyword_count || game.keyword_count === 0)) {
         await autoCreateKeywords(game.client_id, game.id, game.name)
-        setActionMessage({ text: `PR tracking enabled for ${game.name} — keyword added`, type: 'success' })
+        triggerBackfill(game.id)
+        setActionMessage({ text: `PR tracking enabled for ${game.name} — keyword added, backfill started`, type: 'success' })
+      } else if (newValue) {
+        triggerBackfill(game.id)
+        setActionMessage({ text: `PR tracking enabled for ${game.name} — backfill started`, type: 'success' })
       } else {
-        setActionMessage({ text: `PR tracking ${newValue ? 'enabled' : 'disabled'} for ${game.name}`, type: 'success' })
+        setActionMessage({ text: `PR tracking disabled for ${game.name}`, type: 'success' })
       }
 
       fetchData()
@@ -293,6 +307,8 @@ export default function CoverageClientsPage() {
             <Link href="/coverage/timeline" style={{ padding: '10px 20px', fontSize: '14px', fontWeight: 500, color: '#64748b', textDecoration: 'none', marginBottom: '-2px' }}>Timeline</Link>
             <div style={{ padding: '10px 20px', fontSize: '14px', fontWeight: 600, color: '#2563eb', borderBottom: '2px solid #2563eb', marginBottom: '-2px' }}>Clients & Games</div>
             <Link href="/coverage/report" style={{ padding: '10px 20px', fontSize: '14px', fontWeight: 500, color: '#64748b', textDecoration: 'none', marginBottom: '-2px' }}>Export</Link>
+            <Link href="/coverage/campaign-report" style={{ padding: '10px 20px', fontSize: '14px', fontWeight: 500, color: '#64748b', textDecoration: 'none', marginBottom: '-2px' }}>Campaign Report</Link>
+            <Link href="/coverage/guide" style={{ padding: '10px 20px', fontSize: '14px', fontWeight: 500, color: '#64748b', textDecoration: 'none', marginBottom: '-2px' }}>Guide</Link>
           </div>
 
           {/* Action message */}

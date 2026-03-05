@@ -233,6 +233,22 @@ export default function CoveragePage() {
     }
   }
 
+  const handleToggleBlacklist = async (outlet: Outlet) => {
+    const newVal = !outlet.is_blacklisted
+    // Optimistic update
+    setOutlets(prev => prev.map(o => o.id === outlet.id ? { ...o, is_blacklisted: newVal } : o))
+    try {
+      await fetch('/api/outlets', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: outlet.id, is_blacklisted: newVal })
+      })
+    } catch {
+      // Rollback on error
+      setOutlets(prev => prev.map(o => o.id === outlet.id ? { ...o, is_blacklisted: outlet.is_blacklisted } : o))
+    }
+  }
+
   const handleCSVImport = async () => {
     if (!csvText.trim()) return
     setImporting(true)
@@ -490,10 +506,22 @@ export default function CoveragePage() {
             }}>
               Clients &amp; Games
             </Link>
+            <Link href="/coverage/campaign-report" style={{
+              padding: '10px 20px', fontSize: '14px', fontWeight: 500, cursor: 'pointer',
+              color: '#64748b', textDecoration: 'none', marginBottom: '-2px'
+            }}>
+              Campaign Report
+            </Link>
+            <Link href="/coverage/guide" style={{
+              padding: '10px 20px', fontSize: '14px', fontWeight: 500, cursor: 'pointer',
+              color: '#64748b', textDecoration: 'none', marginBottom: '-2px'
+            }}>
+              Guide
+            </Link>
           </div>
 
           {/* Stats summary */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', marginBottom: '24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '12px', marginBottom: '24px' }}>
             <div style={{ backgroundColor: 'white', borderRadius: '10px', padding: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
               <div style={{ fontSize: '24px', fontWeight: 700, color: '#1e293b' }}>{totalCount}</div>
               <div style={{ fontSize: '12px', color: '#64748b' }}>Total Outlets</div>
@@ -513,6 +541,20 @@ export default function CoveragePage() {
                 </div>
               )
             })}
+            {(() => {
+              const blockedCount = outlets.filter(o => o.is_blacklisted).length
+              return blockedCount > 0 ? (
+                <div style={{
+                  backgroundColor: '#fef2f2',
+                  borderRadius: '10px',
+                  padding: '16px',
+                  border: '1px solid #fecaca'
+                }}>
+                  <div style={{ fontSize: '24px', fontWeight: 700, color: '#991b1b' }}>{blockedCount}</div>
+                  <div style={{ fontSize: '12px', color: '#991b1b', opacity: 0.8 }}>Blocked</div>
+                </div>
+              ) : null
+            })()}
           </div>
 
           {/* Filters */}
@@ -666,10 +708,16 @@ export default function CoveragePage() {
                         key={outlet.id}
                         style={{
                           borderBottom: '1px solid #f1f5f9',
-                          backgroundColor: i % 2 === 0 ? 'white' : '#fafbfc'
+                          backgroundColor: outlet.is_blacklisted ? '#fef2f2' : (i % 2 === 0 ? 'white' : '#fafbfc'),
+                          opacity: outlet.is_blacklisted ? 0.7 : 1
                         }}
                       >
-                        <td style={{ padding: '10px 16px', fontWeight: 500, color: '#1e293b' }}>
+                        <td style={{ padding: '10px 16px', fontWeight: 500, color: outlet.is_blacklisted ? '#991b1b' : '#1e293b' }}>
+                          {outlet.is_blacklisted && (
+                            <span style={{ marginRight: '6px', fontSize: '11px', color: '#dc2626' }} title="Blocked — scanner will skip this outlet">
+                              BLOCKED
+                            </span>
+                          )}
                           {outlet.name}
                           {outlet.rss_feed_url && (
                             <span style={{ marginLeft: '6px', fontSize: '11px', color: '#f97316' }} title="RSS feed configured">
@@ -765,6 +813,21 @@ export default function CoveragePage() {
                         {canEdit && (
                           <td style={{ padding: '10px 16px', textAlign: 'right' }}>
                             <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                              <button
+                                onClick={() => handleToggleBlacklist(outlet)}
+                                title={outlet.is_blacklisted ? 'Unblock this outlet — scanners will include it again' : 'Block this outlet — scanners will skip it'}
+                                style={{
+                                  padding: '4px 10px',
+                                  backgroundColor: outlet.is_blacklisted ? '#fef2f2' : 'white',
+                                  color: outlet.is_blacklisted ? '#16a34a' : '#dc2626',
+                                  border: `1px solid ${outlet.is_blacklisted ? '#bbf7d0' : '#fecaca'}`,
+                                  borderRadius: '4px',
+                                  fontSize: '12px',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                {outlet.is_blacklisted ? 'Unblock' : 'Block'}
+                              </button>
                               <button
                                 onClick={() => openEditForm(outlet)}
                                 style={{
@@ -1023,6 +1086,35 @@ export default function CoveragePage() {
             <p style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '16px' }}>
               Header row is optional. Tier will be auto-detected from traffic if not provided. Duplicate domains are skipped.
             </p>
+
+            <div style={{ marginBottom: '8px' }}>
+              <label
+                style={{
+                  display: 'inline-block', padding: '6px 14px', backgroundColor: '#f1f5f9',
+                  color: '#475569', border: '1px solid #e2e8f0', borderRadius: '6px',
+                  fontSize: '12px', cursor: 'pointer', fontWeight: 500
+                }}
+              >
+                Choose CSV File
+                <input
+                  type="file"
+                  accept=".csv,.txt"
+                  style={{ display: 'none' }}
+                  onChange={e => {
+                    const file = e.target.files?.[0]
+                    if (!file) return
+                    const reader = new FileReader()
+                    reader.onload = ev => {
+                      const text = ev.target?.result
+                      if (typeof text === 'string') setCsvText(text)
+                    }
+                    reader.readAsText(file)
+                    e.target.value = ''
+                  }}
+                />
+              </label>
+              <span style={{ fontSize: '12px', color: '#94a3b8', marginLeft: '8px' }}>or paste below</span>
+            </div>
 
             <textarea
               value={csvText}

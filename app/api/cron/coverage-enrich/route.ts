@@ -3,6 +3,7 @@ import { getServerSupabase } from '@/lib/supabase'
 import { GoogleGenAI } from '@google/genai'
 import { sendDiscordNotification } from '@/lib/discord'
 import { getGeminiConfig } from '@/lib/gemini-config'
+import { inferTerritory } from '@/lib/territory'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -158,8 +159,24 @@ COVERAGE TYPE — Choose the most specific type that fits. One of: ${COVERAGE_TY
 
 SENTIMENT: One of: ${SENTIMENT_VALUES.join(', ')}
 
+AI-GENERATED DETECTION:
+Also determine if this article appears to be AI-generated or AI-rewritten (not written by a human journalist). Look for signs like:
+- Generic, templated writing style with no original insights or quotes
+- Repetitive phrasing, filler content, or suspiciously perfect grammar
+- No byline, "AI Reporter", or known AI content farm domain
+- Content that reads like a press release rewrite with no editorial voice
+- Extremely formulaic structure (especially short "news" posts that just restate a press release)
+Set is_ai_generated to true ONLY if you are fairly confident. When uncertain, set false.
+
+TERRITORY DETECTION:
+Determine the territory/region of this article based on the outlet name, URL domain, and language.
+Use proper country names: "Netherlands", "Germany", "France", "United States", "Japan", etc.
+For English-language global outlets (IGN, GameSpot, etc.), use "International".
+For outlets clearly from a specific country (gamer.nl → Netherlands, gamestar.de → Germany), use that country.
+If you cannot determine the territory, use null.
+
 Respond with ONLY valid JSON:
-{"relevance_score": <number>, "relevance_reasoning": "<string>", "suggested_type": "<string>", "sentiment": "<string>"}`
+{"relevance_score": <number>, "relevance_reasoning": "<string>", "suggested_type": "<string>", "sentiment": "<string>", "is_ai_generated": <boolean>, "territory": "<string or null>"}`
 
         const response = await ai.models.generateContent({
           model: gemini.modelId,
@@ -180,11 +197,29 @@ Respond with ONLY valid JSON:
           else approvalStatus = 'pending_review'
         }
 
+        const isAiGenerated = parsed.is_ai_generated === true
+
+        // Territory: prefer scanner-set value, then AI suggestion, then infer from outlet domain
+        let territory = item.territory
+        if (!territory && parsed.territory && typeof parsed.territory === 'string') {
+          territory = parsed.territory
+        }
+        if (!territory) {
+          const outletDomain = String(outlet?.domain || '')
+          territory = inferTerritory(outletDomain)
+        }
+
         const updates: Record<string, unknown> = {
           relevance_score: score,
           relevance_reasoning: String(parsed.relevance_reasoning || ''),
           sentiment,
+          is_ai_generated: isAiGenerated,
           updated_at: new Date().toISOString(),
+        }
+
+        // Only update territory if we have a value and the item doesn't already have one
+        if (territory && !item.territory) {
+          updates.territory = territory
         }
 
         // Always update coverage_type with AI suggestion unless manually set

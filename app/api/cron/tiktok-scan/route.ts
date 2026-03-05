@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
+import { inferTerritory } from '@/lib/territory'
 
 function getSupabase() {
   return getServerSupabase()
@@ -297,11 +298,12 @@ async function processTikTokPosts(
 
     const { data: existingOutlet } = await supabase
       .from('outlets')
-      .select('id')
+      .select('id, is_blacklisted')
       .eq('domain', creatorDomain)
       .limit(1)
 
     if (existingOutlet && existingOutlet.length > 0) {
+      if (existingOutlet[0].is_blacklisted) continue // Skip blacklisted outlets
       outletId = existingOutlet[0].id
     } else {
       const { data: newOutlet } = await supabase
@@ -330,7 +332,7 @@ async function processTikTokPosts(
       publish_date: publishDate,
       coverage_type: 'video',
       monthly_unique_visitors: followers,
-      territory: video.textLanguage || null,
+      territory: inferTerritory(null, null, video.textLanguage) || 'International',
       source_type: 'tiktok',
       source_metadata: {
         video_id: video.id,

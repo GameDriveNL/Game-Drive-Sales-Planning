@@ -236,6 +236,7 @@ export interface Outlet {
   scan_frequency: ScanFrequency
   traffic_last_updated?: string | null
   is_active: boolean
+  is_blacklisted: boolean
   created_at: string
   updated_at: string
 }
@@ -283,6 +284,7 @@ export interface CoverageItem {
   // AI scoring
   relevance_score?: number | null
   relevance_reasoning?: string | null
+  is_ai_generated?: boolean | null
 
   // Approval workflow
   approval_status: ApprovalStatus

@@ -25,12 +25,20 @@
       "schedule": "0 */6 * * *"
     },
     {
-      "path": "/api/cron/twitch-scan",
+      "path": "/api/cron/reddit-scan",
       "schedule": "0 */6 * * *"
     },
     {
-      "path": "/api/cron/reddit-scan",
+      "path": "/api/cron/twitter-scan",
       "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/cron/tiktok-scan",
+      "schedule": "0 */12 * * *"
+    },
+    {
+      "path": "/api/cron/instagram-scan",
+      "schedule": "0 */12 * * *"
     },
     {
       "path": "/api/cron/coverage-dedup",

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { tavily } from '@tavily/core'
+import { inferTerritory } from '@/lib/territory'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -260,10 +261,11 @@ export async function GET(request: Request) {
                 if (!outletId) {
                   const { data: outlet } = await supabase
                     .from('outlets')
-                    .select('id, monthly_unique_visitors')
+                    .select('id, monthly_unique_visitors, is_blacklisted')
                     .eq('domain', resultDomain)
                     .single()
                   if (outlet) {
+                    if (outlet.is_blacklisted) continue // Skip blacklisted outlets
                     outletId = outlet.id
                   } else {
                     // Auto-create outlet from domain
@@ -289,6 +291,13 @@ export async function GET(request: Request) {
                 ? result.publishedDate.split('T')[0]
                 : new Date().toISOString().split('T')[0]
 
+              // Infer territory from domain TLD
+              let territory: string | null = null
+              try {
+                const resultDomainForTerritory = new URL(result.url).hostname.replace('www.', '')
+                territory = inferTerritory(resultDomainForTerritory)
+              } catch { /* ignore */ }
+
               // Don't set relevance_score — leave null so coverage-enrich cron
               // picks it up for AI scoring with Gemini
               newItems.push({
@@ -299,6 +308,7 @@ export async function GET(request: Request) {
                 url: normalizedUrl,
                 publish_date: publishDate,
                 coverage_type: 'news', // Gemini will refine this
+                territory,
                 relevance_score: null, // Left null for AI enrichment
                 relevance_reasoning: null, // AI will fill this
                 approval_status: 'pending_review', // AI will upgrade or reject

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import Parser from 'rss-parser'
+import { inferTerritory } from '@/lib/territory'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -343,10 +344,11 @@ export async function GET(request: Request) {
             if (!outletId) {
               const { data: outlet } = await supabase
                 .from('outlets')
-                .select('id, monthly_unique_visitors')
+                .select('id, monthly_unique_visitors, is_blacklisted')
                 .eq('domain', articleDomain)
                 .single()
               if (outlet) {
+                if (outlet.is_blacklisted) continue // Skip blacklisted outlets
                 outletId = outlet.id
                 outletVisitors = outlet.monthly_unique_visitors
               } else {
@@ -368,6 +370,13 @@ export async function GET(request: Request) {
             }
           } catch { /* ignore outlet lookup errors */ }
 
+          // Infer territory from article domain TLD
+          let territory: string | null = null
+          try {
+            const articleDomainForTerritory = new URL(normalizedUrl).hostname.replace('www.', '')
+            territory = inferTerritory(articleDomainForTerritory)
+          } catch { /* ignore */ }
+
           // Don't set relevance_score here — leave null so coverage-enrich cron
           // picks it up for AI scoring with Gemini. Store keyword match info in metadata.
           newItems.push({
@@ -378,6 +387,7 @@ export async function GET(request: Request) {
             url: normalizedUrl,
             publish_date: entry.isoDate ? entry.isoDate.split('T')[0] : null,
             coverage_type: 'news', // Default — Gemini will refine this
+            territory,
             monthly_unique_visitors: outletVisitors,
             sentiment: null,
             relevance_score: null, // Left null for AI enrichment

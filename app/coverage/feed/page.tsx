@@ -25,6 +25,7 @@ interface CoverageItem {
   sentiment: string | null
   relevance_score: number | null
   relevance_reasoning: string | null
+  is_ai_generated: boolean | null
   approval_status: string
   source_type: string
   campaign_section: string | null
@@ -111,6 +112,7 @@ export default function CoverageFeedPage() {
   const [tierFilter, setTierFilter] = useState('')
   const [territoryFilter, setTerritoryFilter] = useState('')
   const [campaignFilter, setCampaignFilter] = useState('')
+  const [aiFilter, setAiFilter] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [search, setSearch] = useState('')
@@ -169,6 +171,7 @@ export default function CoverageFeedPage() {
     if (dateTo) params.set('date_to', dateTo)
     if (debouncedSearch) params.set('search', debouncedSearch)
     if (hideDuplicates) params.set('hide_duplicates', 'true')
+    if (aiFilter) params.set('is_ai_generated', aiFilter)
     params.set('sort_by', sortBy)
     params.set('sort_dir', sortDir)
     params.set('limit', '200')
@@ -184,7 +187,7 @@ export default function CoverageFeedPage() {
       console.error('Failed to fetch coverage items:', err)
     }
     setIsLoading(false)
-  }, [clientFilter, gameFilter, typeFilter, sentimentFilter, approvalFilter, sourceFilter, tierFilter, territoryFilter, campaignFilter, dateFrom, dateTo, debouncedSearch, sortBy, sortDir, viewMode, hideDuplicates])
+  }, [clientFilter, gameFilter, typeFilter, sentimentFilter, approvalFilter, sourceFilter, tierFilter, territoryFilter, campaignFilter, aiFilter, dateFrom, dateTo, debouncedSearch, sortBy, sortDir, viewMode, hideDuplicates])
 
   useEffect(() => {
     if (canView) fetchItems()
@@ -215,6 +218,24 @@ export default function CoverageFeedPage() {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bulk_ids: Array.from(selected), approval_status: status })
+    })
+    setSelected(new Set())
+    fetchItems()
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Delete this coverage item? This cannot be undone.')) return
+    await fetch(`/api/coverage-items?id=${id}`, { method: 'DELETE' })
+    fetchItems()
+  }
+
+  const handleBulkDelete = async () => {
+    if (selected.size === 0) return
+    if (!confirm(`Delete ${selected.size} coverage item${selected.size > 1 ? 's' : ''}? This cannot be undone.`)) return
+    await fetch('/api/coverage-items', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bulk_ids: Array.from(selected) })
     })
     setSelected(new Set())
     fetchItems()
@@ -439,6 +460,12 @@ export default function CoverageFeedPage() {
                 <option value="">All Sources</option>
                 {SOURCE_TYPES.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
+              <select value={aiFilter} onChange={e => setAiFilter(e.target.value)}
+                style={{ padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px', backgroundColor: aiFilter === 'true' ? '#fef2f2' : 'white' }}>
+                <option value="">AI Filter</option>
+                <option value="true">AI-Generated Only</option>
+                <option value="false">Human-Written Only</option>
+              </select>
             </div>
             <div style={{ display: 'flex', gap: '10px', marginTop: '10px', alignItems: 'center' }}>
               <label style={{ fontSize: '12px', color: '#64748b' }}>Date:</label>
@@ -452,12 +479,12 @@ export default function CoverageFeedPage() {
                 <option value="">All Campaigns</option>
                 {filteredCampaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
-              {(clientFilter || gameFilter || typeFilter || sentimentFilter || approvalFilter || sourceFilter || tierFilter || dateFrom || dateTo || search || campaignFilter) && (
+              {(clientFilter || gameFilter || typeFilter || sentimentFilter || approvalFilter || sourceFilter || tierFilter || dateFrom || dateTo || search || campaignFilter || aiFilter) && (
                 <button
                   onClick={() => {
                     setClientFilter(''); setGameFilter(''); setTypeFilter(''); setSentimentFilter('')
                     setApprovalFilter(''); setSourceFilter(''); setTierFilter(''); setTerritoryFilter('')
-                    setDateFrom(''); setDateTo(''); setSearch(''); setCampaignFilter('')
+                    setDateFrom(''); setDateTo(''); setSearch(''); setCampaignFilter(''); setAiFilter('')
                   }}
                   style={{ padding: '6px 12px', fontSize: '12px', color: '#ef4444', backgroundColor: 'white', border: '1px solid #fecaca', borderRadius: '6px', cursor: 'pointer' }}
                 >
@@ -488,6 +515,13 @@ export default function CoverageFeedPage() {
                 style={{ padding: '5px 12px', backgroundColor: '#dc2626', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: 500 }}
               >
                 Reject All
+              </button>
+              <div style={{ width: '1px', height: '20px', backgroundColor: '#cbd5e1' }} />
+              <button
+                onClick={handleBulkDelete}
+                style={{ padding: '5px 12px', backgroundColor: '#7f1d1d', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: 500 }}
+              >
+                Delete All
               </button>
               <button
                 onClick={() => setSelected(new Set())}
@@ -611,6 +645,22 @@ export default function CoverageFeedPage() {
                             >
                               {item.title}
                             </a>
+                            {item.is_ai_generated && (
+                              <span style={{
+                                display: 'inline-block',
+                                marginLeft: '6px',
+                                padding: '1px 6px',
+                                backgroundColor: '#fef3c7',
+                                color: '#92400e',
+                                border: '1px solid #fde68a',
+                                borderRadius: '4px',
+                                fontSize: '10px',
+                                fontWeight: 600,
+                                verticalAlign: 'middle'
+                              }} title="Detected as AI-generated content">
+                                AI
+                              </span>
+                            )}
                             {item.url && (
                               <a
                                 href={item.url}
@@ -700,36 +750,45 @@ export default function CoverageFeedPage() {
                           </td>
                           {canEdit && (
                             <td style={{ padding: '8px 12px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                              {item.approval_status === 'pending_review' ? (
-                                <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
+                              <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
+                                {item.approval_status === 'pending_review' ? (
+                                  <>
+                                    <button
+                                      onClick={() => handleApprove(item.id)}
+                                      style={{ padding: '3px 8px', backgroundColor: '#dcfce7', color: '#166534', border: '1px solid #86efac', borderRadius: '4px', fontSize: '11px', cursor: 'pointer', fontWeight: 500 }}
+                                    >
+                                      Approve
+                                    </button>
+                                    <button
+                                      onClick={() => handleReject(item.id)}
+                                      style={{ padding: '3px 8px', backgroundColor: '#fee2e2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: '4px', fontSize: '11px', cursor: 'pointer', fontWeight: 500 }}
+                                    >
+                                      Reject
+                                    </button>
+                                  </>
+                                ) : item.approval_status === 'rejected' ? (
                                   <button
                                     onClick={() => handleApprove(item.id)}
-                                    style={{ padding: '3px 8px', backgroundColor: '#dcfce7', color: '#166534', border: '1px solid #86efac', borderRadius: '4px', fontSize: '11px', cursor: 'pointer', fontWeight: 500 }}
+                                    style={{ padding: '3px 8px', backgroundColor: 'white', color: '#475569', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '11px', cursor: 'pointer' }}
                                   >
-                                    Approve
+                                    Restore
                                   </button>
+                                ) : (
                                   <button
                                     onClick={() => handleReject(item.id)}
-                                    style={{ padding: '3px 8px', backgroundColor: '#fee2e2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: '4px', fontSize: '11px', cursor: 'pointer', fontWeight: 500 }}
+                                    style={{ padding: '3px 8px', backgroundColor: 'white', color: '#94a3b8', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '11px', cursor: 'pointer' }}
                                   >
                                     Reject
                                   </button>
-                                </div>
-                              ) : item.approval_status === 'rejected' ? (
+                                )}
                                 <button
-                                  onClick={() => handleApprove(item.id)}
-                                  style={{ padding: '3px 8px', backgroundColor: 'white', color: '#475569', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '11px', cursor: 'pointer' }}
+                                  onClick={() => handleDelete(item.id)}
+                                  title="Delete permanently"
+                                  style={{ padding: '3px 6px', backgroundColor: 'white', color: '#94a3b8', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '11px', cursor: 'pointer', lineHeight: 1 }}
                                 >
-                                  Restore
+                                  ×
                                 </button>
-                              ) : (
-                                <button
-                                  onClick={() => handleReject(item.id)}
-                                  style={{ padding: '3px 8px', backgroundColor: 'white', color: '#94a3b8', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '11px', cursor: 'pointer' }}
-                                >
-                                  Reject
-                                </button>
-                              )}
+                              </div>
                             </td>
                           )}
                         </tr>

@@ -187,7 +187,23 @@ export default function CoverageReportPage() {
     return sortedKeys.map(key => ({ section: key, items: groups[key] }))
   })()
 
-  // Excel export
+  // Format date as DD.MM.YYYY (European/Dutch format)
+  function formatDateEU(dateStr: string | null): string {
+    if (!dateStr) return ''
+    const d = new Date(dateStr + 'T00:00:00')
+    if (isNaN(d.getTime())) return dateStr
+    const day = String(d.getDate()).padStart(2, '0')
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const year = d.getFullYear()
+    return `${day}.${month}.${year}`
+  }
+
+  // Get visitors value for an item (prefer outlet, fallback to item)
+  function getVisitors(item: CoverageItem): number {
+    return item.outlet?.monthly_unique_visitors || item.monthly_unique_visitors || 0
+  }
+
+  // Excel export — Full report with summary + grouped coverage
   const handleExcelExport = () => {
     setExporting(true)
     try {
@@ -199,8 +215,8 @@ export default function CoverageReportPage() {
         [],
         ['Client', selectedClient ? clients.find(c => c.id === selectedClient)?.name || '' : 'All Clients'],
         ['Game', selectedGame ? games.find(g => g.id === selectedGame)?.name || '' : 'All Games'],
-        ['Date Range', dateFrom && dateTo ? `${dateFrom} to ${dateTo}` : dateFrom || dateTo || 'All Time'],
-        ['Generated', new Date().toLocaleDateString()],
+        ['Date Range', dateFrom && dateTo ? `${formatDateEU(dateFrom)} - ${formatDateEU(dateTo)}` : dateFrom ? `From ${formatDateEU(dateFrom)}` : dateTo ? `Until ${formatDateEU(dateTo)}` : 'All Time'],
+        ['Generated', formatDateEU(new Date().toISOString().split('T')[0])],
         [],
         ['Summary Statistics'],
         ['Total Pieces of Coverage', summary?.total_pieces || 0],
@@ -223,25 +239,27 @@ export default function CoverageReportPage() {
       summaryWs['!cols'] = [{ wch: 30 }, { wch: 20 }]
       XLSX.utils.book_append_sheet(wb, summaryWs, 'Summary')
 
-      // Coverage items sheet - matching their spreadsheet format
+      // Coverage items sheet — sorted by visitors desc within each campaign group
       const headerRow = ['Date', 'Territory', 'Media Outlet', 'Tier', 'Type', 'Title', 'URL', 'Monthly Unique Visitors', 'Review Score', 'Quotes/Notes', 'Campaign Section']
       const rows: unknown[][] = [headerRow]
 
       for (const group of groupedItems) {
-        // Section header row
         rows.push([])
         rows.push([group.section, '', '', '', '', '', '', '', '', '', ''])
 
-        for (const item of group.items) {
+        // Sort within group by visitors descending
+        const sorted = [...group.items].sort((a, b) => getVisitors(b) - getVisitors(a))
+
+        for (const item of sorted) {
           rows.push([
-            item.publish_date || '',
+            formatDateEU(item.publish_date),
             item.territory || item.outlet?.country || '',
             item.outlet?.name || '',
             item.outlet?.tier || '',
             item.coverage_type || '',
             item.title,
             item.url,
-            item.outlet?.monthly_unique_visitors || item.monthly_unique_visitors || '',
+            getVisitors(item) || '',
             item.review_score || '',
             item.quotes || '',
             item.campaign_section || item.campaign?.name || ''
@@ -270,6 +288,48 @@ export default function CoverageReportPage() {
       XLSX.writeFile(wb, fileName)
     } catch (err) {
       console.error('Excel export failed:', err)
+    }
+    setExporting(false)
+  }
+
+  // CSV export — Flat list matching Bram's format (sorted by visitors desc, DD.MM.YYYY dates)
+  const handleCSVExport = () => {
+    setExporting(true)
+    try {
+      // Sort all items by visitors descending (flat, no grouping)
+      const sorted = [...items].sort((a, b) => getVisitors(b) - getVisitors(a))
+
+      const headerRow = ['Date', 'Territory', 'Media Outlet', 'Tier', 'Type', 'Title', 'URL', 'Monthly Unique Visitors', 'Review Score', 'Quotes/Notes']
+      const csvRows: string[] = [headerRow.join(',')]
+
+      for (const item of sorted) {
+        const visitors = getVisitors(item)
+        const row = [
+          formatDateEU(item.publish_date),
+          item.territory || item.outlet?.country || '',
+          `"${(item.outlet?.name || '').replace(/"/g, '""')}"`,
+          item.outlet?.tier || '',
+          item.coverage_type || '',
+          `"${(item.title || '').replace(/"/g, '""')}"`,
+          `"${(item.url || '').replace(/"/g, '""')}"`,
+          visitors ? visitors.toLocaleString('nl-NL') : '',
+          item.review_score || '',
+          `"${(item.quotes || '').replace(/"/g, '""')}"`
+        ]
+        csvRows.push(row.join(','))
+      }
+
+      const csvContent = csvRows.join('\n')
+      const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      const clientName = selectedClient ? clients.find(c => c.id === selectedClient)?.name || 'coverage' : 'all-clients'
+      link.href = url
+      link.download = `coverage-${clientName.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.csv`
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('CSV export failed:', err)
     }
     setExporting(false)
   }
@@ -585,6 +645,18 @@ export default function CoverageReportPage() {
             }}>
               Clients &amp; Games
             </Link>
+            <Link href="/coverage/campaign-report" style={{
+              padding: '10px 20px', fontSize: '14px', fontWeight: 500, cursor: 'pointer',
+              color: '#64748b', textDecoration: 'none', marginBottom: '-2px'
+            }}>
+              Campaign Report
+            </Link>
+            <Link href="/coverage/guide" style={{
+              padding: '10px 20px', fontSize: '14px', fontWeight: 500, cursor: 'pointer',
+              color: '#64748b', textDecoration: 'none', marginBottom: '-2px'
+            }}>
+              Guide
+            </Link>
           </div>
 
           {/* Filter Controls */}
@@ -689,6 +761,18 @@ export default function CoverageReportPage() {
                   }}
                 >
                   Export Excel (.xlsx)
+                </button>
+                <button
+                  onClick={handleCSVExport}
+                  disabled={exporting || items.length === 0}
+                  style={{
+                    padding: '10px 20px', backgroundColor: '#0d9488', color: 'white',
+                    border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: 500,
+                    cursor: items.length === 0 ? 'not-allowed' : 'pointer',
+                    opacity: items.length === 0 ? 0.5 : 1
+                  }}
+                >
+                  Export CSV (flat)
                 </button>
                 <button
                   onClick={handlePDFExport}

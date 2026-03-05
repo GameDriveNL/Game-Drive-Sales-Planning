@@ -158,7 +158,8 @@ export async function PUT(request: NextRequest) {
 
     const allowedFields = [
       'name', 'domain', 'country', 'monthly_unique_visitors', 'tier',
-      'metacritic_status', 'custom_tags', 'rss_feed_url', 'scan_frequency', 'is_active'
+      'metacritic_status', 'custom_tags', 'rss_feed_url', 'scan_frequency', 'is_active',
+      'is_blacklisted'
     ]
 
     const filteredUpdates: Record<string, unknown> = { updated_at: new Date().toISOString() }

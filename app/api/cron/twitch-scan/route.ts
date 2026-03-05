@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
+import { inferTerritory } from '@/lib/territory'
 
 function getSupabase() {
   return getServerSupabase()
@@ -99,11 +100,12 @@ export async function GET(request: NextRequest) {
 
           const { data: existingOutlet } = await supabase
             .from('outlets')
-            .select('id')
+            .select('id, is_blacklisted')
             .eq('domain', streamerDomain)
             .limit(1)
 
           if (existingOutlet && existingOutlet.length > 0) {
+            if (existingOutlet[0].is_blacklisted) continue // Skip blacklisted outlets
             outletId = existingOutlet[0].id
           } else {
             const { data: newOutlet } = await supabase
@@ -129,7 +131,7 @@ export async function GET(request: NextRequest) {
             publish_date: publishDate,
             coverage_type: 'stream',
             monthly_unique_visitors: followers,
-            territory: vod.language || null,
+            territory: inferTerritory(null, null, vod.language) || 'International',
             source_type: 'twitch',
             source_metadata: {
               video_id: vod.id, user_name: streamerName,

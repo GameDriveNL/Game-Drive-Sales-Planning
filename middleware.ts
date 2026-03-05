@@ -26,6 +26,11 @@ export async function middleware(req: NextRequest) {
     return res
   }
 
+  // Allow backfill endpoint through (uses service role key internally)
+  if (pathname.startsWith('/api/coverage-backfill')) {
+    return res
+  }
+
   // If no session and not on login page, redirect to login
   if (!session && pathname !== '/login') {
     const loginUrl = req.nextUrl.clone()

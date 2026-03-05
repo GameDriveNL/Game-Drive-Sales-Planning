@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { GoogleGenAI } from '@google/genai'
 import { getGeminiConfig } from '@/lib/gemini-config'
+import { inferTerritory } from '@/lib/territory'
 
 function getSupabase() {
   return getServerSupabase()
@@ -19,6 +20,8 @@ interface EnrichmentResult {
   relevance_reasoning: string
   suggested_type: string
   sentiment: string
+  is_ai_generated: boolean
+  territory: string | null
 }
 
 async function enrichItem(
@@ -53,9 +56,11 @@ TASKS:
 2. REASONING: Brief 1-sentence explanation of the relevance score.
 3. COVERAGE TYPE: Classify as one of: ${COVERAGE_TYPES.join(', ')}
 4. SENTIMENT: Classify as one of: ${SENTIMENT_VALUES.join(', ')}
+5. AI-GENERATED DETECTION: Determine if this article appears to be AI-generated or AI-rewritten (not by a human journalist). Signs include: generic templated writing, no original insights/quotes, "AI Reporter" byline, known AI content farm domain, or content that just restates a press release. Set true only if fairly confident, otherwise false.
+6. TERRITORY: Determine the territory/region based on outlet name, URL domain, and language. Use proper country names: "Netherlands", "Germany", "France", "United States", "Japan", etc. For English-language global outlets (IGN, GameSpot), use "International". If unknown, use null.
 
 Respond with ONLY valid JSON in this exact format:
-{"relevance_score": <number 0-100>, "relevance_reasoning": "<string>", "suggested_type": "<string>", "sentiment": "<string>"}`
+{"relevance_score": <number 0-100>, "relevance_reasoning": "<string>", "suggested_type": "<string>", "sentiment": "<string>", "is_ai_generated": <boolean>, "territory": "<string or null>"}`
 
   const response = await ai.models.generateContent({
     model: modelId,
@@ -73,6 +78,8 @@ Respond with ONLY valid JSON in this exact format:
     relevance_reasoning: String(parsed.relevance_reasoning || ''),
     suggested_type: COVERAGE_TYPES.includes(parsed.suggested_type) ? parsed.suggested_type : 'article',
     sentiment: SENTIMENT_VALUES.includes(parsed.sentiment) ? parsed.sentiment : 'neutral',
+    is_ai_generated: parsed.is_ai_generated === true,
+    territory: typeof parsed.territory === 'string' ? parsed.territory : null,
   }
 }
 
@@ -172,12 +179,25 @@ export async function POST(request: NextRequest) {
           approvalStatus = 'pending_review'
         }
 
+        // Infer territory if AI didn't provide one
+        let territory = result.territory
+        if (!territory) {
+          const outlet = item.outlet as unknown as Record<string, unknown> | null
+          territory = inferTerritory(String(outlet?.domain || ''))
+        }
+
         // Update the coverage item
         const updates: Record<string, unknown> = {
           relevance_score: result.relevance_score,
           relevance_reasoning: result.relevance_reasoning,
           sentiment: result.sentiment,
+          is_ai_generated: result.is_ai_generated,
           updated_at: new Date().toISOString(),
+        }
+
+        // Set territory if item doesn't have one
+        if (territory && !item.territory) {
+          updates.territory = territory
         }
 
         // Only update coverage_type if not already set
