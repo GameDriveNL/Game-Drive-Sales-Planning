@@ -10,7 +10,6 @@ import SalesTable from './components/SalesTable'
 import SaleAnalysis from './components/SaleAnalysis'
 import AddSaleModal from './components/AddSaleModal'
 import EditSaleModal from './components/EditSaleModal'
-import ProductManager from './components/ProductManager'
 import PlatformSettings from './components/PlatformSettings'
 import SaleCalendarPreviewModal from './components/SaleCalendarPreviewModal'
 import ClearSalesModal from './components/ClearSalesModal'
@@ -56,7 +55,6 @@ export default function GameDriveDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showAddModal, setShowAddModal] = useState(false)
-  const [showProductManager, setShowProductManager] = useState(false)
   const [showPlatformSettings, setShowPlatformSettings] = useState(false)
   const [showExportModal, setShowExportModal] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
@@ -545,8 +543,8 @@ export default function GameDriveDashboard() {
     } catch (err: unknown) { console.error('Error deleting product:', err); throw err }
   }
 
-  const filteredGames = useMemo(() => { if (!filterClientId) return games; return games.filter(g => g.client_id === filterClientId) }, [games, filterClientId])
-  const filteredProducts = useMemo(() => { let result = products; if (filterProductId) { result = result.filter(p => p.id === filterProductId) } else if (filterGameId) { result = result.filter(p => p.game_id === filterGameId) } else if (filterClientId) { result = result.filter(p => p.game?.client_id === filterClientId) }; return result }, [products, filterClientId, filterGameId, filterProductId])
+  const filteredGames = useMemo(() => { let result = games.filter(g => g.sales_planning_enabled !== false); if (filterClientId) { result = result.filter(g => g.client_id === filterClientId) }; return result }, [games, filterClientId])
+  const filteredProducts = useMemo(() => { let result = products.filter(p => p.game?.sales_planning_enabled !== false && p.game?.client?.sales_planning_enabled !== false); if (filterProductId) { result = result.filter(p => p.id === filterProductId) } else if (filterGameId) { result = result.filter(p => p.game_id === filterGameId) } else if (filterClientId) { result = result.filter(p => p.game?.client_id === filterClientId) }; return result }, [products, filterClientId, filterGameId, filterProductId])
 
   // When a version is active, convert its snapshot to SaleWithDetails format for display
   const filteredSales = useMemo(() => {
@@ -684,7 +682,7 @@ export default function GameDriveDashboard() {
       <GapAnalysis sales={filteredSales} products={filteredProducts} platforms={platforms} timelineStart={timelineStart} monthCount={monthCount} />
 
       <div className={styles.filters}>
-        <div className={styles.filterGroup}><label>Client:</label><select value={filterClientId} onChange={(e) => { setFilterClientId(e.target.value); setFilterGameId(''); setFilterProductId('') }}><option value="">All Clients</option>{clients.map(client => (<option key={client.id} value={client.id}>{client.name}</option>))}</select></div>
+        <div className={styles.filterGroup}><label>Client:</label><select value={filterClientId} onChange={(e) => { setFilterClientId(e.target.value); setFilterGameId(''); setFilterProductId('') }}><option value="">All Clients</option>{clients.filter(c => c.sales_planning_enabled !== false).map(client => (<option key={client.id} value={client.id}>{client.name}</option>))}</select></div>
         <div className={styles.filterGroup}><label>Game:</label><select value={filterGameId} onChange={(e) => { setFilterGameId(e.target.value); setFilterProductId('') }}><option value="">All Games</option>{filteredGames.map(game => (<option key={game.id} value={game.id}>{game.name}</option>))}</select></div>
         <div className={styles.filterGroup}><label>Product:</label><select value={filterProductId} onChange={(e) => setFilterProductId(e.target.value)}><option value="">All Products</option>{filteredProducts.map(product => (<option key={product.id} value={product.id}>{product.name}</option>))}</select></div>
         <div className={styles.filterGroup}><label className={styles.checkboxLabel}><input type="checkbox" checked={showEvents} onChange={(e) => setShowEvents(e.target.checked)} />Show Platform Events</label></div>
@@ -722,7 +720,7 @@ export default function GameDriveDashboard() {
 
       <div className={styles.toolbar}>
         <div className={styles.viewToggle}><button className={`${styles.toggleBtn} ${viewMode === 'gantt' ? styles.active : ''}`} onClick={() => setViewMode('gantt')}>Timeline</button><button className={`${styles.toggleBtn} ${viewMode === 'table' ? styles.active : ''}`} onClick={() => setViewMode('table')}>Table</button><button className={`${styles.toggleBtn} ${viewMode === 'analysis' ? styles.active : ''}`} onClick={() => setViewMode('analysis')}>Analysis</button></div>
-        <div className={styles.actions}><button className={styles.primaryBtn} onClick={() => setShowAddModal(true)}>+ Add Sale</button>{!activeVersionId && <button className={styles.secondaryBtn} onClick={() => setShowImportModal(true)}>Import CSV</button>}<button className={styles.secondaryBtn} onClick={() => setShowVersionManager(true)}>📚 Versions</button>{!activeVersionId && <button className={styles.secondaryBtn} onClick={() => setShowProductManager(true)}>Manage Products</button>}{!activeVersionId && <button className={styles.secondaryBtn} onClick={() => setShowPlatformSettings(true)}>Platform Settings</button>}<button className={styles.secondaryBtn} onClick={() => setShowExportModal(true)}>Export</button>{!activeVersionId && <button className={styles.secondaryBtn} onClick={fetchData}>Refresh</button>}</div>
+        <div className={styles.actions}><button className={styles.primaryBtn} onClick={() => setShowAddModal(true)}>+ Add Sale</button>{!activeVersionId && <button className={styles.secondaryBtn} onClick={() => setShowImportModal(true)}>Import CSV</button>}<button className={styles.secondaryBtn} onClick={() => setShowVersionManager(true)}>📚 Versions</button>{!activeVersionId && <button className={styles.secondaryBtn} onClick={() => window.location.href = '/settings/clients'}>Manage Clients</button>}{!activeVersionId && <button className={styles.secondaryBtn} onClick={() => setShowPlatformSettings(true)}>Platform Settings</button>}<button className={styles.secondaryBtn} onClick={() => setShowExportModal(true)}>Export</button>{!activeVersionId && <button className={styles.secondaryBtn} onClick={fetchData}>Refresh</button>}</div>
       </div>
 
       <div className={styles.mainContent}>
@@ -739,7 +737,6 @@ export default function GameDriveDashboard() {
       <BulkEditSalesModal isOpen={bulkEditSales.length > 0} onClose={() => setBulkEditSales([])} selectedSales={bulkEditSales} platforms={platforms} onBulkUpdate={handleBulkUpdate} onBulkDelete={handleBulkDelete} />
       <ImportSalesModal isOpen={showImportModal} onClose={() => setShowImportModal(false)} products={products} platforms={platforms} existingSales={sales} onImport={handleBulkImport} clients={clients} games={games} onProductCreate={handleProductCreate} onGameCreate={handleGameCreate} onPlatformCreate={handlePlatformCreate} />
       <VersionManager isOpen={showVersionManager} onClose={() => setShowVersionManager(false)} currentSales={sales} platforms={platforms} onActivateVersion={handleActivateVersion} activeVersionId={activeVersionId} productId={filterProductId || null} productName={products.find(p => p.id === filterProductId)?.name || null} clientId={filterClientId || null} clientName={clients.find(c => c.id === filterClientId)?.name || null} hasUnsavedChanges={versionSnapshotModified} onSaveVersion={handleSaveVersionSnapshot} />
-      {showProductManager && (<ProductManager clients={clients} games={games} products={products} platforms={platforms} onClientCreate={handleClientCreate} onGameCreate={handleGameCreate} onProductCreate={handleProductCreate} onClientDelete={handleClientDelete} onGameDelete={handleGameDelete} onProductDelete={handleProductDelete} onClientUpdate={handleClientUpdate} onGameUpdate={handleGameUpdate} onProductUpdate={handleProductUpdate} onGenerateCalendar={handleGenerateCalendar} onClose={() => setShowProductManager(false)} />)}
       <PlatformSettings isOpen={showPlatformSettings} onClose={() => setShowPlatformSettings(false)} onEventsChange={() => { fetchPlatformEvents(); fetchData() }} />
       {calendarGeneration && (<SaleCalendarPreviewModal isOpen={true} onClose={() => setCalendarGeneration(null)} productId={calendarGeneration.productId} productName={calendarGeneration.productName} launchDate={calendarGeneration.launchDate} platforms={platforms} platformEvents={platformEvents} existingSales={sales} onApply={handleApplyCalendar} isApplying={isApplyingCalendar} initialPlatformIds={calendarGeneration.platformIds} clientId={calendarGeneration.clientId} />)}
       {clearSalesState && (<ClearSalesModal isOpen={true} onClose={() => setClearSalesState(null)} productId={clearSalesState.productId} productName={clearSalesState.productName} platforms={platforms} sales={sales} onConfirm={handleConfirmClearSales} />)}

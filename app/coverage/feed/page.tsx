@@ -161,8 +161,8 @@ export default function CoverageFeedPage() {
     if (!canView) return
     async function load() {
       const [clientsRes, gamesRes, campaignsRes] = await Promise.all([
-        supabase.from('clients').select('id, name').order('name'),
-        supabase.from('games').select('id, name, client_id').order('name'),
+        supabase.from('clients').select('id, name').eq('pr_tracking_enabled', true).order('name'),
+        supabase.from('games').select('id, name, client_id').eq('pr_tracking_enabled', true).order('name'),
         supabase.from('coverage_campaigns').select('id, name, client_id, game_id').order('name')
       ])
       if (clientsRes.data) setClients(clientsRes.data)

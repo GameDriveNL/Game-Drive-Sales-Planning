@@ -128,8 +128,8 @@ export default function DashboardPage() {
     if (!canView) return
     async function load() {
       const [clientsRes, gamesRes] = await Promise.all([
-        supabase.from('clients').select('id, name').order('name'),
-        supabase.from('games').select('id, name, client_id').order('name')
+        supabase.from('clients').select('id, name').eq('pr_tracking_enabled', true).order('name'),
+        supabase.from('games').select('id, name, client_id').eq('pr_tracking_enabled', true).order('name')
       ])
       if (clientsRes.data) setClients(clientsRes.data)
       if (gamesRes.data) setGames(gamesRes.data)

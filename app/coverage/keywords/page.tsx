@@ -46,8 +46,8 @@ export default function KeywordsPage() {
     async function fetchMeta() {
       try {
         const [clientsRes, gamesRes] = await Promise.all([
-          supabase.from('clients').select('*').order('name'),
-          supabase.from('games').select('*').order('name')
+          supabase.from('clients').select('*').eq('pr_tracking_enabled', true).order('name'),
+          supabase.from('games').select('*').eq('pr_tracking_enabled', true).order('name')
         ])
         if (clientsRes.data) {
           setClients(clientsRes.data)
