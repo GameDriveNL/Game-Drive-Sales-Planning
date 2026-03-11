@@ -12,7 +12,6 @@ const NAV_TABS = [
   { label: 'Dashboard',       href: '/coverage/dashboard' },
   { label: 'Timeline',        href: '/coverage/timeline' },
   { label: 'PR Report',       href: '/coverage/report' },
-  { label: 'Clients & Games', href: '/settings/clients' },
 ]
 
 const GUIDE_STEPS = [
