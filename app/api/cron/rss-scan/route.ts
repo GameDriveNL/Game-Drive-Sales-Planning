@@ -354,13 +354,11 @@ export async function GET(request: Request) {
                 outletVisitors = outlet.monthly_unique_visitors
               } else {
                 // Auto-create outlet from domain
-                const outletName = articleDomain
-                  .replace(/\.(com|net|org|co\.uk|io|gg|tv)$/i, '')
-                  .split('.').pop() || articleDomain
+                const outletName = domainToOutletName(articleDomain)
                 const { data: newOutlet } = await supabase
                   .from('outlets')
                   .insert({
-                    name: outletName.charAt(0).toUpperCase() + outletName.slice(1),
+                    name: outletName,
                     domain: articleDomain,
                     tier: null
                   })
@@ -386,7 +384,7 @@ export async function GET(request: Request) {
             outlet_id: outletId,
             title: entry.title.trim(),
             url: normalizedUrl,
-            publish_date: entry.isoDate ? entry.isoDate.split('T')[0] : null,
+            publish_date: entry.isoDate ? entry.isoDate.split('T')[0] : new Date().toISOString().split('T')[0],
             coverage_type: 'news', // Default — Gemini will refine this
             territory,
             monthly_unique_visitors: outletVisitors,

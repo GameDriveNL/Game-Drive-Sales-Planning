@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { tavily } from '@tavily/core'
 import { inferTerritory } from '@/lib/territory'
+import { domainToOutletName } from '@/lib/outlet-utils'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -269,13 +270,11 @@ export async function GET(request: Request) {
                     outletId = outlet.id
                   } else {
                     // Auto-create outlet from domain
-                    const outletName = resultDomain
-                      .replace(/\.(com|net|org|co\.uk|io|gg|tv)$/i, '')
-                      .split('.').pop() || resultDomain
+                    const outletName = domainToOutletName(resultDomain)
                     const { data: newOutlet } = await supabase
                       .from('outlets')
                       .insert({
-                        name: outletName.charAt(0).toUpperCase() + outletName.slice(1),
+                        name: outletName,
                         domain: resultDomain,
                         tier: null
                       })
