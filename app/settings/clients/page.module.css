@@ -5,8 +5,21 @@
 
 .topBar {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 24px;
+}
+
+.topBar h1 {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0;
+}
+
+.topBarActions {
+  display: flex;
+  gap: 8px;
 }
 
 .addBtn {
@@ -24,6 +37,41 @@
 
 .addBtn:hover { background: #1d4ed8; }
 .addBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.secondaryBtn {
+  padding: 10px 20px;
+  background: white;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 150ms;
+}
+
+.secondaryBtn:hover { background: #f8fafc; }
+
+/* Action message */
+.actionMessage {
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+.actionSuccess {
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #86efac;
+}
+
+.actionError {
+  background: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
 
 /* Empty state */
 .emptyState {
@@ -121,22 +169,26 @@
   border-radius: 4px;
 }
 
-.statusGreen {
-  font-size: 12px;
-  font-weight: 500;
+.featureBadge {
+  font-size: 11px;
+  font-weight: 600;
   padding: 3px 8px;
-  background: #dcfce7;
-  color: #166534;
   border-radius: 4px;
 }
 
-.statusYellow {
-  font-size: 12px;
-  font-weight: 500;
-  padding: 3px 8px;
-  background: #fef3c7;
-  color: #92400e;
-  border-radius: 4px;
+.featureOn {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.featureOff {
+  background: #f3f4f6;
+  color: #9ca3af;
+}
+
+.prOn {
+  background: #e0e7ff;
+  color: #4338ca;
 }
 
 .deleteBtn {
@@ -155,21 +207,66 @@
   background: #fef2f2;
 }
 
+.editBtn {
+  padding: 4px 8px;
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 14px;
+  border-radius: 4px;
+  transition: all 150ms;
+}
+
+.editBtn:hover {
+  color: #2563eb;
+  background: #eff6ff;
+}
+
 /* Card body */
 .cardBody {
   padding: 0 20px 16px;
   border-top: 1px solid #f1f5f9;
 }
 
+/* Client toggles row */
+.clientToggles {
+  display: flex;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid #f1f5f9;
+  margin-bottom: 8px;
+}
+
+.toggleLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #475569;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggleLabel input {
+  accent-color: #2563eb;
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+}
+
+/* Game section */
 .gameSection {
   margin-top: 12px;
+  border: 1px solid #f1f5f9;
+  border-radius: 8px;
+  padding: 12px;
 }
 
 .gameHeader {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 0;
   flex-wrap: wrap;
 }
 
@@ -184,33 +281,61 @@
   font-family: monospace;
 }
 
-.prToggle {
+.gameToggles {
+  display: flex;
+  gap: 12px;
+  margin-left: auto;
+  align-items: center;
+}
+
+.miniToggle {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: #475569;
+  gap: 4px;
+  font-size: 11px;
+  color: #64748b;
   cursor: pointer;
-  margin-left: auto;
   user-select: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 150ms;
 }
 
-.prToggle input {
+.miniToggle input {
   accent-color: #2563eb;
   cursor: pointer;
+  width: 14px;
+  height: 14px;
 }
 
-.prBadge {
-  font-size: 11px;
-  padding: 2px 6px;
-  background: #eff6ff;
-  color: #2563eb;
-  border-radius: 3px;
-  font-weight: 500;
-  margin-left: auto;
+.gameActions {
+  display: flex;
+  gap: 2px;
 }
 
+.addGameBtn {
+  padding: 8px 14px;
+  background: #f8fafc;
+  color: #475569;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+  margin-top: 12px;
+  transition: all 150ms;
+  width: 100%;
+  text-align: center;
+}
+
+.addGameBtn:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+/* Product list */
 .productList {
+  margin-top: 10px;
   margin-left: 16px;
   border-left: 2px solid #e2e8f0;
   padding-left: 12px;
@@ -234,6 +359,14 @@
   padding: 1px 6px;
   background: #f1f5f9;
   color: #64748b;
+  border-radius: 3px;
+}
+
+.launchBadge {
+  font-size: 11px;
+  padding: 1px 6px;
+  background: #ecfdf5;
+  color: #065f46;
   border-radius: 3px;
 }
 
@@ -266,11 +399,43 @@
   font-style: italic;
 }
 
+.addProductBtn {
+  padding: 4px 10px;
+  background: transparent;
+  color: #64748b;
+  border: 1px dashed #cbd5e1;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  margin-top: 6px;
+  transition: all 150ms;
+}
+
+.addProductBtn:hover {
+  background: #f8fafc;
+  color: #475569;
+}
+
 .noItems {
   font-size: 13px;
   color: #94a3b8;
   padding: 8px 0;
   margin: 0;
+}
+
+.productActions {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.kwCount {
+  font-size: 11px;
+  color: #2563eb;
+  background: #eff6ff;
+  padding: 1px 6px;
+  border-radius: 3px;
 }
 
 /* Modal */
@@ -292,7 +457,9 @@
   border-radius: 16px;
   padding: 24px;
   width: 100%;
-  max-width: 400px;
+  max-width: 480px;
+  max-height: 85vh;
+  overflow-y: auto;
 }
 
 .modal h2 {
@@ -302,32 +469,127 @@
   margin: 0 0 20px;
 }
 
+.modalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.modalHeader h2 {
+  margin: 0;
+}
+
+.closeBtn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
 .formField {
   margin-bottom: 16px;
 }
 
 .formField label {
   display: block;
-  font-size: 14px;
-  font-weight: 500;
-  color: #374151;
-  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+  margin-bottom: 4px;
 }
 
-.formField input {
+.formField input,
+.formField select {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  border-radius: 6px;
   font-size: 14px;
   box-sizing: border-box;
   font-family: inherit;
+  background: white;
 }
 
-.formField input:focus {
+.formField input:focus,
+.formField select:focus {
   outline: none;
   border-color: #3b82f6;
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.fieldHint {
+  font-size: 12px;
+  color: #94a3b8;
+  margin: 4px 0 0;
+}
+
+.checkboxField {
+  padding: 12px;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: #1e40af;
+}
+
+.checkboxLabel input {
+  width: 16px;
+  height: 16px;
+  accent-color: #2563eb;
+}
+
+.checkboxHint {
+  margin: 6px 0 0 24px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.platformCheckboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.platformCheckbox {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: #475569;
+  cursor: pointer;
+}
+
+.platformCheckbox input {
+  width: 14px;
+  height: 14px;
+  accent-color: #2563eb;
+}
+
+.platformColorDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.selectedCount {
+  font-size: 12px;
+  color: #64748b;
+  margin: 6px 0 0;
 }
 
 .errorBanner {
@@ -344,6 +606,7 @@
   display: flex;
   gap: 12px;
   justify-content: flex-end;
+  margin-top: 20px;
 }
 
 .cancelBtn {
@@ -359,3 +622,43 @@
 }
 
 .cancelBtn:hover { background: #f8fafc; }
+
+/* Edit inline */
+.editInline {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.editInput {
+  padding: 4px 8px;
+  border: 1px solid #93c5fd;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.editInput:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
+.saveBtn {
+  padding: 4px 10px;
+  background: #2563eb;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.cancelEditBtn {
+  padding: 4px 10px;
+  background: white;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}

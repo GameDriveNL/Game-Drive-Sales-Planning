@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import Parser from 'rss-parser'
 import { inferTerritory } from '@/lib/territory'
+import { domainToOutletName } from '@/lib/outlet-utils'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'

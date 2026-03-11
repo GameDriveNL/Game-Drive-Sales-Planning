@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { Sidebar } from '../../components/Sidebar'
 import { useAuth } from '@/lib/auth-context'
-import Link from 'next/link'
+import { CoverageNav } from '../components/CoverageNav'
 import * as XLSX from 'xlsx'
 
 interface CoverageItem {
@@ -97,6 +97,7 @@ export default function CoverageReportPage() {
   const [dateTo, setDateTo] = useState('')
   const [datePreset, setDatePreset] = useState('all')
   const [includeAllStatus, setIncludeAllStatus] = useState(false)
+  const [reportMode, setReportMode] = useState<'full' | 'simple'>('full')
 
   // Data state
   const [items, setItems] = useState<CoverageItem[]>([])
@@ -692,74 +693,31 @@ export default function CoverageReportPage() {
             </div>
           </div>
 
-          {/* Sub-navigation tabs */}
-          <div style={{ display: 'flex', gap: '0', marginBottom: '24px', borderBottom: '2px solid #e2e8f0' }}>
-            <Link href="/coverage" style={{
-              padding: '10px 20px', fontSize: '14px', fontWeight: 500, cursor: 'pointer',
-              color: '#64748b', textDecoration: 'none', marginBottom: '-2px'
-            }}>
-              Outlets
-            </Link>
-            <Link href="/coverage/keywords" style={{
-              padding: '10px 20px', fontSize: '14px', fontWeight: 500, cursor: 'pointer',
-              color: '#64748b', textDecoration: 'none', marginBottom: '-2px'
-            }}>
-              Keywords
-            </Link>
-            <Link href="/coverage/settings" style={{
-              padding: '10px 20px', fontSize: '14px', fontWeight: 500, cursor: 'pointer',
-              color: '#64748b', textDecoration: 'none', marginBottom: '-2px'
-            }}>
-              API Keys
-            </Link>
-            <Link href="/coverage/sources" style={{
-              padding: '10px 20px', fontSize: '14px', fontWeight: 500, cursor: 'pointer',
-              color: '#64748b', textDecoration: 'none', marginBottom: '-2px'
-            }}>
-              Sources
-            </Link>
-            <Link href="/coverage/feed" style={{
-              padding: '10px 20px', fontSize: '14px', fontWeight: 500, cursor: 'pointer',
-              color: '#64748b', textDecoration: 'none', marginBottom: '-2px'
-            }}>
-              Feed
-            </Link>
-            <Link href="/coverage/dashboard" style={{
-              padding: '10px 20px', fontSize: '14px', fontWeight: 500, cursor: 'pointer',
-              color: '#64748b', textDecoration: 'none', marginBottom: '-2px'
-            }}>
-              Dashboard
-            </Link>
-            <Link href="/coverage/timeline" style={{
-              padding: '10px 20px', fontSize: '14px', fontWeight: 500, cursor: 'pointer',
-              color: '#64748b', textDecoration: 'none', marginBottom: '-2px'
-            }}>
-              Timeline
-            </Link>
-            <div style={{
-              padding: '10px 20px', fontSize: '14px', fontWeight: 600, cursor: 'pointer',
-              color: '#2563eb', borderBottom: '2px solid #2563eb', marginBottom: '-2px'
-            }}>
-              Export
-            </div>
-            <Link href="/coverage/clients" style={{
-              padding: '10px 20px', fontSize: '14px', fontWeight: 500, cursor: 'pointer',
-              color: '#64748b', textDecoration: 'none', marginBottom: '-2px'
-            }}>
-              Clients &amp; Games
-            </Link>
-            <Link href="/coverage/campaign-report" style={{
-              padding: '10px 20px', fontSize: '14px', fontWeight: 500, cursor: 'pointer',
-              color: '#64748b', textDecoration: 'none', marginBottom: '-2px'
-            }}>
-              Campaign Report
-            </Link>
-            <Link href="/coverage/guide" style={{
-              padding: '10px 20px', fontSize: '14px', fontWeight: 500, cursor: 'pointer',
-              color: '#64748b', textDecoration: 'none', marginBottom: '-2px'
-            }}>
-              Guide
-            </Link>
+          <CoverageNav />
+
+          {/* Report Mode Toggle */}
+          <div style={{ display: 'flex', gap: '0', marginBottom: '20px', border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden', alignSelf: 'flex-start', width: 'fit-content' }}>
+            <button
+              onClick={() => setReportMode('full')}
+              style={{
+                padding: '8px 20px', fontSize: '13px', fontWeight: 500, border: 'none', cursor: 'pointer',
+                backgroundColor: reportMode === 'full' ? '#2563eb' : 'white',
+                color: reportMode === 'full' ? 'white' : '#64748b'
+              }}
+            >
+              Full Report
+            </button>
+            <button
+              onClick={() => setReportMode('simple')}
+              style={{
+                padding: '8px 20px', fontSize: '13px', fontWeight: 500, border: 'none', cursor: 'pointer',
+                backgroundColor: reportMode === 'simple' ? '#2563eb' : 'white',
+                color: reportMode === 'simple' ? 'white' : '#64748b',
+                borderLeft: '1px solid #e2e8f0'
+              }}
+            >
+              Simple List
+            </button>
           </div>
 
           {/* Filter Controls */}
@@ -848,8 +806,8 @@ export default function CoverageReportPage() {
             </label>
           </div>
 
-          {/* Report Content */}
-          {loaded && summary && (
+          {/* Report Content — Full Report Mode */}
+          {loaded && summary && reportMode === 'full' && (
             <div ref={reportRef}>
               {/* Export Buttons */}
               <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
@@ -1293,6 +1251,126 @@ export default function CoverageReportPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Report Content — Simple List Mode */}
+          {loaded && items.length > 0 && reportMode === 'simple' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <span style={{ fontSize: '14px', color: '#64748b' }}>
+                  {items.length} coverage item{items.length !== 1 ? 's' : ''}
+                </span>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    onClick={() => {
+                      const rows = items.map(item => ({
+                        'Outlet': item.outlet?.name || 'Unknown',
+                        'Tier': item.outlet?.tier || '-',
+                        'Title': item.title,
+                        'URL': item.url,
+                        'Type': item.coverage_type || '-',
+                        'Date': item.publish_date || '-',
+                      }))
+                      const wb = XLSX.utils.book_new()
+                      const ws = XLSX.utils.json_to_sheet(rows)
+                      ws['!cols'] = [{ wch: 25 }, { wch: 6 }, { wch: 50 }, { wch: 60 }, { wch: 12 }, { wch: 12 }]
+                      XLSX.utils.book_append_sheet(wb, ws, 'Campaign Coverage')
+                      const cn = selectedClient ? clients.find(c => c.id === selectedClient)?.name?.replace(/\s+/g, '-').toLowerCase() || 'all' : 'all'
+                      XLSX.writeFile(wb, `campaign-report-${cn}-${dateFrom || 'all'}.xlsx`)
+                    }}
+                    style={{
+                      padding: '10px 20px', backgroundColor: '#16a34a', color: 'white',
+                      border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: 500, cursor: 'pointer'
+                    }}
+                  >
+                    Export Excel (.xlsx)
+                  </button>
+                  <button
+                    onClick={() => {
+                      const printWindow = window.open('', '_blank')
+                      if (!printWindow) return
+                      const cn = selectedClient ? clients.find(c => c.id === selectedClient)?.name || '' : 'All Clients'
+                      const gn = selectedGame ? games.find(g => g.id === selectedGame)?.name || '' : ''
+                      const dl = dateFrom && dateTo ? `${dateFrom} — ${dateTo}` : dateFrom ? `From ${dateFrom}` : dateTo ? `Until ${dateTo}` : 'All dates'
+                      const tableRows = items.map(item => `
+                        <tr>
+                          <td>${item.outlet?.name || 'Unknown'}</td>
+                          <td>${item.outlet?.tier || '-'}</td>
+                          <td>${item.title}</td>
+                          <td><a href="${item.url}" target="_blank">${item.url}</a></td>
+                        </tr>
+                      `).join('')
+                      printWindow.document.write(`<!DOCTYPE html><html><head><title>Campaign Report</title><style>
+                        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 40px; color: #1e293b; }
+                        h1 { font-size: 22px; margin: 0 0 4px; }
+                        .meta { font-size: 13px; color: #64748b; margin-bottom: 24px; }
+                        .count { font-size: 14px; font-weight: 600; margin-bottom: 16px; }
+                        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+                        th { text-align: left; padding: 8px 10px; background: #f8fafc; border-bottom: 2px solid #e2e8f0; font-weight: 600; color: #475569; }
+                        td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; }
+                        a { color: #3b82f6; text-decoration: none; word-break: break-all; }
+                        @media print { body { margin: 20px; } a { color: #1e293b; } @page { margin: 1cm; } }
+                      </style></head><body>
+                        <h1>Campaign Coverage Report</h1>
+                        <div class="meta">${cn}${gn ? ` — ${gn}` : ''} | ${dl}</div>
+                        <div class="count">${items.length} coverage item${items.length !== 1 ? 's' : ''}</div>
+                        <table><thead><tr><th>Outlet</th><th>Tier</th><th>Title</th><th>URL</th></tr></thead>
+                        <tbody>${tableRows}</tbody></table>
+                      </body></html>`)
+                      printWindow.document.close()
+                      setTimeout(() => printWindow.print(), 500)
+                    }}
+                    style={{
+                      padding: '10px 20px', backgroundColor: '#dc2626', color: 'white',
+                      border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: 500, cursor: 'pointer'
+                    }}
+                  >
+                    Export PDF
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ backgroundColor: 'white', borderRadius: '10px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                      <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: '#475569' }}>Outlet</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: '#475569', width: '60px' }}>Tier</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: '#475569', width: '90px' }}>Type</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: '#475569' }}>Title</th>
+                      <th style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: '#475569' }}>Link</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map(item => {
+                      const tierColor = TIER_COLORS[item.outlet?.tier || ''] || { bg: '#f3f4f6', text: '#374151' }
+                      return (
+                        <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '10px 14px', fontWeight: 500 }}>{item.outlet?.name || 'Unknown'}</td>
+                          <td style={{ padding: '10px 14px' }}>
+                            {item.outlet?.tier ? (
+                              <span style={{
+                                display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 600,
+                                backgroundColor: tierColor.bg, color: tierColor.text
+                              }}>
+                                {item.outlet.tier}
+                              </span>
+                            ) : '-'}
+                          </td>
+                          <td style={{ padding: '10px 14px', color: '#64748b' }}>{item.coverage_type || '-'}</td>
+                          <td style={{ padding: '10px 14px' }}>{item.title}</td>
+                          <td style={{ padding: '10px 14px' }}>
+                            <a href={item.url} target="_blank" rel="noopener noreferrer" style={{ color: '#2563eb', textDecoration: 'none', fontSize: '12px', wordBreak: 'break-all' }}>
+                              {item.url}
+                            </a>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getOutletDisplayName, extractDomain } from '@/lib/outlet-utils'
 
 function getSupabase() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -61,8 +62,42 @@ export async function GET(request: NextRequest) {
 
     const { data: campaigns } = await campaignQuery
 
+    // Enrich items with computed display fields
+    const rawItems = data || []
+    const items: Record<string, unknown>[] = rawItems.map((item: Record<string, unknown>) => {
+      const outlet = item.outlet as { id?: string; name?: string; domain?: string | null; tier?: string; monthly_unique_visitors?: number | null; country?: string | null } | null
+      const url = item.url as string | null
+
+      // Compute display outlet name: outlet.name → domain lookup → URL extraction
+      const outlet_display_name = getOutletDisplayName(outlet, url)
+
+      // Compute display date: publish_date → discovered_at → created_at
+      let display_date = item.publish_date as string | null
+      if (!display_date) {
+        const discovered = item.discovered_at as string | null
+        const created = item.created_at as string | null
+        const fallback = discovered || created
+        if (fallback) {
+          display_date = fallback.split('T')[0]
+        }
+      }
+
+      // Compute display visitors: outlet.monthly_unique_visitors → item.monthly_unique_visitors
+      const display_visitors = outlet?.monthly_unique_visitors || (item.monthly_unique_visitors as number | null) || null
+
+      // Compute display domain
+      const display_domain = outlet?.domain || (url ? extractDomain(url) : null)
+
+      return {
+        ...item,
+        outlet_display_name,
+        display_date,
+        display_visitors,
+        display_domain,
+      }
+    })
+
     // Compute summary stats
-    const items = data || []
     const totalPieces = items.length
     const totalReach = items.reduce((sum: number, item: Record<string, unknown>) => {
       const outlet = item.outlet as { monthly_unique_visitors?: number | null } | null

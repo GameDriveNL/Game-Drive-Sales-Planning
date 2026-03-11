@@ -93,7 +93,9 @@ export default function ProductManager({
       await onClientCreate({
         name: clientName.trim(),
         email: clientEmail.trim() || undefined,
-        steam_api_key: undefined
+        steam_api_key: undefined,
+        sales_planning_enabled: true,
+        pr_tracking_enabled: false
       })
       setClientName('')
       setClientEmail('')
@@ -124,7 +126,8 @@ export default function ProductManager({
         name: gameNameTrimmed,
         client_id: gameClientId,
         steam_app_id: steamAppIdTrimmed,
-        pr_tracking_enabled: false
+        pr_tracking_enabled: false,
+        sales_planning_enabled: true
       })
 
       // If auto-create base product is enabled and we got the game back

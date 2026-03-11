@@ -138,7 +138,9 @@
 }
 
 .excelBtn,
-.pdfBtn {
+.csvBtn,
+.pdfBtn,
+.enrichBtn {
   padding: 7px 16px;
   border: none;
   border-radius: 6px;
@@ -156,12 +158,27 @@
 
 .excelBtn:hover { background: #059669; }
 
+.csvBtn {
+  background: #0ea5e9;
+  color: white;
+}
+
+.csvBtn:hover { background: #0284c7; }
+
 .pdfBtn {
   background: #6366f1;
   color: white;
 }
 
 .pdfBtn:hover { background: #4f46e5; }
+
+.enrichBtn {
+  background: #f59e0b;
+  color: white;
+}
+
+.enrichBtn:hover { background: #d97706; }
+.enrichBtn:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .empty {
   text-align: center;
@@ -228,6 +245,18 @@
 .tierB { background: #dbeafe; color: #1e40af; }
 .tierC { background: #fef9c3; color: #854d0e; }
 .tierD { background: #f3f4f6; color: #374151; }
+
+.dateCell {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.territoryCell {
+  white-space: nowrap;
+  font-size: 12px;
+}
 
 .typeCell {
   text-transform: capitalize;

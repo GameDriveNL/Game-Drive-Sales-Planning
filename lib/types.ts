@@ -64,6 +64,7 @@ export interface Game {
   name: string
   steam_app_id?: string
   pr_tracking_enabled: boolean
+  sales_planning_enabled: boolean
   created_at: string
   client?: Client
 }
@@ -72,7 +73,10 @@ export interface Client {
   id: string
   name: string
   email?: string
+  contact_person?: string
   steam_api_key?: string
+  sales_planning_enabled: boolean
+  pr_tracking_enabled: boolean
   created_at: string
 }
 
@@ -308,4 +312,33 @@ export interface CoverageItem {
   game?: Game
   client?: Client
   campaign?: CoverageCampaign
+}
+
+// ============================================
+// API Product Matching Types
+// ============================================
+
+export type MappingStatus = 'confirmed' | 'pending' | 'rejected' | 'ignored'
+export type MatchType = 'auto_id' | 'auto_name' | 'auto_alias' | 'manual' | 'create_new'
+
+export interface ApiProductMapping {
+  id: string
+  client_id: string
+  product_id: string | null
+  game_id: string | null
+  platform: string
+  external_product_name: string
+  steam_package_id?: string | null
+  steam_app_id?: string | null
+  playstation_sku?: string | null
+  match_type: MatchType | string
+  confidence_score?: number | null
+  status: MappingStatus
+  confirmed_at?: string | null
+  created_at: string
+  updated_at: string
+  // Joined relations
+  product?: Product
+  game?: Game
+  client?: Client
 }

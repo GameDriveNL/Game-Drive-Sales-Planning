@@ -567,7 +567,7 @@ export default function GameDriveDashboard() {
           status: snap.status as Sale['status'],
           notes: snap.notes ?? undefined,
           created_at: new Date().toISOString(),
-          product: product || { id: snap.product_id, game_id: '', name: snap.product_name || 'Unknown', product_type: 'base' as const, created_at: '', game: { id: '', client_id: '', name: '', pr_tracking_enabled: false, created_at: '', client: { id: '', name: '', created_at: '' } } },
+          product: product || { id: snap.product_id, game_id: '', name: snap.product_name || 'Unknown', product_type: 'base' as const, created_at: '', game: { id: '', client_id: '', name: '', sales_planning_enabled: true, pr_tracking_enabled: false, created_at: '', client: { id: '', name: '', sales_planning_enabled: true, pr_tracking_enabled: false, created_at: '' } } },
           platform: platform || { id: snap.platform_id, name: snap.platform_name || 'Unknown', cooldown_days: 0, approval_required: false, color_hex: '#666', max_sale_days: 14, special_sales_no_cooldown: false }
         }
       })

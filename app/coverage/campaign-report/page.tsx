@@ -14,7 +14,37 @@ interface CoverageRow {
   url: string
   publish_date: string | null
   coverage_type: string | null
-  outlet: { name: string; tier: string | null; domain: string | null } | null
+  territory: string | null
+  monthly_unique_visitors: number | null
+  discovered_at: string | null
+  created_at: string | null
+  outlet: {
+    id: string
+    name: string
+    tier: string | null
+    domain: string | null
+    monthly_unique_visitors: number | null
+  } | null
+  // Computed fields from API
+  outlet_display_name: string
+  display_date: string | null
+  display_visitors: number | null
+  display_domain: string | null
+}
+
+function formatDateEU(dateStr: string | null): string {
+  if (!dateStr) return '-'
+  try {
+    const [y, m, d] = dateStr.split('-')
+    return `${d}.${m}.${y}`
+  } catch {
+    return dateStr
+  }
+}
+
+function formatVisitors(n: number | null | undefined): string {
+  if (!n) return '-'
+  return n.toLocaleString('en-US')
 }
 
 export default function CampaignReportPage() {
@@ -31,6 +61,8 @@ export default function CampaignReportPage() {
   const [items, setItems] = useState<CoverageRow[]>([])
   const [loading, setLoading] = useState(false)
   const [loaded, setLoaded] = useState(false)
+  const [enriching, setEnriching] = useState(false)
+  const [enrichStatus, setEnrichStatus] = useState('')
 
   const reportRef = useRef<HTMLDivElement>(null)
 
@@ -70,6 +102,58 @@ export default function CampaignReportPage() {
     setLoading(false)
   }, [selectedClient, selectedGame, dateFrom, dateTo])
 
+  // Batch enrich outlets missing traffic data via HypeStat
+  const handleEnrichTraffic = async () => {
+    // Find outlets missing MUV data
+    const outletsMissingTraffic = new Map<string, string>()
+    for (const item of items) {
+      if (item.outlet?.id && !item.outlet.monthly_unique_visitors && item.display_domain) {
+        outletsMissingTraffic.set(item.outlet.id, item.display_domain)
+      }
+    }
+
+    if (outletsMissingTraffic.size === 0) {
+      setEnrichStatus('All outlets already have traffic data.')
+      setTimeout(() => setEnrichStatus(''), 3000)
+      return
+    }
+
+    setEnriching(true)
+    setEnrichStatus(`Enriching ${outletsMissingTraffic.size} outlets via HypeStat...`)
+
+    let enriched = 0
+    let failed = 0
+
+    for (const [outletId, domain] of outletsMissingTraffic) {
+      try {
+        const res = await fetch('/api/hypestat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ outlet_id: outletId, domain })
+        })
+        const result = await res.json()
+        if (result.monthly_unique_visitors) {
+          enriched++
+        } else {
+          failed++
+        }
+      } catch {
+        failed++
+      }
+      setEnrichStatus(`Enriching outlets... ${enriched + failed}/${outletsMissingTraffic.size}`)
+    }
+
+    setEnriching(false)
+    setEnrichStatus(`Done: ${enriched} enriched, ${failed} no data found.`)
+
+    // Reload data to show updated MUV
+    if (enriched > 0) {
+      await fetchCoverage()
+    }
+
+    setTimeout(() => setEnrichStatus(''), 5000)
+  }
+
   const clientName = clients.find(c => c.id === selectedClient)?.name || 'All Clients'
   const gameName = games.find(g => g.id === selectedGame)?.name || 'All Games'
   const dateLabel = dateFrom && dateTo
@@ -80,23 +164,61 @@ export default function CampaignReportPage() {
         ? `Until ${dateTo}`
         : 'All dates'
 
+  // Count how many outlets are missing traffic data
+  const missingTrafficCount = items.filter(item => !item.display_visitors && item.display_domain).length
+
   const handleExcelExport = () => {
     const rows = items.map(item => ({
-      'Outlet': item.outlet?.name || 'Unknown',
+      'Date': formatDateEU(item.display_date),
+      'Territory': item.territory || '-',
+      'Outlet': item.outlet_display_name || 'Unknown',
       'Tier': item.outlet?.tier || '-',
+      'Type': item.coverage_type || '-',
       'Title': item.title,
       'URL': item.url,
-      'Type': item.coverage_type || '-',
-      'Date': item.publish_date || '-',
+      'Monthly Unique Visitors': item.display_visitors || '',
     }))
 
     const wb = XLSX.utils.book_new()
     const ws = XLSX.utils.json_to_sheet(rows)
     ws['!cols'] = [
-      { wch: 25 }, { wch: 6 }, { wch: 50 }, { wch: 60 }, { wch: 12 }, { wch: 12 },
+      { wch: 12 },  // Date
+      { wch: 18 },  // Territory
+      { wch: 25 },  // Outlet
+      { wch: 6 },   // Tier
+      { wch: 12 },  // Type
+      { wch: 50 },  // Title
+      { wch: 60 },  // URL
+      { wch: 22 },  // Monthly Unique Visitors
     ]
     XLSX.utils.book_append_sheet(wb, ws, 'Campaign Coverage')
     XLSX.writeFile(wb, `campaign-report-${clientName.replace(/\s+/g, '-').toLowerCase()}-${dateFrom || 'all'}.xlsx`)
+  }
+
+  // CSV export matching Bram's exact PR Report format
+  const handleCSVExport = () => {
+    const gameLbl = games.find(g => g.id === selectedGame)?.name || gameName
+    const titleRow = `${gameLbl}`
+
+    const header = 'Date,Territory,Outlet Name,Type of Media,Link,Unique Monthly Visitors / Followers / Subscribers'
+
+    const dataRows = items.map(item => {
+      const date = formatDateEU(item.display_date)
+      const territory = (item.territory || '').replace(/,/g, '')
+      const outlet = (item.outlet_display_name || 'Unknown').replace(/,/g, '')
+      const type = (item.coverage_type || '-').replace(/,/g, '')
+      const url = item.url
+      const visitors = item.display_visitors ? item.display_visitors.toLocaleString('en-US') : ''
+      return `${date},${territory},${outlet},${type},${url},${visitors}`
+    })
+
+    const csv = [titleRow, header, ...dataRows].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `PR Report ${clientName} - ${gameLbl}.csv`
+    link.click()
+    URL.revokeObjectURL(link.href)
   }
 
   const handlePDFExport = () => {
@@ -105,10 +227,13 @@ export default function CampaignReportPage() {
 
     const tableRows = items.map(item => `
       <tr>
-        <td>${item.outlet?.name || 'Unknown'}</td>
+        <td>${formatDateEU(item.display_date)}</td>
+        <td>${item.territory || '-'}</td>
+        <td>${item.outlet_display_name || 'Unknown'}</td>
         <td>${item.outlet?.tier || '-'}</td>
-        <td>${item.title}</td>
+        <td>${item.coverage_type || '-'}</td>
         <td><a href="${item.url}" target="_blank">${item.url}</a></td>
+        <td style="text-align:right">${formatVisitors(item.display_visitors)}</td>
       </tr>
     `).join('')
 
@@ -122,7 +247,7 @@ export default function CampaignReportPage() {
           h1 { font-size: 22px; margin: 0 0 4px; }
           .meta { font-size: 13px; color: #64748b; margin-bottom: 24px; }
           .count { font-size: 14px; font-weight: 600; margin-bottom: 16px; }
-          table { width: 100%; border-collapse: collapse; font-size: 12px; }
+          table { width: 100%; border-collapse: collapse; font-size: 11px; }
           th { text-align: left; padding: 8px 10px; background: #f8fafc; border-bottom: 2px solid #e2e8f0; font-weight: 600; color: #475569; }
           td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; }
           a { color: #3b82f6; text-decoration: none; word-break: break-all; }
@@ -140,10 +265,13 @@ export default function CampaignReportPage() {
         <table>
           <thead>
             <tr>
+              <th>Date</th>
+              <th>Territory</th>
               <th>Outlet</th>
               <th>Tier</th>
-              <th>Title</th>
+              <th>Type</th>
               <th>URL</th>
+              <th style="text-align:right">Monthly Visitors</th>
             </tr>
           </thead>
           <tbody>
@@ -176,7 +304,7 @@ export default function CampaignReportPage() {
       <div style={{ flex: 1, overflow: 'auto' }}>
         <div className={styles.container}>
           {/* Top nav */}
-          <div style={{ display: 'flex', gap: '0', marginBottom: '24px', borderBottom: '2px solid #e2e8f0' }}>
+          <div style={{ display: 'flex', gap: '0', marginBottom: '24px', borderBottom: '2px solid #e2e8f0', flexWrap: 'wrap' }}>
             <Link href="/coverage" style={{ padding: '10px 20px', fontSize: '14px', fontWeight: 500, color: '#64748b', textDecoration: 'none', marginBottom: '-2px' }}>Outlets</Link>
             <Link href="/coverage/keywords" style={{ padding: '10px 20px', fontSize: '14px', fontWeight: 500, color: '#64748b', textDecoration: 'none', marginBottom: '-2px' }}>Keywords</Link>
             <Link href="/coverage/settings" style={{ padding: '10px 20px', fontSize: '14px', fontWeight: 500, color: '#64748b', textDecoration: 'none', marginBottom: '-2px' }}>API Keys</Link>
@@ -250,14 +378,36 @@ export default function CampaignReportPage() {
               <div className={styles.resultHeader}>
                 <div className={styles.resultCount}>
                   {items.length} coverage item{items.length !== 1 ? 's' : ''}
+                  {missingTrafficCount > 0 && (
+                    <span style={{ color: '#f59e0b', fontSize: '12px', marginLeft: '12px' }}>
+                      ({missingTrafficCount} missing traffic data)
+                    </span>
+                  )}
                 </div>
                 {items.length > 0 && (
                   <div className={styles.exportBtns}>
+                    {missingTrafficCount > 0 && (
+                      <button
+                        className={styles.enrichBtn}
+                        onClick={handleEnrichTraffic}
+                        disabled={enriching}
+                        title="Fetch monthly visitors from HypeStat for outlets missing traffic data"
+                      >
+                        {enriching ? 'Enriching...' : `Enrich Traffic (${missingTrafficCount})`}
+                      </button>
+                    )}
                     <button className={styles.excelBtn} onClick={handleExcelExport}>Export Excel</button>
+                    <button className={styles.csvBtn} onClick={handleCSVExport}>Export CSV (PR Report)</button>
                     <button className={styles.pdfBtn} onClick={handlePDFExport}>Export PDF</button>
                   </div>
                 )}
               </div>
+
+              {enrichStatus && (
+                <div style={{ padding: '8px 12px', marginBottom: '12px', fontSize: '13px', color: '#475569', background: '#f0f9ff', borderRadius: '6px', border: '1px solid #bae6fd' }}>
+                  {enrichStatus}
+                </div>
+              )}
 
               {items.length === 0 ? (
                 <div className={styles.empty}>
@@ -267,17 +417,22 @@ export default function CampaignReportPage() {
                 <table className={styles.table}>
                   <thead>
                     <tr>
+                      <th>Date</th>
+                      <th>Territory</th>
                       <th>Outlet</th>
                       <th>Tier</th>
                       <th>Type</th>
                       <th>Title</th>
                       <th>Link</th>
+                      <th style={{ textAlign: 'right' }}>Monthly Visitors</th>
                     </tr>
                   </thead>
                   <tbody>
                     {items.map(item => (
                       <tr key={item.id}>
-                        <td className={styles.outletCell}>{item.outlet?.name || 'Unknown'}</td>
+                        <td className={styles.dateCell}>{formatDateEU(item.display_date)}</td>
+                        <td className={styles.territoryCell}>{item.territory || '-'}</td>
+                        <td className={styles.outletCell}>{item.outlet_display_name || 'Unknown'}</td>
                         <td>
                           {item.outlet?.tier ? (
                             <span className={`${styles.tierBadge} ${styles['tier' + item.outlet.tier]}`}>
@@ -289,6 +444,9 @@ export default function CampaignReportPage() {
                         <td className={styles.titleCell}>{item.title}</td>
                         <td className={styles.linkCell}>
                           <a href={item.url} target="_blank" rel="noopener noreferrer">{item.url}</a>
+                        </td>
+                        <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                          {formatVisitors(item.display_visitors)}
                         </td>
                       </tr>
                     ))}
