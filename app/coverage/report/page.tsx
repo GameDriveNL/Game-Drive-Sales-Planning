@@ -228,7 +228,7 @@ export default function CoverageReportPage() {
   }
 
   function getVisitors(item: CoverageItem): number {
-    return item.display_visitors ?? item.monthly_unique_visitors ?? 0
+    return item.display_visitors ?? 0
   }
 
   // Format a metrics array as compact text for exports/print
