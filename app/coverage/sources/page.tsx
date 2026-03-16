@@ -194,26 +194,12 @@ export default function SourcesPage() {
 
   const fetchPlatformStats = useCallback(async () => {
     try {
-      const { data } = await supabase
-        .from('coverage_items')
-        .select('source_type, discovered_at')
-        .in('source_type', ['youtube', 'twitch', 'reddit', 'twitter', 'tiktok', 'instagram'])
-      if (data) {
-        const stats: Record<string, { total: number; lastSeen: string | null }> = {}
-        for (const row of data) {
-          const t = row.source_type as string
-          if (!stats[t]) stats[t] = { total: 0, lastSeen: null }
-          stats[t].total++
-          if (!stats[t].lastSeen || row.discovered_at > stats[t].lastSeen!) {
-            stats[t].lastSeen = row.discovered_at
-          }
-        }
-        setPlatformStats(stats)
-      }
+      const res = await fetch('/api/coverage-platform-stats')
+      if (res.ok) setPlatformStats(await res.json())
     } catch (err) {
       console.error('Failed to fetch platform stats:', err)
     }
-  }, [supabase])
+  }, [])
 
   const fetchApiKeyStatus = useCallback(async () => {
     try {
@@ -1078,7 +1064,6 @@ export default function SourcesPage() {
         </div>
 
         {renderSection('youtube', 'YouTube', 'Video search by keywords via Apify YouTube scraper', ytSources)}
-        {renderSection('twitch', 'Twitch', 'Game stream/VOD monitoring via Apify Twitch scraper', tcSources)}
         {renderSection('reddit', 'Reddit', 'Subreddit keyword search via Apify Reddit scraper', rdSources)}
         {renderSection('twitter', 'Twitter/X', 'Keyword/hashtag monitoring via Apify actors', twSources)}
         {renderSection('tiktok', 'TikTok', 'Hashtag & keyword monitoring — min 1,000 followers default', tkSources)}
