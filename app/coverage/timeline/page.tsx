@@ -131,6 +131,7 @@ export default function TimelinePage() {
   const [timelineGroupBy, setTimelineGroupBy] = useState<'game' | 'outlet'>('game')
   const [zoomIndex, setZoomIndex] = useState(3) // default 3M
   const [colorBy, setColorBy] = useState<'tier' | 'type' | 'sentiment'>('tier')
+  const [manualDayWidth, setManualDayWidth] = useState<number | null>(null) // null = auto-fit
 
   // ─── Overlays ─────────────────────────────────────────────────────────────
   const [showSales, setShowSales] = useState(true)
@@ -226,12 +227,13 @@ export default function TimelinePage() {
     return days
   }, [dateFrom, dateTo])
 
-  const dayWidth = useMemo(() => {
+  const autoFitDayWidth = useMemo(() => {
     const availableWidth = containerWidth - SIDEBAR_WIDTH
     return Math.max(4, availableWidth / allDays.length)
   }, [containerWidth, allDays.length])
 
-  const totalWidth = SIDEBAR_WIDTH + allDays.length * dayWidth
+  const dayWidth = manualDayWidth !== null ? manualDayWidth : autoFitDayWidth
+  const totalWidth = Math.max(containerWidth, SIDEBAR_WIDTH + allDays.length * dayWidth)
 
   const annotationsByDate = useMemo(() => {
     const map: Record<string, Annotation[]> = {}
@@ -423,6 +425,45 @@ export default function TimelinePage() {
     setZoomIndex(idx)
   }, [])
 
+  // ─── Scroll-wheel zoom ───────────────────────────────────────────────────
+  // Ctrl+scroll or pinch-to-zoom on the timeline area
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || viewMode !== 'timeline') return
+
+    const handleWheel = (e: WheelEvent) => {
+      // Only zoom on Ctrl+scroll (or pinch on trackpad which sends ctrlKey)
+      if (!e.ctrlKey && !e.metaKey) return
+      e.preventDefault()
+
+      const currentDW = manualDayWidth !== null ? manualDayWidth : autoFitDayWidth
+      const zoomFactor = e.deltaY < 0 ? 1.15 : 1 / 1.15
+      const newDW = Math.min(120, Math.max(2, currentDW * zoomFactor))
+
+      // Zoom centered on cursor position
+      const rect = el.getBoundingClientRect()
+      const cursorX = e.clientX - rect.left // cursor position in scroll viewport
+      const scrollLeft = el.scrollLeft
+      const cursorDayPos = (scrollLeft + cursorX - SIDEBAR_WIDTH) / currentDW
+      const newScrollLeft = cursorDayPos * newDW - cursorX + SIDEBAR_WIDTH
+
+      setManualDayWidth(newDW)
+      // Use requestAnimationFrame to apply scroll after render
+      requestAnimationFrame(() => {
+        el.scrollLeft = Math.max(0, newScrollLeft)
+      })
+    }
+
+    el.addEventListener('wheel', handleWheel, { passive: false })
+    return () => el.removeEventListener('wheel', handleWheel)
+  }, [viewMode, manualDayWidth, autoFitDayWidth])
+
+  // Reset manual zoom when date range changes (from zoom buttons)
+  const applyZoomAndReset = useCallback((idx: number) => {
+    setManualDayWidth(null) // reset to auto-fit for new range
+    applyZoom(idx)
+  }, [applyZoom])
+
   // ─── Loading / Auth ───────────────────────────────────────────────────────
 
   if (authLoading || isLoading) {
@@ -479,7 +520,7 @@ export default function TimelinePage() {
       <Sidebar />
 
       <div ref={containerRef} style={{ flex: 1, padding: '32px', overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ maxWidth: '1600px', margin: '0 auto', width: '100%' }}>
+        <div style={{ width: '100%' }}>
           {/* Header */}
           <div style={{ marginBottom: '16px' }}>
             <h1 style={{ fontSize: '28px', fontWeight: 700, color: '#1e293b', margin: 0 }}>Coverage Timeline</h1>
@@ -597,28 +638,55 @@ export default function TimelinePage() {
                 display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px',
                 borderBottom: '1px solid #e2e8f0', fontSize: '12px',
               }}>
-                <span style={{ color: '#64748b', fontWeight: 500 }}>Zoom:</span>
+                <span style={{ color: '#64748b', fontWeight: 500 }}>Range:</span>
                 <div style={{ display: 'flex', gap: '2px' }}>
                   {ZOOM_LEVELS.map((level, i) => (
-                    <button key={level.label} onClick={() => applyZoom(i)}
+                    <button key={level.label} onClick={() => applyZoomAndReset(i)}
                       style={{
                         padding: '3px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 600, cursor: 'pointer',
-                        backgroundColor: zoomIndex === i ? '#1e293b' : '#f1f5f9',
-                        color: zoomIndex === i ? 'white' : '#64748b',
+                        backgroundColor: zoomIndex === i && manualDayWidth === null ? '#1e293b' : '#f1f5f9',
+                        color: zoomIndex === i && manualDayWidth === null ? 'white' : '#64748b',
                         border: 'none',
                       }}
                     >{level.label}</button>
                   ))}
                 </div>
+
+                <div style={{ width: '1px', height: '18px', backgroundColor: '#e2e8f0' }} />
+
+                <span style={{ color: '#64748b', fontWeight: 500 }}>Zoom:</span>
+                <button onClick={() => {
+                  const curr = manualDayWidth ?? autoFitDayWidth
+                  setManualDayWidth(Math.min(120, curr * 1.3))
+                }} style={{
+                  padding: '2px 8px', borderRadius: '4px', fontSize: '13px', fontWeight: 700,
+                  backgroundColor: '#f1f5f9', color: '#475569', border: 'none', cursor: 'pointer',
+                }}>+</button>
+                <button onClick={() => {
+                  const curr = manualDayWidth ?? autoFitDayWidth
+                  setManualDayWidth(Math.max(2, curr / 1.3))
+                }} style={{
+                  padding: '2px 8px', borderRadius: '4px', fontSize: '13px', fontWeight: 700,
+                  backgroundColor: '#f1f5f9', color: '#475569', border: 'none', cursor: 'pointer',
+                }}>−</button>
+                <button onClick={() => setManualDayWidth(null)} style={{
+                  padding: '3px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 500,
+                  backgroundColor: manualDayWidth === null ? '#dbeafe' : '#f1f5f9',
+                  color: manualDayWidth === null ? '#1e40af' : '#64748b',
+                  border: 'none', cursor: 'pointer',
+                }}>Fit</button>
+
+                <div style={{ width: '1px', height: '18px', backgroundColor: '#e2e8f0' }} />
+
                 <button onClick={scrollToToday} style={{
                   padding: '3px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 500,
-                  backgroundColor: '#f1f5f9', color: '#64748b', border: 'none', cursor: 'pointer', marginLeft: '8px',
+                  backgroundColor: '#f1f5f9', color: '#64748b', border: 'none', cursor: 'pointer',
                 }}>
                   Today
                 </button>
                 <div style={{ flex: 1 }} />
                 <span style={{ color: '#94a3b8', fontSize: '11px' }}>
-                  {coverageItems.length} items · {timelineRows.length} rows · Click timeline to annotate
+                  {coverageItems.length} items · {timelineRows.length} rows · Ctrl+scroll to zoom
                 </span>
               </div>
 
