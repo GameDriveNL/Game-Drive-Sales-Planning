@@ -157,9 +157,10 @@ export default function TimelinePage() {
   const [tableSort, setTableSort] = useState<{ field: string; dir: 'asc' | 'desc' }>({ field: 'publish_date', dir: 'desc' })
 
 
-  // ─── Container width ─────────────────────────────────────────────────────
+  // ─── Container dimensions ───────────────────────────────────────────────
   const timelineCardRef = useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = useState(1200)
+  const [scrollAreaHeight, setScrollAreaHeight] = useState(600)
   useEffect(() => {
     // Observe the timeline card width (or fallback to outer container)
     const el = timelineCardRef.current || containerRef.current
@@ -170,6 +171,17 @@ export default function TimelinePage() {
     ro.observe(el)
     return () => ro.disconnect()
   }, [viewMode]) // re-observe when view mode changes (card may mount/unmount)
+
+  // Measure available height for the scroll area
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const ro = new ResizeObserver(entries => {
+      for (const entry of entries) setScrollAreaHeight(entry.contentRect.height)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [viewMode])
 
   // ─── Data fetching ────────────────────────────────────────────────────────
 
@@ -817,7 +829,7 @@ export default function TimelinePage() {
                   )}
 
                   {/* Timeline rows */}
-                  {timelineRows.map(row => {
+                  {timelineRows.map((row, rowIdx) => {
                     // Group items by day for stacking
                     const itemsByDay: Record<string, TimelineCoverageItem[]> = {}
                     for (const item of row.items) {
@@ -827,7 +839,14 @@ export default function TimelinePage() {
                       itemsByDay[day].push(item)
                     }
                     const maxStack = Math.max(1, ...Object.values(itemsByDay).map(arr => arr.length))
-                    const rowH = Math.max(ROW_HEIGHT, Math.min(maxStack, 4) * 12 + 12)
+                    const naturalH = Math.max(ROW_HEIGHT, Math.min(maxStack, 4) * 12 + 12)
+                    // Expand rows to fill available vertical space
+                    const headerOverhead = 28 + (dayWidth >= 20 ? 22 : 0)
+                      + (showCampaigns && visibleCampaigns.length > 0 ? Math.max(1, visibleCampaigns.length) * 22 + 28 : 0)
+                      + (showAnnotations && annotations.length > 0 ? 28 : 0)
+                    const availableForRows = Math.max(200, scrollAreaHeight - headerOverhead)
+                    const expandedMin = Math.floor(availableForRows / (timelineRows.length || 1))
+                    const rowH = Math.max(naturalH, expandedMin)
 
                     // Sales for this row (match by game if grouped by game)
                     const rowSales = showSales ? visibleSales.filter(s => {
