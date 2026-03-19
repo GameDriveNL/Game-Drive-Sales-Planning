@@ -158,24 +158,22 @@ export default function TimelinePage() {
 
   // ─── Resizable height ───────────────────────────────────────────────────
   const [timelineHeight, setTimelineHeight] = useState<number | null>(null) // null = default calc
-  const resizingRef = useRef(false)
-  const resizeStartRef = useRef({ y: 0, h: 0 })
 
   const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
-    resizingRef.current = true
+    e.stopPropagation()
     const scrollEl = scrollRef.current
-    const startH = timelineHeight ?? scrollEl?.clientHeight ?? 400
-    resizeStartRef.current = { y: e.clientY, h: startH }
+    if (!scrollEl) return
+    const startY = e.clientY
+    const startH = scrollEl.getBoundingClientRect().height
 
     const handleMouseMove = (ev: MouseEvent) => {
-      if (!resizingRef.current) return
-      const delta = ev.clientY - resizeStartRef.current.y
-      const newH = Math.max(200, resizeStartRef.current.h + delta)
+      ev.preventDefault()
+      const delta = ev.clientY - startY
+      const newH = Math.max(200, Math.round(startH + delta))
       setTimelineHeight(newH)
     }
     const handleMouseUp = () => {
-      resizingRef.current = false
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
       document.body.style.cursor = ''
@@ -185,7 +183,7 @@ export default function TimelinePage() {
     document.body.style.userSelect = 'none'
     document.addEventListener('mousemove', handleMouseMove)
     document.addEventListener('mouseup', handleMouseUp)
-  }, [timelineHeight])
+  }, [])
 
   // ─── Container width ─────────────────────────────────────────────────────
   const timelineCardRef = useRef<HTMLDivElement>(null)
@@ -1018,15 +1016,16 @@ export default function TimelinePage() {
               <div
                 onMouseDown={handleResizeMouseDown}
                 style={{
-                  height: '8px', cursor: 'ns-resize', backgroundColor: '#f1f5f9',
-                  borderTop: '1px solid #e2e8f0',
+                  height: '14px', cursor: 'ns-resize', backgroundColor: '#f1f5f9',
+                  borderTop: '2px solid #e2e8f0',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  transition: 'background-color 0.15s',
+                  gap: '3px', flexDirection: 'column',
                 }}
                 onMouseEnter={e => { (e.currentTarget as HTMLElement).style.backgroundColor = '#e2e8f0' }}
                 onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = '#f1f5f9' }}
               >
-                <div style={{ width: '40px', height: '3px', borderRadius: '2px', backgroundColor: '#cbd5e1' }} />
+                <div style={{ width: '40px', height: '2px', borderRadius: '1px', backgroundColor: '#94a3b8' }} />
+                <div style={{ width: '28px', height: '2px', borderRadius: '1px', backgroundColor: '#94a3b8' }} />
               </div>
             </div>
           )}
