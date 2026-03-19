@@ -157,15 +157,18 @@ export default function TimelinePage() {
   const [tableSort, setTableSort] = useState<{ field: string; dir: 'asc' | 'desc' }>({ field: 'publish_date', dir: 'desc' })
 
   // ─── Container width ─────────────────────────────────────────────────────
+  const timelineCardRef = useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = useState(1200)
   useEffect(() => {
-    if (!containerRef.current) return
+    // Observe the timeline card width (or fallback to outer container)
+    const el = timelineCardRef.current || containerRef.current
+    if (!el) return
     const ro = new ResizeObserver(entries => {
       for (const entry of entries) setContainerWidth(entry.contentRect.width)
     })
-    ro.observe(containerRef.current)
+    ro.observe(el)
     return () => ro.disconnect()
-  }, [])
+  }, [viewMode]) // re-observe when view mode changes (card may mount/unmount)
 
   // ─── Data fetching ────────────────────────────────────────────────────────
 
@@ -632,7 +635,7 @@ export default function TimelinePage() {
               TIMELINE VIEW (Gantt-style)
               ═══════════════════════════════════════════════════════════════════ */}
           {viewMode === 'timeline' && (
-            <div style={{ backgroundColor: 'white', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', overflow: 'hidden' }}>
+            <div ref={timelineCardRef} style={{ backgroundColor: 'white', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', overflow: 'hidden' }}>
               {/* Zoom controls */}
               <div style={{
                 display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px',
@@ -692,7 +695,7 @@ export default function TimelinePage() {
 
               {/* Scrollable timeline area */}
               <div ref={scrollRef} style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 380px)' }}>
-                <div style={{ minWidth: totalWidth, position: 'relative' }}>
+                <div style={{ width: manualDayWidth !== null ? totalWidth : '100%', minWidth: manualDayWidth !== null ? totalWidth : '100%', position: 'relative' }}>
 
                   {/* Month headers */}
                   <div style={{
