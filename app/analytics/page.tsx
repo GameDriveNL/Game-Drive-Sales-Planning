@@ -2736,6 +2736,24 @@ export default function AnalyticsPage() {
           </>
         )}
 
+        {/* Wishlist & Bundle widget — always shows when data exists, regardless of sales data */}
+        {wishlistStats && wishlistStats.dataPoints > 0 && (
+          <div style={{
+            backgroundColor: '#fff',
+            borderRadius: '12px',
+            border: '1px solid #e2e8f0',
+            padding: '20px 24px',
+            marginTop: '16px',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+              <span style={{ fontSize: '18px' }}>&#x2764;</span>
+              <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#1e293b', margin: 0 }}>Steam Wishlists & Bundles</h3>
+              <span style={{ fontSize: '12px', color: '#94a3b8', marginLeft: 'auto' }}>{wishlistStats.dataPoints} data points &middot; {wishlistStats.games} game{wishlistStats.games !== 1 ? 's' : ''}</span>
+            </div>
+            {renderWishlistWidget()}
+          </div>
+        )}
+
         {showImportModal && (
           <ImportPerformanceModal
             isOpen={showImportModal}

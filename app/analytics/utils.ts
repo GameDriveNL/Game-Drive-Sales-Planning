@@ -45,6 +45,4 @@ export const DEFAULT_WIDGETS: DashboardWidget[] = [
   { id: 'world-map', type: 'world-map', title: 'Revenue by Country', config: { mapType: 'choropleth' }, position: { x: 0, y: 2 }, size: { w: 2, h: 1 } },
   // Sale Performance comparison - full width
   { id: 'sale-performance', type: 'sale-comparison', title: 'Sale Performance Analysis', config: { chartType: 'stacked-bar' }, position: { x: 0, y: 3 }, size: { w: 2, h: 1 } },
-  // Wishlist & Bundles widget - full width
-  { id: 'wishlist-overview', type: 'wishlist', title: 'Steam Wishlists & Bundles', config: {}, position: { x: 0, y: 4 }, size: { w: 2, h: 1 } },
 ]
