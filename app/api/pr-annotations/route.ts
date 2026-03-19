@@ -23,6 +23,7 @@ export async function GET(request: NextRequest) {
     const eventType = searchParams.get('event_type')
     const dateFrom = searchParams.get('date_from')
     const dateTo = searchParams.get('date_to')
+    const confidence = searchParams.get('confidence')
     const limit = parseInt(searchParams.get('limit') || '100')
     const offset = parseInt(searchParams.get('offset') || '0')
 
@@ -37,6 +38,7 @@ export async function GET(request: NextRequest) {
     if (eventType) query = query.eq('event_type', eventType)
     if (dateFrom) query = query.gte('event_date', dateFrom)
     if (dateTo) query = query.lte('event_date', dateTo)
+    if (confidence) query = query.eq('confidence', confidence)
 
     const { data, error, count } = await query
 

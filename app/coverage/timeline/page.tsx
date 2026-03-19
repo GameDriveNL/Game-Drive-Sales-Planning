@@ -5,6 +5,7 @@ import { Sidebar } from '../../components/Sidebar'
 import { useAuth } from '@/lib/auth-context'
 import { CoverageNav } from '../components/CoverageNav'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import AnnotationSidebar, { AnnotationPrefill } from '@/app/components/AnnotationSidebar'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -112,6 +113,16 @@ export default function TimelinePage() {
   const [selectedItem, setSelectedItem] = useState<TimelineCoverageItem | null>(null)
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
 
+  // Annotations
+  const [annotations, setAnnotations] = useState<Array<{
+    id: string; game_id: string; client_id: string; event_type: string; event_date: string;
+    outlet_or_source: string | null; observed_effect: string; direction: string; confidence: string;
+    notes: string | null; game?: { name: string }; client?: { name: string }
+  }>>([])
+  const [showAnnotationSidebar, setShowAnnotationSidebar] = useState(false)
+  const [annotationPrefill, setAnnotationPrefill] = useState<AnnotationPrefill | undefined>()
+  const [showAnnotations, setShowAnnotations] = useState(true)
+
   // Load reference data
   useEffect(() => {
     if (!canView) return
@@ -151,6 +162,27 @@ export default function TimelinePage() {
     if (canView) fetchData()
   }, [canView, fetchData])
 
+  const fetchAnnotations = useCallback(async () => {
+    const params = new URLSearchParams()
+    if (clientFilter) params.set('client_id', clientFilter)
+    if (gameFilter) params.set('game_id', gameFilter)
+    if (dateFrom) params.set('date_from', dateFrom)
+    if (dateTo) params.set('date_to', dateTo)
+    try {
+      const res = await fetch(`/api/pr-annotations?${params}`)
+      if (res.ok) {
+        const json = await res.json()
+        setAnnotations(json.data || [])
+      }
+    } catch (err) {
+      console.error('Annotations fetch error:', err)
+    }
+  }, [clientFilter, gameFilter, dateFrom, dateTo])
+
+  useEffect(() => {
+    if (canView) fetchAnnotations()
+  }, [canView, fetchAnnotations])
+
   const filteredGames = clientFilter ? games.filter(g => g.client_id === clientFilter) : games
 
   // ─── Compute calendar data ────────────────────────────────────────────────
@@ -166,6 +198,16 @@ export default function TimelinePage() {
     }
     return map
   }, [coverageItems])
+
+  const annotationsByDate = useMemo(() => {
+    const map: Record<string, typeof annotations> = {}
+    for (const a of annotations) {
+      const day = a.event_date
+      if (!map[day]) map[day] = []
+      map[day].push(a)
+    }
+    return map
+  }, [annotations])
 
   // Generate all days in range
   const allDays = useMemo(() => {
@@ -402,6 +444,35 @@ export default function TimelinePage() {
               }}
             >
               Campaigns
+            </button>
+
+            <button
+              onClick={() => setShowAnnotations(!showAnnotations)}
+              style={{
+                padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 500, cursor: 'pointer',
+                backgroundColor: showAnnotations ? '#fef3c7' : 'white',
+                color: showAnnotations ? '#92400e' : '#64748b',
+                border: showAnnotations ? '1px solid #fde68a' : '1px solid #e2e8f0',
+              }}
+            >
+              Annotations
+            </button>
+
+            <button
+              onClick={() => {
+                setAnnotationPrefill({
+                  game_id: gameFilter || undefined,
+                  client_id: clientFilter || undefined,
+                  event_date: selectedDay || new Date().toISOString().split('T')[0],
+                })
+                setShowAnnotationSidebar(true)
+              }}
+              style={{
+                padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
+                backgroundColor: '#2563eb', color: 'white', border: '1px solid #2563eb',
+              }}
+            >
+              + Log PR Insight
             </button>
           </div>
 
@@ -651,6 +722,12 @@ export default function TimelinePage() {
                                       width: '4px', height: '4px', borderRadius: '50%', backgroundColor: '#3b82f6',
                                     }} />
                                   )}
+                                  {showAnnotations && annotationsByDate[day] && annotationsByDate[day].length > 0 && (
+                                    <div style={{
+                                      position: 'absolute', top: '1px', right: '1px',
+                                      width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#f59e0b',
+                                    }} title={`${annotationsByDate[day].length} annotation(s)`} />
+                                  )}
                                 </div>
                               )
                             })}
@@ -839,6 +916,29 @@ export default function TimelinePage() {
                       </div>
                     )}
 
+                    {/* Annotations for this day */}
+                    {showAnnotations && selectedDay && annotationsByDate[selectedDay] && annotationsByDate[selectedDay].length > 0 && (
+                      <div style={{ padding: '8px 12px', backgroundColor: '#fffbeb', borderRadius: '8px', border: '1px solid #fde68a', marginBottom: '4px' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 600, color: '#92400e', marginBottom: '4px' }}>PR Annotations</div>
+                        {annotationsByDate[selectedDay].map(a => (
+                          <div key={a.id} style={{ fontSize: '12px', color: '#78350f', marginBottom: '2px' }}>
+                            <span style={{ fontWeight: 500 }}>{a.event_type.replace(/_/g, ' ')}</span>
+                            {a.outlet_or_source && <span> — {a.outlet_or_source}</span>}
+                            <span style={{
+                              marginLeft: '6px', fontSize: '10px', padding: '1px 6px', borderRadius: '4px',
+                              backgroundColor: a.confidence === 'confirmed' ? '#dcfce7' : a.confidence === 'suspected' ? '#fef9c3' : '#fee2e2',
+                              color: a.confidence === 'confirmed' ? '#166534' : a.confidence === 'suspected' ? '#854d0e' : '#991b1b',
+                            }}>
+                              {a.confidence}
+                            </span>
+                            {a.observed_effect !== 'unknown' && (
+                              <span style={{ marginLeft: '4px', fontSize: '10px', color: '#64748b' }}>→ {a.observed_effect.replace(/_/g, ' ')}</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
                     {dayItems.length === 0 ? (
                       <div style={{ color: '#94a3b8', fontSize: '13px', textAlign: 'center', padding: '20px' }}>
                         No coverage items on this day
@@ -950,6 +1050,14 @@ export default function TimelinePage() {
             </div>
           )}
         </div>
+
+        {/* Annotation Sidebar */}
+        <AnnotationSidebar
+          isOpen={showAnnotationSidebar}
+          onClose={() => setShowAnnotationSidebar(false)}
+          onSaved={() => { setShowAnnotationSidebar(false); fetchAnnotations() }}
+          prefill={annotationPrefill}
+        />
       </div>
     </div>
   )

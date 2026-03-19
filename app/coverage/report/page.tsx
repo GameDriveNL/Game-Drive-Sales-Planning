@@ -121,6 +121,13 @@ export default function CoverageReportPage() {
   const [feedLink, setFeedLink] = useState<string | null>(null)
   const [feedLinkCopied, setFeedLinkCopied] = useState(false)
 
+  // Annotations state
+  const [annotations, setAnnotations] = useState<Array<{
+    id: string; event_type: string; event_date: string; outlet_or_source: string | null;
+    observed_effect: string; direction: string; confidence: string; notes: string | null;
+    game?: { name: string }; client?: { name: string }
+  }>>([])
+
   // PDF ref
   const reportRef = useRef<HTMLDivElement>(null)
 
@@ -135,6 +142,21 @@ export default function CoverageReportPage() {
     }
     fetchLists()
   }, [canView, supabase])
+
+  // Fetch annotations for the report
+  useEffect(() => {
+    if (!canView) return
+    const params = new URLSearchParams()
+    if (selectedClient) params.set('client_id', selectedClient)
+    if (selectedGame) params.set('game_id', selectedGame)
+    if (dateFrom) params.set('date_from', dateFrom)
+    if (dateTo) params.set('date_to', dateTo)
+    params.set('confidence', 'confirmed')
+    fetch(`/api/pr-annotations?${params}`)
+      .then(r => r.ok ? r.json() : { data: [] })
+      .then(json => setAnnotations(json.data || []))
+      .catch(() => setAnnotations([]))
+  }, [canView, selectedClient, selectedGame, dateFrom, dateTo])
 
   // Apply date preset
   const applyDatePreset = (preset: string) => {
@@ -1296,6 +1318,65 @@ export default function CoverageReportPage() {
                   </div>
                 </div>
               ))}
+
+              {/* PR Insights & Annotations */}
+              {annotations.length > 0 && (
+                <div style={{ backgroundColor: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', marginTop: '20px' }}>
+                  <div style={{ fontSize: '16px', fontWeight: 700, color: '#1e293b', marginBottom: '16px' }}>
+                    PR Insights & Confirmed Annotations
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {annotations.map(a => {
+                      const effectColors: Record<string, { bg: string; text: string }> = {
+                        sales_spike: { bg: '#dcfce7', text: '#166534' },
+                        wishlist_spike: { bg: '#dbeafe', text: '#1e40af' },
+                        pr_pickup: { bg: '#f3e8ff', text: '#7c3aed' },
+                        none: { bg: '#f3f4f6', text: '#374151' },
+                        unknown: { bg: '#f3f4f6', text: '#64748b' },
+                      }
+                      const ec = effectColors[a.observed_effect] || effectColors.unknown
+                      return (
+                        <div key={a.id} style={{
+                          display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 14px',
+                          backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0',
+                        }}>
+                          <div style={{ fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap', minWidth: '90px' }}>
+                            {new Date(a.event_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </div>
+                          <span style={{
+                            fontSize: '11px', padding: '2px 8px', borderRadius: '9999px',
+                            backgroundColor: '#f1f5f9', color: '#475569', whiteSpace: 'nowrap',
+                          }}>
+                            {a.event_type.replace(/_/g, ' ')}
+                          </span>
+                          <div style={{ flex: 1, fontSize: '13px', color: '#1e293b', fontWeight: 500 }}>
+                            {a.outlet_or_source || '\u2014'}
+                            {a.game?.name && <span style={{ fontWeight: 400, color: '#64748b', marginLeft: '6px' }}>({a.game.name})</span>}
+                          </div>
+                          <span style={{
+                            fontSize: '11px', padding: '2px 8px', borderRadius: '9999px', fontWeight: 600, whiteSpace: 'nowrap',
+                            backgroundColor: ec.bg, color: ec.text,
+                          }}>
+                            {a.observed_effect.replace(/_/g, ' ')}
+                          </span>
+                          <span style={{
+                            fontSize: '10px', padding: '2px 6px', borderRadius: '4px',
+                            backgroundColor: a.direction === 'pr_to_sales' ? '#eff6ff' : '#fef3c7',
+                            color: a.direction === 'pr_to_sales' ? '#1e40af' : '#854d0e',
+                          }}>
+                            {a.direction === 'pr_to_sales' ? 'PR \u2192 Sales' : 'Sales \u2192 PR'}
+                          </span>
+                          {a.notes && (
+                            <div style={{ fontSize: '11px', color: '#64748b', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={a.notes}>
+                              {a.notes}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
