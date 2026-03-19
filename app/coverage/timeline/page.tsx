@@ -160,7 +160,6 @@ export default function TimelinePage() {
   // ─── Container dimensions ───────────────────────────────────────────────
   const timelineCardRef = useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = useState(1200)
-  const [scrollAreaHeight, setScrollAreaHeight] = useState(600)
   useEffect(() => {
     // Observe the timeline card width (or fallback to outer container)
     const el = timelineCardRef.current || containerRef.current
@@ -172,16 +171,6 @@ export default function TimelinePage() {
     return () => ro.disconnect()
   }, [viewMode]) // re-observe when view mode changes (card may mount/unmount)
 
-  // Measure available height for the scroll area
-  useEffect(() => {
-    const el = scrollRef.current
-    if (!el) return
-    const ro = new ResizeObserver(entries => {
-      for (const entry of entries) setScrollAreaHeight(entry.contentRect.height)
-    })
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [viewMode])
 
   // ─── Data fetching ────────────────────────────────────────────────────────
 
@@ -711,7 +700,7 @@ export default function TimelinePage() {
                 overflowX: 'auto', overflowY: 'auto',
                 flex: 1, minHeight: 0,
               }}>
-                <div style={{ width: manualDayWidth !== null ? totalWidth : '100%', minWidth: manualDayWidth !== null ? totalWidth : '100%', position: 'relative' }}>
+                <div style={{ width: manualDayWidth !== null ? totalWidth : '100%', minWidth: manualDayWidth !== null ? totalWidth : '100%', minHeight: '100%', position: 'relative', display: 'flex', flexDirection: 'column' }}>
 
                   {/* Month headers */}
                   <div style={{
@@ -828,7 +817,8 @@ export default function TimelinePage() {
                     }} />
                   )}
 
-                  {/* Timeline rows */}
+                  {/* Timeline rows — flex container fills remaining space */}
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                   {timelineRows.map((row, rowIdx) => {
                     // Group items by day for stacking
                     const itemsByDay: Record<string, TimelineCoverageItem[]> = {}
@@ -839,14 +829,7 @@ export default function TimelinePage() {
                       itemsByDay[day].push(item)
                     }
                     const maxStack = Math.max(1, ...Object.values(itemsByDay).map(arr => arr.length))
-                    const naturalH = Math.max(ROW_HEIGHT, Math.min(maxStack, 4) * 12 + 12)
-                    // Expand rows to fill available vertical space
-                    const headerOverhead = 28 + (dayWidth >= 20 ? 22 : 0)
-                      + (showCampaigns && visibleCampaigns.length > 0 ? Math.max(1, visibleCampaigns.length) * 22 + 28 : 0)
-                      + (showAnnotations && annotations.length > 0 ? 28 : 0)
-                    const availableForRows = Math.max(200, scrollAreaHeight - headerOverhead)
-                    const expandedMin = Math.floor(availableForRows / (timelineRows.length || 1))
-                    const rowH = Math.max(naturalH, expandedMin)
+                    const rowH = Math.max(ROW_HEIGHT, Math.min(maxStack, 4) * 12 + 12)
 
                     // Sales for this row (match by game if grouped by game)
                     const rowSales = showSales ? visibleSales.filter(s => {
@@ -857,7 +840,7 @@ export default function TimelinePage() {
                     }) : []
 
                     return (
-                      <div key={row.id} style={{ display: 'flex', borderBottom: '1px solid #f1f5f9' }}>
+                      <div key={row.id} style={{ display: 'flex', borderBottom: '1px solid #f1f5f9', flex: 1, minHeight: rowH }}>
                         {/* Row label (sticky) */}
                         <div style={{
                           minWidth: SIDEBAR_WIDTH, maxWidth: SIDEBAR_WIDTH, padding: '6px 12px',
@@ -877,8 +860,8 @@ export default function TimelinePage() {
                         <div
                           onClick={(e) => handleTimelineRowClick(e, row)}
                           style={{
-                            position: 'relative', height: rowH, flex: 1, cursor: 'crosshair',
-                            minWidth: allDays.length * dayWidth,
+                            position: 'relative', flex: 1, cursor: 'crosshair',
+                            minWidth: allDays.length * dayWidth, minHeight: rowH,
                           }}
                         >
                           {/* Day cell backgrounds */}
@@ -971,10 +954,11 @@ export default function TimelinePage() {
 
                   {/* Empty state */}
                   {timelineRows.length === 0 && (
-                    <div style={{ padding: '60px 20px', textAlign: 'center', color: '#94a3b8' }}>
+                    <div style={{ padding: '60px 20px', textAlign: 'center', color: '#94a3b8', flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       No coverage items found for this date range and filters.
                     </div>
                   )}
+                  </div>{/* close rows flex wrapper */}
                 </div>
               </div>
 
