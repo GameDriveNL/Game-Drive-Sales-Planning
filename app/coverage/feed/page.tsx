@@ -470,7 +470,7 @@ export default function CoverageFeedPage() {
       <Sidebar />
 
       <div style={{ flex: 1, padding: '32px', overflow: 'auto' }}>
-        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+        <div style={{ margin: '0 auto' }}>
           {/* Header */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
             <div>
@@ -555,7 +555,7 @@ export default function CoverageFeedPage() {
           {viewMode === 'correlations' && (
             <div style={{ backgroundColor: 'white', borderRadius: '10px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
               <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                <table style={{ width: '100%', minWidth: '900px', borderCollapse: 'collapse', fontSize: '13px' }}>
                   <thead>
                     <tr style={{ borderBottom: '2px solid #e2e8f0', backgroundColor: '#f8fafc' }}>
                       <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 600, color: '#475569' }}>Game</th>
@@ -782,7 +782,7 @@ export default function CoverageFeedPage() {
           {/* Table */}
           {viewMode !== 'correlations' && <div style={{ backgroundColor: 'white', borderRadius: '10px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+              <table style={{ width: '100%', minWidth: '1200px', borderCollapse: 'collapse', fontSize: '13px' }}>
                 <thead>
                   <tr style={{ borderBottom: '2px solid #e2e8f0', backgroundColor: '#f8fafc' }}>
                     {canEdit && (
@@ -795,13 +795,13 @@ export default function CoverageFeedPage() {
                       style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 600, color: '#475569', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
                       Date{sortIcon('publish_date')}
                     </th>
-                    <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 600, color: '#475569' }}>
+                    <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 600, color: '#475569', whiteSpace: 'nowrap' }}>
                       Outlet
                     </th>
-                    <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 600, color: '#475569' }}>
+                    <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 600, color: '#475569', whiteSpace: 'nowrap' }}>
                       Type
                     </th>
-                    <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 600, color: '#475569', maxWidth: '300px' }}>
+                    <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 600, color: '#475569' }}>
                       Title
                     </th>
                     <th onClick={() => handleSort('monthly_unique_visitors')}
@@ -825,7 +825,7 @@ export default function CoverageFeedPage() {
                       Source
                     </th>
                     {canEdit && (
-                      <th style={{ textAlign: 'right', padding: '10px 12px', fontWeight: 600, color: '#475569' }}>
+                      <th style={{ textAlign: 'right', padding: '10px 12px', fontWeight: 600, color: '#475569', whiteSpace: 'nowrap' }}>
                         Actions
                       </th>
                     )}
