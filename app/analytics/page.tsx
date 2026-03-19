@@ -64,6 +64,63 @@ export default function AnalyticsPage() {
   const [committedVersion, setCommittedVersion] = useState<CommittedVersion | null>(null)
   const gridRef = useRef<HTMLDivElement>(null)
 
+  // Wishlist widget state
+  const [wishlistData, setWishlistData] = useState<{game: string; date: string; additions: number; deletions: number; purchases: number}[]>([])
+  const [wishlistStats, setWishlistStats] = useState<{totalAdds: number; totalDels: number; totalPurchases: number; games: number; dataPoints: number} | null>(null)
+  const [bundleStats, setBundleStats] = useState<{totalBundles: number; netRevenue: number; netUnits: number} | null>(null)
+
+  // Fetch wishlist & bundle data for the widget
+  useEffect(() => {
+    const fetchWishlistData = async () => {
+      // Fetch wishlists — get all data, filtered by selected client if set
+      const params = new URLSearchParams()
+      if (selectedClient && selectedClient !== 'all') {
+        params.set('client_id', selectedClient)
+      }
+
+      try {
+        const [wlRes, blRes] = await Promise.all([
+          supabase.from('steam_wishlists').select('game_id, date, additions, deletions, purchases_and_activations, game:games(name)')
+            .order('date', { ascending: true })
+            .limit(500),
+          supabase.from('steam_bundles').select('bundle_name, net_units, net_revenue_usd')
+            .limit(500),
+        ])
+
+        if (wlRes.data && wlRes.data.length > 0) {
+          const rows = wlRes.data.map(r => ({
+            game: ((r as Record<string, unknown>).game as { name: string } | null)?.name || 'Unknown',
+            date: r.date as string,
+            additions: (r.additions as number) || 0,
+            deletions: (r.deletions as number) || 0,
+            purchases: (r.purchases_and_activations as number) || 0,
+          }))
+          setWishlistData(rows)
+          const gameNames = new Set(rows.map(r => r.game))
+          setWishlistStats({
+            totalAdds: rows.reduce((s, r) => s + r.additions, 0),
+            totalDels: rows.reduce((s, r) => s + r.deletions, 0),
+            totalPurchases: rows.reduce((s, r) => s + r.purchases, 0),
+            games: gameNames.size,
+            dataPoints: rows.length,
+          })
+        }
+
+        if (blRes.data && blRes.data.length > 0) {
+          const bundleNames = new Set(blRes.data.map(r => r.bundle_name))
+          setBundleStats({
+            totalBundles: bundleNames.size,
+            netRevenue: blRes.data.reduce((s, r) => s + (Number(r.net_revenue_usd) || 0), 0),
+            netUnits: blRes.data.reduce((s, r) => s + (Number(r.net_units) || 0), 0),
+          })
+        }
+      } catch (err) {
+        console.error('Failed to load wishlist data:', err)
+      }
+    }
+    fetchWishlistData()
+  }, [supabase, selectedClient])
+
   // Fetch all clients and build platform connectivity map
   useEffect(() => {
     const fetchClients = async () => {
@@ -2259,6 +2316,128 @@ export default function AnalyticsPage() {
     )
   }
 
+  // Render wishlist & bundles widget
+  const renderWishlistWidget = () => {
+    const hasWl = wishlistStats && wishlistStats.dataPoints > 0
+    const hasBl = bundleStats && bundleStats.totalBundles > 0
+
+    if (!hasWl && !hasBl) {
+      return (
+        <div style={{ padding: '32px', textAlign: 'center', color: '#94a3b8' }}>
+          <div style={{ fontSize: '24px', marginBottom: '8px' }}>&#x2764;</div>
+          <p style={{ fontSize: '14px', fontWeight: 500, marginBottom: '4px' }}>No Wishlist or Bundle Data Yet</p>
+          <p style={{ fontSize: '12px' }}>Go to <a href="/analytics/wishlists" style={{ color: '#2563eb', textDecoration: 'underline' }}>Wishlists & Bundles</a> to sync from Steam API or import CSV data.</p>
+        </div>
+      )
+    }
+
+    // Mini chart — aggregate additions by date across all games
+    const dateMap = new Map<string, {adds: number; dels: number; purch: number}>()
+    for (const r of wishlistData) {
+      const existing = dateMap.get(r.date) || { adds: 0, dels: 0, purch: 0 }
+      existing.adds += r.additions
+      existing.dels += r.deletions
+      existing.purch += r.purchases
+      dateMap.set(r.date, existing)
+    }
+    const chartData = Array.from(dateMap.entries()).sort((a, b) => a[0].localeCompare(b[0]))
+    const maxVal = Math.max(...chartData.map(([, d]) => Math.max(d.adds, d.dels, d.purch)), 1)
+    const niceMax = Math.ceil(maxVal / 100) * 100
+
+    const cW = 520
+    const cH = 160
+    const cPad = { top: 10, right: 10, bottom: 24, left: 45 }
+    const plotW = cW - cPad.left - cPad.right
+    const plotH = cH - cPad.top - cPad.bottom
+    const xStep = chartData.length > 1 ? plotW / (chartData.length - 1) : plotW
+    const yScale = (v: number) => cPad.top + plotH - (v / niceMax) * plotH
+
+    const makeLine = (getter: (d: {adds: number; dels: number; purch: number}) => number) =>
+      chartData.map(([, d], i) => `${i === 0 ? 'M' : 'L'}${cPad.left + i * xStep},${yScale(getter(d))}`).join(' ')
+
+    const fmt = (n: number) => n >= 1000 ? `${(n/1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n)
+
+    return (
+      <div style={{ display: 'flex', gap: '20px', padding: '4px 0' }}>
+        {/* Left: stats */}
+        <div style={{ minWidth: '200px' }}>
+          {hasWl && (
+            <>
+              <div style={{ fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Wishlists ({wishlistStats.games} game{wishlistStats.games !== 1 ? 's' : ''})</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '14px' }}>
+                <div style={{ padding: '8px', backgroundColor: '#f0fdf4', borderRadius: '8px' }}>
+                  <div style={{ fontSize: '18px', fontWeight: 700, color: '#16a34a' }}>+{fmt(wishlistStats.totalAdds)}</div>
+                  <div style={{ fontSize: '10px', color: '#64748b' }}>Additions</div>
+                </div>
+                <div style={{ padding: '8px', backgroundColor: '#fef2f2', borderRadius: '8px' }}>
+                  <div style={{ fontSize: '18px', fontWeight: 700, color: '#dc2626' }}>-{fmt(wishlistStats.totalDels)}</div>
+                  <div style={{ fontSize: '10px', color: '#64748b' }}>Deletions</div>
+                </div>
+                <div style={{ padding: '8px', backgroundColor: '#eff6ff', borderRadius: '8px' }}>
+                  <div style={{ fontSize: '18px', fontWeight: 700, color: '#2563eb' }}>{fmt(wishlistStats.totalPurchases)}</div>
+                  <div style={{ fontSize: '10px', color: '#64748b' }}>Purchases</div>
+                </div>
+                <div style={{ padding: '8px', backgroundColor: '#f8fafc', borderRadius: '8px' }}>
+                  <div style={{ fontSize: '18px', fontWeight: 700, color: wishlistStats.totalAdds - wishlistStats.totalDels >= 0 ? '#16a34a' : '#dc2626' }}>
+                    {wishlistStats.totalAdds - wishlistStats.totalDels >= 0 ? '+' : ''}{fmt(wishlistStats.totalAdds - wishlistStats.totalDels)}
+                  </div>
+                  <div style={{ fontSize: '10px', color: '#64748b' }}>Net Change</div>
+                </div>
+              </div>
+            </>
+          )}
+          {hasBl && (
+            <>
+              <div style={{ fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Bundles</div>
+              <div style={{ padding: '8px', backgroundColor: '#faf5ff', borderRadius: '8px', marginBottom: '8px' }}>
+                <div style={{ fontSize: '16px', fontWeight: 700, color: '#7c3aed' }}>{bundleStats.totalBundles} bundle{bundleStats.totalBundles !== 1 ? 's' : ''}</div>
+                <div style={{ fontSize: '11px', color: '#64748b' }}>{fmt(bundleStats.netUnits)} units &middot; ${bundleStats.netRevenue.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} net</div>
+              </div>
+            </>
+          )}
+          <a href="/analytics/wishlists" style={{ fontSize: '12px', color: '#2563eb', textDecoration: 'none', fontWeight: 500 }}>View full details &rarr;</a>
+        </div>
+
+        {/* Right: mini chart */}
+        {chartData.length >= 2 && (
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <svg viewBox={`0 0 ${cW} ${cH}`} width="100%" style={{ maxHeight: '180px' }}>
+              {/* Grid */}
+              {[0, 0.25, 0.5, 0.75, 1].map((pct, i) => {
+                const y = cPad.top + plotH * (1 - pct)
+                return <line key={i} x1={cPad.left} y1={y} x2={cW - cPad.right} y2={y} stroke="#f1f5f9" strokeWidth={1} />
+              })}
+              {/* Y labels */}
+              {[0, 0.5, 1].map((pct, i) => {
+                const v = Math.round(niceMax * pct)
+                const y = cPad.top + plotH * (1 - pct)
+                return <text key={i} x={cPad.left - 6} y={y + 3} textAnchor="end" fontSize={9} fill="#94a3b8">{fmt(v)}</text>
+              })}
+              {/* Area */}
+              <path d={`${makeLine(d => d.adds)} L${cPad.left + (chartData.length - 1) * xStep},${cPad.top + plotH} L${cPad.left},${cPad.top + plotH} Z`} fill="#16a34a" opacity={0.06} />
+              {/* Lines */}
+              <path d={makeLine(d => d.adds)} fill="none" stroke="#16a34a" strokeWidth={1.5} />
+              <path d={makeLine(d => d.dels)} fill="none" stroke="#dc2626" strokeWidth={1} strokeDasharray="3 2" />
+              <path d={makeLine(d => d.purch)} fill="none" stroke="#2563eb" strokeWidth={1.5} />
+              {/* X labels */}
+              {chartData.filter((_, i) => i % Math.max(1, Math.floor(chartData.length / 6)) === 0 || i === chartData.length - 1).map(([date], idx) => {
+                const origIdx = chartData.findIndex(([d]) => d === date)
+                const x = cPad.left + origIdx * xStep
+                const d = new Date(date + 'T00:00:00')
+                return <text key={idx} x={x} y={cH - 4} textAnchor="middle" fontSize={8} fill="#94a3b8">{d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</text>
+              })}
+            </svg>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '2px' }}>
+              <span style={{ fontSize: '10px', color: '#64748b' }}><span style={{ display: 'inline-block', width: 8, height: 2, backgroundColor: '#16a34a', borderRadius: 1, marginRight: 3, verticalAlign: 'middle' }}></span>Adds</span>
+              <span style={{ fontSize: '10px', color: '#64748b' }}><span style={{ display: 'inline-block', width: 8, height: 2, backgroundColor: '#dc2626', borderRadius: 1, marginRight: 3, verticalAlign: 'middle' }}></span>Dels</span>
+              <span style={{ fontSize: '10px', color: '#64748b' }}><span style={{ display: 'inline-block', width: 8, height: 2, backgroundColor: '#2563eb', borderRadius: 1, marginRight: 3, verticalAlign: 'middle' }}></span>Purchases</span>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   // Render widget based on type
   const renderWidget = (widget: DashboardWidget) => {
     switch (widget.type) {
@@ -2274,6 +2453,7 @@ export default function AnalyticsPage() {
       case 'heatmap': return renderHeatmapWidget(widget)
       case 'table': return renderTableWidget(widget)
       case 'sale-comparison': return renderSalePerformanceChart(widget)
+      case 'wishlist': return renderWishlistWidget()
       default: return null
     }
   }

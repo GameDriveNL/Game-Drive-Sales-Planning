@@ -123,7 +123,7 @@ export interface CommittedVersion {
 // Widget Types for editable dashboard
 export interface DashboardWidget {
   id: string
-  type: 'stat' | 'chart' | 'table' | 'region' | 'countries' | 'growth' | 'growth-line' | 'avg-price' | 'pie' | 'world-map' | 'heatmap' | 'sale-comparison'
+  type: 'stat' | 'chart' | 'table' | 'region' | 'countries' | 'growth' | 'growth-line' | 'avg-price' | 'pie' | 'world-map' | 'heatmap' | 'sale-comparison' | 'wishlist'
   title: string
   config: {
     statKey?: string
