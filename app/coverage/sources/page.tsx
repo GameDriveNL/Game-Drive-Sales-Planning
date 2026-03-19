@@ -805,12 +805,32 @@ export default function SourcesPage() {
           ) : null}
         </div>
 
+        {/* Error message banner (shown when status is failed/error) */}
+        {(source.last_run_status === 'failed' || source.last_run_status === 'error') && source.last_run_message && (
+          <div style={{
+            padding: '6px 10px', borderRadius: '6px', fontSize: '11px', marginBottom: '6px',
+            backgroundColor: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b',
+            lineHeight: '1.4', wordBreak: 'break-word'
+          }}>
+            <strong style={{ color: '#dc2626' }}>
+              {source.consecutive_failures >= 5 ? 'Persistent error' : source.last_run_message.includes('API key') || source.last_run_message.includes('configured') || source.last_run_message.includes('401') || source.last_run_message.includes('403') ? 'Configuration error' : 'Transient error'}
+              {source.consecutive_failures >= 10 && ' (auto-disabled)'}:
+            </strong>{' '}
+            {source.last_run_message.length > 200 ? source.last_run_message.substring(0, 200) + '...' : source.last_run_message}
+            {source.consecutive_failures >= 3 && source.consecutive_failures < 10 && (
+              <span style={{ marginLeft: '8px', color: '#b91c1c', fontWeight: 600 }}>
+                ({source.consecutive_failures} consecutive failures)
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Stats row */}
-        <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: '#94a3b8', borderTop: '1px solid #f1f5f9', paddingTop: '8px' }}>
+        <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: '#94a3b8', borderTop: '1px solid #f1f5f9', paddingTop: '8px', flexWrap: 'wrap' }}>
           <span>Freq: <strong style={{ color: '#475569' }}>{source.scan_frequency}</strong></span>
           <span>Last run: <strong style={{ color: '#475569' }}>{timeAgo(source.last_run_at)}</strong></span>
           <span>Found: <strong style={{ color: '#475569' }}>{source.items_found_last_run}</strong> last / <strong style={{ color: '#475569' }}>{source.total_items_found}</strong> total</span>
-          {source.consecutive_failures > 0 && (
+          {source.consecutive_failures > 0 && source.last_run_status !== 'failed' && source.last_run_status !== 'error' && (
             <span style={{ color: '#ef4444' }}>⚠ {source.consecutive_failures} failures</span>
           )}
         </div>

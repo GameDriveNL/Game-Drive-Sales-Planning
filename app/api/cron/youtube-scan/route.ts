@@ -34,6 +34,13 @@ export async function GET(request: NextRequest) {
 
     const apifyKey = keyData.api_key
 
+    // Get YouTube coverage_sources (for per-source status tracking)
+    const { data: ytSources } = await supabase
+      .from('coverage_sources')
+      .select('id, game_id, config, consecutive_failures')
+      .eq('source_type', 'youtube')
+      .eq('is_active', true)
+
     // Get whitelist keywords for all clients/games
     const { data: keywords } = await supabase
       .from('coverage_keywords')
@@ -100,7 +107,7 @@ export async function GET(request: NextRequest) {
           const channelName = video.channelName || 'Unknown Channel'
           const channelUrl = video.channelUrl || ''
           const subscribers = Number(video.numberOfSubscribers || 0)
-          const publishDate = video.date ? new Date(video.date).toISOString().split('T')[0] : null
+          const publishDate = video.date ? new Date(video.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
 
           // Check for existing item by URL
           const { data: existing } = await supabase
@@ -178,8 +185,36 @@ export async function GET(request: NextRequest) {
 
           totalNew++
         }
+        // Update matching coverage_source status on success
+        if (ytSources) {
+          const matchingSrc = ytSources.find(s => s.game_id === term.gameId)
+          if (matchingSrc) {
+            await supabase.from('coverage_sources').update({
+              last_run_at: new Date().toISOString(),
+              last_run_status: 'success',
+              last_run_message: `Found ${videos.length} videos, ${totalNew} new items`,
+              items_found_last_run: videos.length,
+              consecutive_failures: 0
+            }).eq('id', matchingSrc.id)
+          }
+        }
       } catch (err) {
         console.error(`YouTube Apify scan error for "${term.query}":`, err)
+        // Update matching coverage_source with failure status
+        if (ytSources) {
+          const matchingSrc = ytSources.find(s => s.game_id === term.gameId)
+          if (matchingSrc) {
+            const errMsg = err instanceof Error ? err.message : String(err)
+            const newFailures = (matchingSrc.consecutive_failures || 0) + 1
+            await supabase.from('coverage_sources').update({
+              last_run_at: new Date().toISOString(),
+              last_run_status: newFailures >= 5 ? 'error' : 'failed',
+              last_run_message: errMsg.substring(0, 500),
+              consecutive_failures: newFailures,
+              ...(newFailures >= 10 ? { is_active: false } : {})
+            }).eq('id', matchingSrc.id)
+          }
+        }
       }
     }
 

@@ -1,5 +1,121 @@
 import { NextResponse } from 'next/server'
 import { serverSupabase as supabase } from '@/lib/supabase'
+import type { SupabaseClient } from '@supabase/supabase-js'
+
+// Auto-enroll a game into all relevant scrapers and create default keyword
+async function autoEnrollGameInScrapers(
+  db: SupabaseClient,
+  gameId: string,
+  gameName: string,
+  clientId: string
+) {
+  const sgSlug = gameName.replace(/\s+/g, '_')
+
+  // Check which sources already exist for this game to avoid duplicates
+  const { data: existingSources } = await db
+    .from('coverage_sources')
+    .select('source_type')
+    .eq('game_id', gameId)
+
+  const existingTypes = new Set((existingSources || []).map(s => s.source_type))
+
+  const sourcesToCreate: Record<string, unknown>[] = []
+
+  if (!existingTypes.has('sullygnome')) {
+    sourcesToCreate.push({
+      source_type: 'sullygnome',
+      name: `SullyGnome – ${gameName}`,
+      game_id: gameId,
+      scan_frequency: 'weekly',
+      is_active: true,
+      config: { game_name: gameName, sullygnome_slug: sgSlug, default_time_range: '30d', min_avg_viewers: 10 },
+    })
+  }
+
+  if (!existingTypes.has('youtube')) {
+    sourcesToCreate.push({
+      source_type: 'youtube',
+      name: `YouTube – ${gameName}`,
+      game_id: gameId,
+      scan_frequency: 'daily',
+      is_active: true,
+      config: { keywords: [gameName], channel_name: '' },
+    })
+  }
+
+  if (!existingTypes.has('reddit')) {
+    sourcesToCreate.push({
+      source_type: 'reddit',
+      name: `Reddit – ${gameName}`,
+      game_id: gameId,
+      scan_frequency: 'daily',
+      is_active: true,
+      config: { subreddits: ['gaming', 'pcgaming', 'indiegaming'], keywords: [gameName], min_upvotes: 5 },
+    })
+  }
+
+  if (!existingTypes.has('twitter')) {
+    sourcesToCreate.push({
+      source_type: 'twitter',
+      name: `Twitter – ${gameName}`,
+      game_id: gameId,
+      scan_frequency: 'daily',
+      is_active: true,
+      config: { keywords: [gameName], handles: [], min_followers: 500 },
+    })
+  }
+
+  if (!existingTypes.has('tiktok')) {
+    sourcesToCreate.push({
+      source_type: 'tiktok',
+      name: `TikTok – ${gameName}`,
+      game_id: gameId,
+      scan_frequency: 'daily',
+      is_active: true,
+      config: { keywords: [gameName], hashtags: [gameName.replace(/\s+/g, '').toLowerCase()], profiles: [], min_followers: 500 },
+    })
+  }
+
+  if (!existingTypes.has('instagram')) {
+    sourcesToCreate.push({
+      source_type: 'instagram',
+      name: `Instagram – ${gameName}`,
+      game_id: gameId,
+      scan_frequency: 'daily',
+      is_active: true,
+      config: { keywords: [gameName], hashtags: [gameName.replace(/\s+/g, '').toLowerCase()], min_followers: 500 },
+    })
+  }
+
+  // Bulk insert sources
+  if (sourcesToCreate.length > 0) {
+    const { error: srcErr } = await db.from('coverage_sources').insert(sourcesToCreate)
+    if (srcErr) console.error('Auto-enroll sources failed:', srcErr.message)
+  }
+
+  // Auto-create default whitelist keyword for the game name
+  const { data: existingKw } = await db
+    .from('coverage_keywords')
+    .select('id')
+    .eq('game_id', gameId)
+    .eq('keyword', gameName)
+    .eq('keyword_type', 'whitelist')
+    .limit(1)
+
+  if (!existingKw || existingKw.length === 0) {
+    const { error: kwErr } = await db
+      .from('coverage_keywords')
+      .insert({
+        client_id: clientId,
+        game_id: gameId,
+        keyword: gameName,
+        keyword_type: 'whitelist',
+      })
+    if (kwErr) console.error('Auto-create keyword failed:', kwErr.message)
+  }
+
+  console.log(`[Auto-enroll] Enrolled "${gameName}" in ${sourcesToCreate.length} scrapers`)
+}
 
 // GET - Fetch all games with client info
 export async function GET(request: Request) {
@@ -52,27 +168,9 @@ export async function POST(request: Request) {
 
     if (error) throw error
 
-    // Auto-create SullyGnome coverage source for Twitch tracking
-    if (data?.id && data?.name) {
-      const sgSlug = data.name.replace(/\s+/g, '_')
-      await supabase
-        .from('coverage_sources')
-        .insert({
-          source_type: 'sullygnome',
-          name: `SullyGnome – ${data.name}`,
-          game_id: data.id,
-          scan_frequency: 'weekly',
-          is_active: true,
-          config: {
-            game_name: data.name,
-            sullygnome_slug: sgSlug,
-            default_time_range: '30d',
-            min_avg_viewers: 10,
-          },
-        })
-        .then(({ error: sgErr }) => {
-          if (sgErr) console.error('Auto-create SullyGnome source failed:', sgErr.message)
-        })
+    // Auto-enroll game in all scrapers when PR tracking is enabled
+    if (data?.id && data?.name && data?.pr_tracking_enabled) {
+      await autoEnrollGameInScrapers(supabase, data.id, data.name, data.client_id)
     }
 
     return NextResponse.json(data)
@@ -100,6 +198,11 @@ export async function PUT(request: Request) {
       .single()
 
     if (error) throw error
+
+    // Auto-enroll when PR tracking is toggled on
+    if (data && updates.pr_tracking_enabled === true) {
+      await autoEnrollGameInScrapers(supabase, data.id, data.name, data.client_id)
+    }
 
     return NextResponse.json(data)
   } catch (error) {

@@ -131,6 +131,11 @@ export default function ReportsPage() {
   const [exportSections, setExportSections] = useState({ summary: true, sales: true, pr_coverage: true, social: true })
   const [exporting, setExporting] = useState(false)
 
+  // Shareable link state
+  const [generatingLink, setGeneratingLink] = useState(false)
+  const [shareUrl, setShareUrl] = useState<string | null>(null)
+  const [shareError, setShareError] = useState<string | null>(null)
+
   // Manual social stats (stored in annotations custom_fields)
   const [manualSocialStats, setManualSocialStats] = useState<Record<string, Record<string, string>>>({})
 
@@ -192,6 +197,35 @@ export default function ReportsPage() {
       setLoading(false)
     }
   }, [selectedClient, selectedGame, datePreset, dateFrom, dateTo])
+
+  const generateShareLink = async () => {
+    if (!selectedClient || !reportData) return
+    setGeneratingLink(true)
+    setShareError(null)
+    setShareUrl(null)
+    try {
+      const range = datePreset === 'custom' ? { from: dateFrom, to: dateTo } : getDateRange(datePreset)
+      const res = await fetch('/api/reports/share', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: selectedClient,
+          game_id: selectedGame || null,
+          date_from: range.from || null,
+          date_to: range.to || null,
+          sections: exportSections,
+          expires_days: 30,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to generate link')
+      setShareUrl(data.share_url)
+    } catch (err) {
+      setShareError(err instanceof Error ? err.message : 'Failed to generate share link')
+    } finally {
+      setGeneratingLink(false)
+    }
+  }
 
   const saveAnnotation = async (section: string) => {
     if (!selectedClient) return
@@ -727,11 +761,51 @@ ${social && social.total_posts > 0 ? `
               {loading ? 'Loading...' : 'Generate Report'}
             </button>
             {reportData && (
-              <button style={btnOutline} onClick={() => setShowExportModal(true)}>Export Report</button>
+              <>
+                <button style={btnOutline} onClick={() => setShowExportModal(true)}>Export Report</button>
+                <button
+                  style={{ ...btnOutline, backgroundColor: generatingLink ? '#f1f5f9' : undefined }}
+                  onClick={generateShareLink}
+                  disabled={generatingLink}
+                >
+                  {generatingLink ? 'Generating...' : 'Share Link'}
+                </button>
+              </>
             )}
           </div>
         </div>
       </div>
+
+      {/* Share link banner */}
+      {shareUrl && (
+        <div style={{ padding: '12px 16px', borderRadius: '10px', marginBottom: '12px', backgroundColor: '#f0fdf4', border: '1px solid #86efac', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{ fontSize: '13px', color: '#166534', fontWeight: 600 }}>Shareable link created (expires in 30 days):</span>
+          <input
+            type="text"
+            readOnly
+            value={shareUrl}
+            style={{ flex: 1, padding: '6px 10px', border: '1px solid #86efac', borderRadius: '6px', fontSize: '13px', backgroundColor: 'white', color: '#166534' }}
+            onClick={e => (e.target as HTMLInputElement).select()}
+          />
+          <button
+            style={{ padding: '6px 14px', backgroundColor: '#16a34a', color: 'white', border: 'none', borderRadius: '6px', fontSize: '13px', cursor: 'pointer', fontWeight: 500 }}
+            onClick={() => { navigator.clipboard.writeText(shareUrl); }}
+          >
+            Copy
+          </button>
+          <button
+            style={{ padding: '6px 10px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: '#6b7280' }}
+            onClick={() => setShareUrl(null)}
+          >
+            ×
+          </button>
+        </div>
+      )}
+      {shareError && (
+        <div style={{ padding: '10px 14px', borderRadius: '8px', marginBottom: '12px', backgroundColor: '#fee2e2', color: '#dc2626', fontSize: '13px' }}>
+          {shareError}
+        </div>
+      )}
 
       {/* Tabs */}
       {reportData && (

@@ -367,7 +367,9 @@ export async function GET(request: Request) {
                 if (newOutlet) outletId = newOutlet.id
               }
             }
-          } catch { /* ignore outlet lookup errors */ }
+          } catch (outletErr) {
+            console.warn(`[RSS Scan] Outlet lookup/creation error for ${normalizedUrl}:`, outletErr instanceof Error ? outletErr.message : String(outletErr))
+          }
 
           // Infer territory from article domain TLD
           let territory: string | null = null

@@ -81,6 +81,37 @@ export async function GET(request: NextRequest) {
       })
     }
 
+    // Apply keyword blacklist filtering
+    // Fetch blacklist keywords for the client/game and hide matching items
+    const applyBlacklist = searchParams.get('apply_blacklist') !== 'false' // default: on
+    if (applyBlacklist && filtered.length > 0) {
+      let blQuery = supabase
+        .from('coverage_keywords')
+        .select('keyword, game_id')
+        .eq('keyword_type', 'blacklist')
+
+      if (clientId) blQuery = blQuery.eq('client_id', clientId)
+
+      const { data: blKeywords } = await blQuery
+      if (blKeywords && blKeywords.length > 0) {
+        const blacklistTerms = blKeywords.map(k => ({
+          term: k.keyword.toLowerCase(),
+          gameId: k.game_id,
+        }))
+
+        filtered = filtered.filter((item: Record<string, unknown>) => {
+          const title = String(item.title || '').toLowerCase()
+          const itemGameId = item.game_id as string | null
+          for (const bl of blacklistTerms) {
+            // If blacklist keyword is game-scoped, only apply to that game's items
+            if (bl.gameId && bl.gameId !== itemGameId) continue
+            if (title.includes(bl.term)) return false
+          }
+          return true
+        })
+      }
+    }
+
     // For each item with a duplicate_group_id, count syndications
     const groupIds = new Set<string>()
     for (const item of filtered) {

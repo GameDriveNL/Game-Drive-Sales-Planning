@@ -12,17 +12,18 @@
 | Pricing/discount info | Yes | Partner API | Base price, sale price, discount % |
 | Concurrent Users (CCU) | Yes | Public API | Can be added (not yet built) |
 | Store page traffic | No | Neither API | Only visible in Steamworks dashboard |
-| Wishlist data | No | Neither API | Only visible in Steamworks backend |
+| Wishlist data | Yes | Partner API | `GetAppWishlistReporting` — totals, adds, deletes, purchases, gifts |
 | Reviews/ratings | Partial | Store API | Public aggregate data only |
 
 ## What's Already Built
 
 ### Partner API Integration (requires Financial Web API Key)
 
-Our system uses `IPartnerFinancialsService` with two endpoints:
+Our system uses `IPartnerFinancialsService` with three endpoints:
 
 1. **`GetChangedDatesForPartner`** — Identifies which dates have new/updated data (incremental sync)
 2. **`GetDetailedSales`** — Fetches per-day, per-product, per-country financial data
+3. **`GetAppWishlistReporting`** — Fetches daily wishlist totals, adds, deletes, purchases, gifts (per-app)
 
 **Data returned per row:**
 - Date, App ID, App Name, Package ID
@@ -58,7 +59,14 @@ Steam does **not** expose store page visit data through any API — public or pa
 - SteamDB (steamdb.info): Shows some estimated traffic/player data publicly
 
 ### Wishlist Data
-Wishlist counts and additions/removals are **not** available via API. Only visible in the Steamworks backend.
+Wishlist data **is** available via the Partner API using `IPartnerFinancialsService/GetAppWishlistReporting/v001`. This endpoint provides:
+- **Overall totals** per date: total wishlists, additions, deletions, purchases & activations, gifts
+- **Country-level breakdown**: wishlists by country
+- **Language-level breakdown**: wishlists by language
+
+Uses the same Financial Web API Key as sales data. Data is updated within a few hours of user activity.
+
+Our system auto-syncs wishlist data via `/api/cron/steam-wishlist-sync`.
 
 ### Detailed Review Text
 Individual review text is not available via the Partner API. The public Store API (`store.steampowered.com/api/appdetails`) provides aggregate review scores but not individual review content.
