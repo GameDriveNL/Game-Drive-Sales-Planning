@@ -70,7 +70,7 @@ const ZOOM_LEVELS = [
 const TIER_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   A: { bg: '#dcfce7', text: '#166534', border: '#86efac' },
   B: { bg: '#dbeafe', text: '#1e40af', border: '#93c5fd' },
-  C: { bg: '#fef9c3', text: '#854d0e', border: '#fde047' },
+  C: { bg: '#ffedd5', text: '#9a3412', border: '#fdba74' },
   D: { bg: '#f3f4f6', text: '#374151', border: '#d1d5db' },
 }
 
@@ -152,6 +152,7 @@ export default function TimelinePage() {
   })
   const [annotationSaving, setAnnotationSaving] = useState(false)
   const [editingAnnotationId, setEditingAnnotationId] = useState<string | null>(null)
+  const [expandedAnnotationDay, setExpandedAnnotationDay] = useState<string | null>(null)
 
   // ─── Table sort ───────────────────────────────────────────────────────────
   const [tableSort, setTableSort] = useState<{ field: string; dir: 'asc' | 'desc' }>({ field: 'publish_date', dir: 'desc' })
@@ -786,22 +787,76 @@ export default function TimelinePage() {
                       }}>
                         Annotations
                       </div>
-                      <div style={{ position: 'relative', height: '24px', flex: 1 }}>
+                      <div style={{ position: 'relative', height: '28px', flex: 1 }}>
                         {allDays.map((day, idx) => {
                           const anns = annotationsByDate[day]
                           if (!anns || anns.length === 0) return null
+                          const isExpanded = expandedAnnotationDay === day
                           return (
                             <div
                               key={day}
-                              onClick={(e) => { e.stopPropagation(); openEditAnnotation(anns[0], e.clientX, e.clientY) }}
-                              style={{
-                                position: 'absolute', left: idx * dayWidth + dayWidth / 2 - 5, top: 4,
-                                width: '10px', height: '10px', borderRadius: '2px',
-                                backgroundColor: '#f59e0b', border: '1px solid #d97706',
-                                transform: 'rotate(45deg)', cursor: 'pointer',
-                              }}
-                              title={`${anns.length} annotation(s): ${anns[0].event_type.replace(/_/g, ' ')}`}
-                            />
+                              style={{ position: 'absolute', left: idx * dayWidth + dayWidth / 2 - 8, top: 2, zIndex: isExpanded ? 30 : 20 }}
+                            >
+                              {/* Bookmark icon */}
+                              <div
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setExpandedAnnotationDay(isExpanded ? null : day)
+                                }}
+                                onDoubleClick={(e) => { e.stopPropagation(); openEditAnnotation(anns[0], e.clientX, e.clientY) }}
+                                style={{
+                                  width: '16px', height: '20px', cursor: 'pointer',
+                                  position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}
+                                title={`${anns.length} annotation(s) — click to expand, double-click to edit`}
+                              >
+                                <svg width="16" height="20" viewBox="0 0 16 20" fill="none">
+                                  <path d="M1 1h14v16.5L8 14l-7 3.5V1z" fill="#eab308" stroke="#ca8a04" strokeWidth="1.5" />
+                                  {anns.length > 1 && (
+                                    <text x="8" y="11" textAnchor="middle" fontSize="8" fontWeight="bold" fill="#713f12">
+                                      {anns.length}
+                                    </text>
+                                  )}
+                                </svg>
+                              </div>
+                              {/* Expanded popover */}
+                              {isExpanded && (
+                                <div
+                                  onClick={(e) => e.stopPropagation()}
+                                  style={{
+                                    position: 'absolute', top: '22px', left: '50%', transform: 'translateX(-50%)',
+                                    backgroundColor: '#fffef5', border: '1px solid #eab308', borderRadius: '6px',
+                                    padding: '8px 10px', minWidth: '180px', maxWidth: '260px',
+                                    boxShadow: '0 4px 12px rgba(0,0,0,0.12)', zIndex: 50,
+                                  }}
+                                >
+                                  {anns.map((ann, i) => (
+                                    <div
+                                      key={ann.id}
+                                      onClick={() => openEditAnnotation(ann, 0, 0)}
+                                      style={{
+                                        cursor: 'pointer', padding: '4px 0',
+                                        borderBottom: i < anns.length - 1 ? '1px solid #fde68a' : 'none',
+                                      }}
+                                    >
+                                      <div style={{ fontSize: '11px', fontWeight: 600, color: '#92400e' }}>
+                                        {ann.event_type.replace(/_/g, ' ')}
+                                      </div>
+                                      {ann.notes && (
+                                        <div style={{ fontSize: '10px', color: '#78716c', marginTop: '2px', lineHeight: 1.3 }}>
+                                          {ann.notes.length > 80 ? ann.notes.slice(0, 80) + '…' : ann.notes}
+                                        </div>
+                                      )}
+                                      {ann.outlet_or_source && (
+                                        <div style={{ fontSize: '9px', color: '#a8a29e', marginTop: '1px' }}>
+                                          {ann.outlet_or_source}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           )
                         })}
                       </div>
