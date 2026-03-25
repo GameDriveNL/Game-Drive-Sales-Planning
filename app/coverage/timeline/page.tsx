@@ -153,6 +153,7 @@ export default function TimelinePage() {
   const [annotationSaving, setAnnotationSaving] = useState(false)
   const [editingAnnotationId, setEditingAnnotationId] = useState<string | null>(null)
   const [expandedAnnotationDay, setExpandedAnnotationDay] = useState<string | null>(null)
+  const [pendingAnnotationMarker, setPendingAnnotationMarker] = useState<{ day: string; rowId: string } | null>(null)
 
   // ─── Table sort ───────────────────────────────────────────────────────────
   const [tableSort, setTableSort] = useState<{ field: string; dir: 'asc' | 'desc' }>({ field: 'publish_date', dir: 'desc' })
@@ -369,6 +370,7 @@ export default function TimelinePage() {
       }
       setAnnotationPopover(null)
       setEditingAnnotationId(null)
+      setPendingAnnotationMarker(null)
       fetchAnnotations()
     } catch (err) { console.error('Save annotation failed:', err) }
     finally { setAnnotationSaving(false) }
@@ -379,6 +381,7 @@ export default function TimelinePage() {
       await fetch('/api/pr-annotations', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
       setAnnotationPopover(null)
       setEditingAnnotationId(null)
+      setPendingAnnotationMarker(null)
       fetchAnnotations()
     } catch (err) { console.error('Delete annotation failed:', err) }
   }, [fetchAnnotations])
@@ -388,10 +391,10 @@ export default function TimelinePage() {
     if (!annotationPopover) return
     const handleClick = (e: MouseEvent) => {
       const el = document.getElementById('ann-popover')
-      if (el && !el.contains(e.target as Node)) { setAnnotationPopover(null); setEditingAnnotationId(null) }
+      if (el && !el.contains(e.target as Node)) { setAnnotationPopover(null); setEditingAnnotationId(null); setPendingAnnotationMarker(null) }
     }
     const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setAnnotationPopover(null); setEditingAnnotationId(null) }
+      if (e.key === 'Escape') { setAnnotationPopover(null); setEditingAnnotationId(null); setPendingAnnotationMarker(null) }
     }
     setTimeout(() => { document.addEventListener('mousedown', handleClick); document.addEventListener('keydown', handleEsc) }, 50)
     return () => { document.removeEventListener('mousedown', handleClick); document.removeEventListener('keydown', handleEsc) }
@@ -404,6 +407,7 @@ export default function TimelinePage() {
     const dayIndex = Math.floor(relativeX / dayWidth)
     if (dayIndex < 0 || dayIndex >= allDays.length) return
     const day = allDays[dayIndex]
+    setPendingAnnotationMarker({ day, rowId: row.gameId || row.label })
     openAnnotationAt(
       day, e.clientX, e.clientY,
       timelineGroupBy === 'game' ? row.gameId : undefined,
@@ -1051,6 +1055,26 @@ export default function TimelinePage() {
                               </div>
                             )
                           })}
+
+                          {/* Pending annotation bookmark (shown while creating) */}
+                          {pendingAnnotationMarker && pendingAnnotationMarker.rowId === (row.gameId || row.label) && (() => {
+                            const pendingIdx = allDays.indexOf(pendingAnnotationMarker.day)
+                            if (pendingIdx < 0) return null
+                            return (
+                              <div
+                                style={{
+                                  position: 'absolute', left: pendingIdx * dayWidth + dayWidth / 2 - 8,
+                                  top: '50%', transform: 'translateY(-50%)', zIndex: 25,
+                                  animation: 'pulse 1.5s ease-in-out infinite',
+                                }}
+                              >
+                                <svg width="16" height="20" viewBox="0 0 16 20" fill="none">
+                                  <path d="M1 1h14v16.5L8 14l-7 3.5V1z" fill="#eab308" stroke="#ca8a04" strokeWidth="1.5" />
+                                  <text x="8" y="12" textAnchor="middle" fontSize="10" fontWeight="bold" fill="#713f12">+</text>
+                                </svg>
+                              </div>
+                            )
+                          })()}
                         </div>
                       </div>
                     )
@@ -1401,7 +1425,7 @@ export default function TimelinePage() {
                   {new Date((annotationForm.event_date || annotationPopover.day) + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
                 </div>
               </div>
-              <button onClick={() => { setAnnotationPopover(null); setEditingAnnotationId(null) }}
+              <button onClick={() => { setAnnotationPopover(null); setEditingAnnotationId(null); setPendingAnnotationMarker(null) }}
                 style={{ background: 'none', border: 'none', fontSize: '18px', color: '#92400e', cursor: 'pointer' }}>×</button>
             </div>
 
@@ -1490,7 +1514,7 @@ export default function TimelinePage() {
                 </button>
               ) : <div />}
               <div style={{ display: 'flex', gap: '6px' }}>
-                <button onClick={() => { setAnnotationPopover(null); setEditingAnnotationId(null) }}
+                <button onClick={() => { setAnnotationPopover(null); setEditingAnnotationId(null); setPendingAnnotationMarker(null) }}
                   style={{ padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 500, cursor: 'pointer', backgroundColor: 'white', color: '#64748b', border: '1px solid #e2e8f0' }}>
                   Cancel
                 </button>
