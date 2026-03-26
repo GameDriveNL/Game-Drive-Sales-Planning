@@ -199,6 +199,23 @@ export async function GET(request: Request) {
     const { data: clients } = await supabase.from('clients').select('id, name')
     const { data: games } = await supabase.from('games').select('id, name, client_id')
 
+    // Add all game names as implicit whitelist keywords for their clients
+    // This ensures RSS feeds can match articles by game name even without explicit keywords
+    if (games) {
+      for (const game of games) {
+        if (!whitelistByClient.has(game.client_id)) whitelistByClient.set(game.client_id, [])
+        const clientKws = whitelistByClient.get(game.client_id)!
+        if (!clientKws.some(k => k.toLowerCase() === game.name.toLowerCase())) {
+          clientKws.push(game.name)
+        }
+        // Also add URL-slug version (e.g., "we-were-here-tomorrow")
+        const slug = game.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+        if (slug.length > 3 && !clientKws.some(k => k.toLowerCase() === slug)) {
+          clientKws.push(slug)
+        }
+      }
+    }
+
     // Build a combined whitelist if no specific client keywords exist
     const allWhitelistTerms: string[] = []
     Array.from(whitelistByClient.values()).forEach(terms => allWhitelistTerms.push(...terms))

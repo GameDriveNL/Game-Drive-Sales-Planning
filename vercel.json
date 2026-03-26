@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/cron/tavily-scan",
-      "schedule": "0 6 * * *"
+      "schedule": "0 6,18 * * *"
     },
     {
       "path": "/api/cron/traffic-refresh",
@@ -18,7 +18,7 @@
     },
     {
       "path": "/api/cron/coverage-enrich",
-      "schedule": "30 * * * *"
+      "schedule": "*/15 * * * *"
     },
     {
       "path": "/api/cron/youtube-scan",
@@ -47,6 +47,14 @@
     {
       "path": "/api/cron/sullygnome-scan",
       "schedule": "0 4 * * 1"
+    },
+    {
+      "path": "/api/cron/twitch-scan",
+      "schedule": "0 */12 * * *"
+    },
+    {
+      "path": "/api/cron/google-news-scan",
+      "schedule": "0 */4 * * *"
     },
     {
       "path": "/api/cron/correlation-detect",
