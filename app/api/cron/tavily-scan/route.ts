@@ -4,6 +4,7 @@ import { tavily } from '@tavily/core'
 import { inferTerritory } from '@/lib/territory'
 import { domainToOutletName } from '@/lib/outlet-utils'
 import { detectOutletCountry } from '@/lib/outlet-country'
+import { matchGameFromContent, classifyCoverageType } from '@/lib/coverage-utils'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -32,6 +33,10 @@ interface Keyword {
   client_id: string
   game_id: string | null
 }
+
+// Aliases matching coverage-utils function signatures
+type GameInfo = { id: string; name: string; client_id: string }
+type KeywordMeta = { keyword: string; client_id: string; game_id: string | null }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -148,6 +153,7 @@ export async function GET(request: Request) {
       items_found: 0,
       items_inserted: 0,
       items_duplicate: 0,
+      items_no_game: 0,
       estimated_cost: 0,
       errors: [] as string[]
     }
@@ -254,6 +260,24 @@ export async function GET(request: Request) {
               if (result.score && result.score > 0.7) keywordScore += 10
               keywordScore = Math.min(keywordScore, 100)
 
+              // Game matching: every item must be linked to a specific game
+              if (!matchedGameId && matchedClientId && games) {
+                const clientGames = games.filter(g => g.client_id === matchedClientId) as GameInfo[]
+                matchedGameId = matchGameFromContent(
+                  result.title,
+                  result.content || '',
+                  matchedTerms,
+                  allKeywords as KeywordMeta[],
+                  clientGames
+                )
+              }
+
+              // Skip items that can't be linked to a game — avoids "Ungrouped" coverage
+              if (!matchedGameId) {
+                stats.items_no_game = (stats.items_no_game || 0) + 1
+                continue
+              }
+
               existingUrls.add(normalizedUrl)
 
               // Try to match outlet by domain, auto-create if not found
@@ -312,7 +336,7 @@ export async function GET(request: Request) {
                 title: result.title.trim(),
                 url: normalizedUrl,
                 publish_date: publishDate,
-                coverage_type: 'news', // Gemini will refine this
+                coverage_type: classifyCoverageType('news', normalizedUrl),
                 territory,
                 monthly_unique_visitors: outletTraffic, // Propagate from outlet
                 relevance_score: null, // Left null for AI enrichment

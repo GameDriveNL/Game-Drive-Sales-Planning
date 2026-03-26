@@ -4,6 +4,7 @@ import Parser from 'rss-parser'
 import { inferTerritory } from '@/lib/territory'
 import { domainToOutletName } from '@/lib/outlet-utils'
 import { detectOutletCountry } from '@/lib/outlet-country'
+import { matchGameFromContent, classifyCoverageType } from '@/lib/coverage-utils'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -31,6 +32,10 @@ interface Keyword {
   client_id: string
   game_id: string | null
 }
+
+// Aliases matching coverage-utils function signatures
+type GameInfo = { id: string; name: string; client_id: string }
+type KeywordMeta = { keyword: string; client_id: string; game_id: string | null }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -230,6 +235,7 @@ export async function GET(request: Request) {
       items_matched: 0,
       items_inserted: 0,
       items_duplicate: 0,
+      items_no_game: 0,
       errors: [] as string[]
     }
 
@@ -318,21 +324,30 @@ export async function GET(request: Request) {
               if (match.matched && match.score > bestMatch.score) {
                 bestMatch = match
                 matchedClientId = clientId
-                // Find the best matching game
-                if (games) {
-                  for (const game of games.filter(g => g.client_id === clientId)) {
-                    if (entry.title.toLowerCase().includes(game.name.toLowerCase()) ||
-                        description.toLowerCase().includes(game.name.toLowerCase())) {
-                      matchedGameId = game.id
-                      break
-                    }
-                  }
-                }
               }
             }
           }
 
           if (!bestMatch.matched) continue
+
+          // Game matching: every item must be linked to a specific game
+          if (!matchedGameId && matchedClientId && games) {
+            const clientGames = games.filter(g => g.client_id === matchedClientId) as GameInfo[]
+            matchedGameId = matchGameFromContent(
+              entry.title,
+              description,
+              bestMatch.matchedTerms,
+              allKeywords as KeywordMeta[],
+              clientGames
+            )
+          }
+
+          // Skip items that can't be linked to a game — avoids "Ungrouped" coverage
+          if (!matchedGameId) {
+            stats.items_no_game = (stats.items_no_game || 0) + 1
+            continue
+          }
+
           stats.items_matched++
 
           // Add to existing URLs to prevent intra-batch duplicates
@@ -389,7 +404,7 @@ export async function GET(request: Request) {
             title: entry.title.trim(),
             url: normalizedUrl,
             publish_date: entry.isoDate ? entry.isoDate.split('T')[0] : new Date().toISOString().split('T')[0],
-            coverage_type: 'news', // Default — Gemini will refine this
+            coverage_type: classifyCoverageType('news', normalizedUrl),
             territory,
             monthly_unique_visitors: outletVisitors,
             sentiment: null,
