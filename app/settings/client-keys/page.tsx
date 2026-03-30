@@ -104,6 +104,9 @@ export default function ClientKeysPage() {
   const [autoSyncLoading, setAutoSyncLoading] = useState(false);
   const [autoSyncError, setAutoSyncError] = useState<string | null>(null);
 
+  // Sync health: track recent failures per client
+  const [syncHealth, setSyncHealth] = useState<Record<string, { status: string; error: string | null; failCount: number; lastFailure: string | null }>>({});
+
   const [formData, setFormData] = useState({
     client_id: '',
     api_key: '',
@@ -171,6 +174,13 @@ export default function ClientKeysPage() {
       if (psKeysRes.ok) {
         const psKeysData = await psKeysRes.json();
         setPlaystationKeys(Array.isArray(psKeysData) ? psKeysData : []);
+      }
+
+      // Fetch sync health per client (recent failures)
+      const healthRes = await fetch('/api/sync-health');
+      if (healthRes.ok) {
+        const healthData = await healthRes.json();
+        setSyncHealth(healthData);
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -762,6 +772,46 @@ export default function ClientKeysPage() {
                         >
                           Sync Now
                         </button>
+                      </div>
+                    )}
+                    {syncHealth[key.client_id]?.failCount > 0 && (
+                      <div style={{
+                        marginTop: '8px',
+                        padding: '10px 12px',
+                        background: '#fef2f2',
+                        border: '1px solid #fecaca',
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                          <span style={{ fontSize: '14px' }}>&#x26A0;</span>
+                          <strong style={{ color: '#991b1b' }}>
+                            Sync failing{syncHealth[key.client_id].failCount > 1 ? ` (${syncHealth[key.client_id].failCount} consecutive failures)` : ''}
+                          </strong>
+                        </div>
+                        <div style={{ color: '#7f1d1d', fontSize: '11px', lineHeight: '1.4' }}>
+                          <div style={{ marginBottom: '4px' }}>{syncHealth[key.client_id].error}</div>
+                          {syncHealth[key.client_id].error?.includes('403') && (
+                            <div style={{ marginTop: '6px', padding: '6px 8px', background: '#fff', borderRadius: '4px', border: '1px solid #fde8e8' }}>
+                              <strong>How to fix:</strong> Your Steam Financial API key may be expired or lack permissions.
+                              Go to <a href="https://partner.steamgames.com/pub/groups/" target="_blank" rel="noopener" style={{ color: '#1e40af', textDecoration: 'underline' }}>partner.steamgames.com/pub/groups/</a> and
+                              verify your Financial API Group is active, then re-copy the key.
+                            </div>
+                          )}
+                          {syncHealth[key.client_id].error?.includes('0 financial dates') && (
+                            <div style={{ marginTop: '6px', padding: '6px 8px', background: '#fff', borderRadius: '4px', border: '1px solid #fde8e8' }}>
+                              <strong>How to fix:</strong> Your API key connected successfully but Steam returned no financial data.
+                              This usually means the key is a regular Web API key, not a <strong>Financial</strong> Web API key.
+                              Go to <a href="https://partner.steamgames.com/pub/groups/" target="_blank" rel="noopener" style={{ color: '#1e40af', textDecoration: 'underline' }}>partner.steamgames.com/pub/groups/</a> and
+                              create a <strong>Financial API Group</strong> to get the correct key.
+                            </div>
+                          )}
+                          {syncHealth[key.client_id].lastFailure && (
+                            <div style={{ marginTop: '4px', color: '#9ca3af', fontSize: '10px' }}>
+                              Last failure: {new Date(syncHealth[key.client_id].lastFailure!).toLocaleString()}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
