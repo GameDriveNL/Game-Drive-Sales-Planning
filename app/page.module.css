@@ -305,6 +305,46 @@
   margin-left: 4px;
 }
 
+.platformFiltersToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #44445a;
+  white-space: nowrap;
+  background: none;
+  border: 1px solid #e2e4ea;
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.platformFiltersToggle:hover {
+  background: #f0f0f4;
+}
+
+.platformFilterHint {
+  font-weight: 400;
+  font-size: 12px;
+  color: #888;
+  margin-left: 2px;
+}
+
+.platformCheckboxes {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.platformCooldown {
+  font-size: 11px;
+  color: #888;
+  font-weight: 400;
+}
+
 .platformFiltersLabel {
   font-size: 14px;
   font-weight: 600;

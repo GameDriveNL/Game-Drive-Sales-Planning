@@ -178,7 +178,7 @@ export default function GanttChart(props: GanttChartProps) {
   const [hasInitialScrolled, setHasInitialScrolled] = useState(false)
   
   // Legend collapse state
-  const [isLegendCollapsed, setIsLegendCollapsed] = useState(false)
+  // Legend removed — platforms now shown only in top filter bar
   
   // Copy/paste state
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null)
@@ -1660,36 +1660,7 @@ export default function GanttChart(props: GanttChartProps) {
         </div>
       )}
       
-      <div className={`${styles.legend} ${isLegendCollapsed ? styles.legendCollapsed : ''}`}>
-        <button 
-          className={styles.legendToggle}
-          onClick={() => setIsLegendCollapsed(!isLegendCollapsed)}
-          title={isLegendCollapsed ? 'Show platforms legend' : 'Hide platforms legend'}
-        >
-          {isLegendCollapsed ? '▶' : '▼'} PLATFORMS
-        </button>
-        {isLegendCollapsed && (
-          <span className={styles.legendCollapsedHint}>Click to expand</span>
-        )}
-        {!isLegendCollapsed && (
-          <>
-            {platforms.map(platform => (
-              <div key={platform.id} className={styles.legendItem}>
-                <span 
-                  className={styles.legendColor}
-                  style={{ backgroundColor: platform.color_hex }}
-                />
-                <span>{platform.name}</span>
-                <span className={styles.legendCooldown}>({platform.cooldown_days}d cooldown)</span>
-              </div>
-            ))}
-            <div className={styles.legendLaunchSale}>
-              <span className={styles.legendLaunchColor} />
-              <span>Launch Sale Period (drag edge to resize)</span>
-            </div>
-          </>
-        )}
-      </div>
+      {/* Platform legend removed — shown in top filter bar instead */}
       
       <div className={styles.zoomControls}>
         <span className={styles.zoomLabel}>View:</span>

@@ -75,6 +75,7 @@ export default function GameDriveDashboard() {
   const [filterClientId, setFilterClientId] = useState<string>('')
   const [filterGameId, setFilterGameId] = useState<string>('')
   const [filterPlatformIds, setFilterPlatformIds] = useState<Set<string>>(new Set())
+  const [platformsExpanded, setPlatformsExpanded] = useState(false)
   const [filterProductId, setFilterProductId] = useState<string>('')  // For version management
   const [activeVersionId, setActiveVersionId] = useState<string | null>(null)  // null = working draft
   const [activeVersionSnapshot, setActiveVersionSnapshot] = useState<SaleSnapshot[] | null>(null)  // Snapshot data when viewing a version
@@ -693,20 +694,34 @@ export default function GameDriveDashboard() {
         <div className={styles.filterGroup}><label className={styles.checkboxLabel}><input type="checkbox" checked={showCoverage} onChange={(e) => setShowCoverage(e.target.checked)} />Show Coverage</label></div>
         {platforms.length > 0 && (
           <div className={styles.platformFilters}>
-            <label className={styles.platformFiltersLabel}>Platforms:</label>
-            {platforms.map(p => (
-              <label key={p.id} className={styles.platformCheckbox}>
-                <input type="checkbox" checked={filterPlatformIds.has(p.id)} onChange={(e) => {
-                  setFilterPlatformIds(prev => {
-                    const next = new Set(prev)
-                    if (e.target.checked) { next.add(p.id) } else { next.delete(p.id) }
-                    return next
-                  })
-                }} />
-                <span className={styles.platformDot} style={{ backgroundColor: p.color_hex || '#666' }} />
-                {p.name}
-              </label>
-            ))}
+            <button
+              className={styles.platformFiltersToggle}
+              onClick={() => setPlatformsExpanded(!platformsExpanded)}
+              title={platformsExpanded ? 'Collapse platforms' : 'Expand platforms'}
+            >
+              {platformsExpanded ? '▼' : '▶'} Platforms
+              {!platformsExpanded && filterPlatformIds.size < platforms.length && (
+                <span className={styles.platformFilterHint}>({filterPlatformIds.size}/{platforms.length})</span>
+              )}
+            </button>
+            {platformsExpanded && (
+              <div className={styles.platformCheckboxes}>
+                {platforms.map(p => (
+                  <label key={p.id} className={styles.platformCheckbox}>
+                    <input type="checkbox" checked={filterPlatformIds.has(p.id)} onChange={(e) => {
+                      setFilterPlatformIds(prev => {
+                        const next = new Set(prev)
+                        if (e.target.checked) { next.add(p.id) } else { next.delete(p.id) }
+                        return next
+                      })
+                    }} />
+                    <span className={styles.platformDot} style={{ backgroundColor: p.color_hex || '#666' }} />
+                    {p.name}
+                    <span className={styles.platformCooldown}>({p.cooldown_days}d)</span>
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
         )}
         {(filterClientId || filterGameId || filterProductId || filterPlatformIds.size < platforms.length) && (<button className={styles.clearFilters} onClick={() => { setFilterClientId(''); setFilterGameId(''); setFilterProductId(''); setFilterPlatformIds(new Set(platforms.map(p => p.id))); setActiveVersionId(null); setActiveVersionSnapshot(null) }}>Clear Filters</button>)}
