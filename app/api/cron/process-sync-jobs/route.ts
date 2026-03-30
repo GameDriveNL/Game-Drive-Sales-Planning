@@ -61,38 +61,78 @@ export async function GET(request: Request) {
         .in('id', stuckJobs.map(j => j.id));
     }
 
-    // Get one pending job (oldest first)
-    const { data: job, error: jobError } = await supabase
+    // Get one pending job PER CLIENT (oldest per client) — clients process in parallel
+    const { data: pendingJobs, error: jobError } = await supabase
       .from('sync_jobs')
       .select('*')
       .eq('status', 'pending')
       .order('created_at', { ascending: true })
-      .limit(1)
-      .single();
+      .limit(20);
 
-    if (jobError || !job) {
+    if (jobError || !pendingJobs || pendingJobs.length === 0) {
       console.log('[Cron] No pending jobs found');
       return NextResponse.json({ message: 'No pending jobs' });
     }
 
-    console.log(`[Cron] Processing job ${job.id} (type: ${job.job_type}) for client ${job.client_id}`);
+    // Deduplicate: pick the oldest pending job per client_id
+    const jobsByClient = new Map<string, typeof pendingJobs[0]>();
+    for (const job of pendingJobs) {
+      if (!jobsByClient.has(job.client_id)) {
+        jobsByClient.set(job.client_id, job);
+      }
+    }
 
-    // Mark job as running
+    const jobsToProcess = Array.from(jobsByClient.values());
+    console.log(`[Cron] Processing ${jobsToProcess.length} jobs in parallel (${pendingJobs.length} total pending)`);
+
+    // Mark all selected jobs as running
     await supabase
       .from('sync_jobs')
-      .update({
-        status: 'running',
-        started_at: new Date().toISOString()
-      })
-      .eq('id', job.id);
+      .update({ status: 'running', started_at: new Date().toISOString() })
+      .in('id', jobsToProcess.map(j => j.id));
 
-    // Route to the correct handler based on job type
+    // Process all client jobs in parallel
+    const results = await Promise.allSettled(
+      jobsToProcess.map(job => processSingleJob(job))
+    );
+
+    // Collect results
+    const summary = results.map((result, i) => {
+      const job = jobsToProcess[i];
+      if (result.status === 'fulfilled') {
+        return { jobId: job.id, clientId: job.client_id, ...result.value };
+      } else {
+        return { jobId: job.id, clientId: job.client_id, error: String(result.reason) };
+      }
+    });
+
+    return NextResponse.json({
+      message: `Processed ${jobsToProcess.length} jobs in parallel`,
+      jobs: summary
+    });
+
+  } catch (error) {
+    console.error('[Cron] Error processing jobs:', error);
+    return NextResponse.json(
+      { error: 'Failed to process jobs' },
+      { status: 500 }
+    );
+  }
+}
+
+// Process a single sync job (called in parallel per client)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function processSingleJob(job: any): Promise<Record<string, unknown>> {
+  try {
+    // Route PlayStation jobs to their handler
     if (job.job_type === 'playstation_sync') {
-      return await processPlayStationJob(job);
+      // PlayStation jobs return a NextResponse — extract the result
+      const psResult = await processPlayStationJob(job);
+      const psBody = await psResult.json();
+      return { type: 'playstation', ...psBody };
     }
 
     // Default: Steam sync
-    // Get the client's API keys
     const { data: keyData, error: keyError } = await supabase
       .from('steam_api_keys')
       .select('*')
@@ -109,14 +149,12 @@ export async function GET(request: Request) {
           error_message: 'No active Steam API key found'
         })
         .eq('id', job.id);
-
-      return NextResponse.json({ error: 'No API key found' }, { status: 404 });
+      return { error: 'No API key found' };
     }
 
     const financialApiKey = keyData.publisher_key || keyData.api_key;
     const useHighwatermark = job.force_full_sync ? '0' : (keyData.highwatermark || '0');
 
-    // Get changed dates from Steam
     const changedDates = await getChangedDatesForPartner(financialApiKey, useHighwatermark);
 
     if (!changedDates.success) {
@@ -128,8 +166,7 @@ export async function GET(request: Request) {
           error_message: changedDates.error || 'Failed to get dates from Steam'
         })
         .eq('id', job.id);
-
-      return NextResponse.json({ error: changedDates.error }, { status: 500 });
+      return { error: changedDates.error };
     }
 
     // Filter dates to requested range
@@ -143,7 +180,7 @@ export async function GET(request: Request) {
       });
     }
 
-    // Update total dates if this is the first run
+    // Update total dates if first run
     if (job.total_dates === 0) {
       await supabase
         .from('sync_jobs')
@@ -156,19 +193,14 @@ export async function GET(request: Request) {
     const remainingDates = datesToSync.slice(alreadyProcessed);
     const datesToProcess = remainingDates.slice(0, MAX_DATES_PER_RUN);
 
-    console.log(`[Cron] Processing ${datesToProcess.length} dates (${alreadyProcessed} already done, ${remainingDates.length} remaining)`);
+    console.log(`[Cron] Job ${job.id}: Processing ${datesToProcess.length} dates (${alreadyProcessed} done, ${remainingDates.length} remaining)`);
 
     if (datesToProcess.length === 0) {
-      // Job complete!
       await supabase
         .from('sync_jobs')
-        .update({
-          status: 'completed',
-          completed_at: new Date().toISOString()
-        })
+        .update({ status: 'completed', completed_at: new Date().toISOString() })
         .eq('id', job.id);
-
-      return NextResponse.json({ message: 'Job completed' });
+      return { message: 'Job completed', datesProcessed: alreadyProcessed };
     }
 
     // Process the dates
@@ -178,15 +210,12 @@ export async function GET(request: Request) {
 
     for (const dateStr of datesToProcess) {
       try {
-        console.log(`[Cron] Starting to process date: ${dateStr}`);
         const result = await processSingleDate(financialApiKey, dateStr, job.client_id);
-        console.log(`[Cron] Completed ${dateStr}: imported=${result.imported}, skipped=${result.skipped}`);
         totalImported += result.imported;
         totalSkipped += result.skipped;
       } catch (error) {
         const errorMsg = `Error processing ${dateStr}: ${error instanceof Error ? error.message : String(error)}`;
         console.error(`[Cron] ${errorMsg}`);
-        console.error('[Cron] Full error:', error);
         errors.push(errorMsg);
       }
     }
@@ -194,7 +223,6 @@ export async function GET(request: Request) {
     const newDatesProcessed = alreadyProcessed + datesToProcess.length;
     const isComplete = newDatesProcessed >= datesToSync.length;
 
-    // Update job progress
     await supabase
       .from('sync_jobs')
       .update({
@@ -207,7 +235,6 @@ export async function GET(request: Request) {
       })
       .eq('id', job.id);
 
-    // Update highwatermark
     if (changedDates.highwatermark) {
       await supabase
         .from('steam_api_keys')
@@ -215,7 +242,7 @@ export async function GET(request: Request) {
         .eq('client_id', job.client_id);
     }
 
-    // If not complete, requeue the job by setting status back to pending
+    // If not complete, requeue for next cron run
     if (!isComplete) {
       await supabase
         .from('sync_jobs')
@@ -223,22 +250,25 @@ export async function GET(request: Request) {
         .eq('id', job.id);
     }
 
-    return NextResponse.json({
-      message: isComplete ? 'Job completed' : 'Batch processed, more pending',
-      jobId: job.id,
+    return {
+      message: isComplete ? 'Job completed' : 'Batch processed',
       datesProcessed: newDatesProcessed,
       totalDates: datesToSync.length,
       rowsImported: totalImported,
       rowsSkipped: totalSkipped,
       isComplete
-    });
-
+    };
   } catch (error) {
-    console.error('[Cron] Error processing jobs:', error);
-    return NextResponse.json(
-      { error: 'Failed to process jobs' },
-      { status: 500 }
-    );
+    // Mark job as failed so it doesn't block the queue
+    await supabase
+      .from('sync_jobs')
+      .update({
+        status: 'failed',
+        completed_at: new Date().toISOString(),
+        error_message: `Unexpected error: ${error instanceof Error ? error.message : String(error)}`
+      })
+      .eq('id', job.id);
+    throw error;
   }
 }
 
