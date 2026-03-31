@@ -2020,14 +2020,7 @@ export default function GanttChart(props: GanttChartProps) {
                     const launchSaleBlock = getLaunchSaleBlock(product)
                     
                     return (
-                      <div key={product.id} className={styles.productGroup} style={{ position: 'relative' }}>
-                        {/* Full-height continuous launch date line spanning all rows */}
-                        {launchPosition && (
-                          <div
-                            className={styles.launchLineFullHeight}
-                            style={{ left: 220 + launchPosition.left + dayWidth / 2 - 1 }}
-                          />
-                        )}
+                      <div key={product.id} className={styles.productGroup}>
                         <div className={styles.productRow}>
                           <div className={styles.productLabel}>
                             <div className={styles.productLabelContent}>
@@ -2109,7 +2102,7 @@ export default function GanttChart(props: GanttChartProps) {
                               </div>
                             )}
                             
-                            {launchPosition && (onLaunchDateChange || onEditLaunchDate) && (
+                            {launchPosition && (onLaunchDateChange || onEditLaunchDate) ? (
                               <div
                                 data-launch-marker
                                 className={`${styles.launchMarker} ${launchPosition.isDragging ? styles.launchMarkerDragging : ''}`}
@@ -2117,12 +2110,29 @@ export default function GanttChart(props: GanttChartProps) {
                                 onMouseDown={(e) => onLaunchDateChange && handleLaunchDragStart(product.id, product.launch_date!, e)}
                                 title={`Launch Date: ${format(launchPosition.date, 'MMM d, yyyy')}\n${onLaunchDateChange ? 'Drag to shift all sales, or click to edit' : 'Click to edit'}`}
                               >
-                                <div className={styles.launchMarkerLine} />
+                                <div
+                                  className={styles.launchMarkerLine}
+                                  style={{ height: 40 + productPlatforms.length * 37 }}
+                                />
                                 <div className={styles.launchMarkerFlag}>
                                   🚀
                                 </div>
                               </div>
-                            )}
+                            ) : launchPosition ? (
+                              <div
+                                className={styles.launchMarker}
+                                style={{ left: launchPosition.left, cursor: 'default' }}
+                                title={`Launch Date: ${format(launchPosition.date, 'MMM d, yyyy')}`}
+                              >
+                                <div
+                                  className={styles.launchMarkerLine}
+                                  style={{ height: 40 + productPlatforms.length * 37 }}
+                                />
+                                <div className={styles.launchMarkerFlag}>
+                                  🚀
+                                </div>
+                              </div>
+                            ) : null}
                           </div>
                         </div>
                         

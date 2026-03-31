@@ -1429,7 +1429,8 @@
   left: 50%;
   transform: translateX(-50%);
   width: 2px;
-  height: 100%;
+  top: 0;
+  /* height set inline to span product row + all platform rows */
   background: #22c55e;
   transition: width 0.15s, background 0.15s;
 }
@@ -1459,17 +1460,7 @@
   transition: left 0.15s ease-out;
 }
 
-/* Full-height continuous green launch line spanning entire product group */
-.launchLineFullHeight {
-  position: absolute;
-  top: 0;
-  width: 2px;
-  height: 100%;
-  background: #22c55e;
-  z-index: 4;
-  pointer-events: none;
-  transition: left 0.15s ease-out;
-}
+/* launchLineFullHeight removed — line now extends from launchMarkerLine via inline height */
 
 /* LAUNCH SALE BLOCK - Special styling distinct from regular sales */
 .launchSaleBlock {
