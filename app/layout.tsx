@@ -19,8 +19,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <link rel="icon" href="/images/GD_Black.png" type="image/png" />
-        <link rel="apple-touch-icon" href="/images/GD_RGB.png" />
+        <link rel="icon" href="/images/favicon-32.png" sizes="32x32" type="image/png" />
+        <link rel="icon" href="/images/favicon-64.png" sizes="64x64" type="image/png" />
+        <link rel="icon" href="/images/favicon-192.png" sizes="192x192" type="image/png" />
+        <link rel="apple-touch-icon" href="/images/apple-touch-icon.png" />
       </head>
       <body className={inter.className}>
         <Providers>
