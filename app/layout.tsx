@@ -4,6 +4,9 @@ import './globals.css'
 import { Providers } from './providers'
 import ChatBot from './components/ChatBot'
 
+// Force all pages to render dynamically — every page needs Supabase auth
+export const dynamic = 'force-dynamic'
+
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
