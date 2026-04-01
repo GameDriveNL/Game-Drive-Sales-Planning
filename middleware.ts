@@ -4,6 +4,12 @@ import type { NextRequest } from 'next/server'
 
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next()
+
+  // If Supabase env vars are missing, pass through without auth checks
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    return res
+  }
+
   const supabase = createMiddlewareClient({ req, res })
 
   // Refresh the session (this handles token refresh via cookies)
