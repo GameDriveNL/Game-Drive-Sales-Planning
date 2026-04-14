@@ -22,7 +22,7 @@
     },
     {
       "path": "/api/cron/youtube-scan",
-      "schedule": "0 */6 * * *"
+      "schedule": "0 8 * * *"
     },
     {
       "path": "/api/cron/reddit-scan",
@@ -30,15 +30,15 @@
     },
     {
       "path": "/api/cron/twitter-scan",
-      "schedule": "0 8 * * *"
+      "schedule": "0 7 * * *"
     },
     {
       "path": "/api/cron/tiktok-scan",
-      "schedule": "0 */12 * * *"
+      "schedule": "0 9 * * *"
     },
     {
       "path": "/api/cron/instagram-scan",
-      "schedule": "0 */12 * * *"
+      "schedule": "0 10 * * *"
     },
     {
       "path": "/api/cron/coverage-dedup",
@@ -50,7 +50,7 @@
     },
     {
       "path": "/api/cron/twitch-scan",
-      "schedule": "0 */12 * * *"
+      "schedule": "0 11 * * *"
     },
     {
       "path": "/api/cron/google-news-scan",

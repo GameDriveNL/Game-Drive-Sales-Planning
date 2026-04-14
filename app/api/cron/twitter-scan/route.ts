@@ -162,9 +162,17 @@ async function callTwitterActor(
   searchTerms: string[] | undefined,
   twitterHandles: string[] | undefined
 ): Promise<TwitterPost[] | null> {
+  // Scope to last 25 hours to avoid re-processing old tweets while overlapping slightly
+  // Use sinceTime/untilTime (UNIX timestamps in seconds) per Apify's April 2026 update —
+  // the legacy since/until date params now return empty results on Twitter's side
+  const nowSec = Math.floor(Date.now() / 1000)
+  const since25hAgo = nowSec - 25 * 60 * 60
+
   const body: Record<string, unknown> = {
     maxItems: 20,
     sort: 'Latest',
+    sinceTime: since25hAgo,
+    untilTime: nowSec,
   }
 
   if (searchTerms && searchTerms.length > 0) {

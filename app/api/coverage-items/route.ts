@@ -45,7 +45,17 @@ export async function GET(request: NextRequest) {
       .range(offset, offset + limit - 1)
 
     if (clientId) query = query.eq('client_id', clientId)
-    if (gameId) query = query.eq('game_id', gameId)
+    if (gameId) {
+      // Also catch items scraped via keyword that weren't linked to a game_id —
+      // fetch the game name and match on title as a fallback
+      const { data: gameRow } = await supabase.from('games').select('name').eq('id', gameId).single()
+      if (gameRow?.name) {
+        const escapedName = gameRow.name.replace(/[%_]/g, '\\$&')
+        query = query.or(`game_id.eq.${gameId},and(game_id.is.null,title.ilike.%${escapedName}%)`)
+      } else {
+        query = query.eq('game_id', gameId)
+      }
+    }
     if (outletId) query = query.eq('outlet_id', outletId)
     if (campaignId) query = query.eq('campaign_id', campaignId)
     if (coverageType) query = query.eq('coverage_type', coverageType)
