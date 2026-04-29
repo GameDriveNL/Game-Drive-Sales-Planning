@@ -27,6 +27,11 @@ export async function middleware(req: NextRequest) {
     return res
   }
 
+  // Allow password-reset landing through (recovery link flow)
+  if (pathname === '/auth/reset') {
+    return res
+  }
+
   // Allow public feed pages and API through (no auth required)
   if (pathname.startsWith('/feed/') || pathname.startsWith('/api/public-feed/')) {
     return res

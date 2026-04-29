@@ -153,7 +153,8 @@ export async function POST(request: Request) {
       const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('.supabase.co', '.vercel.app') || '';
       const token = inviteData.properties?.hashed_token;
       if (token) {
-        inviteLink = `${siteUrl}/auth/confirm?token_hash=${token}&type=invite`;
+        // Invite-claim flow lives at /setup (see middleware.ts whitelist + app/setup/page.tsx)
+        inviteLink = `${siteUrl}/setup?token_hash=${token}&type=invite`;
       }
     }
 
