@@ -184,10 +184,18 @@ async function callRedditActor(
     sort: 'new',
     // 'day' = last 24h. Was 'month' — caused us to re-pay for 30 days of posts every day.
     timeframe: 'day',
+    // Per actor schema: when timeframe is set with sort: 'new', this is the
+    // recommended flag to ensure results are actually time-ordered.
+    forceSortNewForTimeFilteredRuns: true,
   }
 
   if (subredditName) {
     body.subredditName = subredditName
+    body.subredditSort = 'new'
+    // CRITICAL: subredditTimeframe defaults to 'all' (forever), independent of
+    // the top-level `timeframe`. Without this, subreddit-targeted searches
+    // returned posts from all of time and we re-paid for them every day.
+    body.subredditTimeframe = 'day'
   }
 
   const actorRes = await fetch(

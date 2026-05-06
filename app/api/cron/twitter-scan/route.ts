@@ -184,17 +184,25 @@ async function callTwitterActor(
   searchTerms: string[] | undefined,
   twitterHandles: string[] | undefined
 ): Promise<TwitterPost[] | null> {
-  // Scope to last 25 hours to avoid re-processing old tweets while overlapping slightly
-  // Use sinceTime/untilTime (UNIX timestamps in seconds) per Apify's April 2026 update —
-  // the legacy since/until date params now return empty results on Twitter's side
+  // Scope to last 25 hours to avoid re-processing old tweets while overlapping slightly.
+  //
+  // SCHEMA NOTE: The actor's documented input schema uses snake_case fields
+  // (since_time / until_time / queryType) but the engineer who verified this
+  // integration in April 2026 confirmed the camelCase variants work. Sending
+  // BOTH so we're robust to either being accepted — the actor will use
+  // whichever it recognizes and ignore the other. If we ever migrate actors
+  // and this stops working, fall back to schema-documented names.
   const nowSec = Math.floor(Date.now() / 1000)
   const since25hAgo = nowSec - 25 * 60 * 60
 
   const body: Record<string, unknown> = {
     maxItems: 20,
     sort: 'Latest',
+    queryType: 'Latest',
     sinceTime: since25hAgo,
     untilTime: nowSec,
+    since_time: since25hAgo,
+    until_time: nowSec,
   }
 
   if (searchTerms && searchTerms.length > 0) {

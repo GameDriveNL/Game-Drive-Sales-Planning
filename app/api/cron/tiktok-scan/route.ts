@@ -111,12 +111,10 @@ export async function GET(request: NextRequest) {
     let totalNew = 0
     let totalFiltered = 0
 
-    // Only fetch posts from the last 24h. Was previously unbounded — meaning each
-    // daily run paid Apify for the same recent posts repeatedly.
-    const oldestPostDate = new Date(Date.now() - 25 * 60 * 60 * 1000)
-      .toISOString()
-      .split('T')[0]
-
+    // NOTE: clockworks~free-tiktok-scraper does NOT expose a date filter for
+    // hashtag-mode scraping (oldestPostDateUnified only applies to profile mode).
+    // Cost is bounded purely by `resultsPerPage` + DB-side dedup. The actor
+    // returns most-recent first, so 10 results between daily runs is enough.
     for (const [, group] of Array.from(keywordGroups.entries())) {
       const midBudget = await checkApifyDailyBudget(supabase)
       if (!midBudget.ok) { console.warn(`TikTok scan stopping: daily cap reached`); break }
@@ -135,7 +133,6 @@ export async function GET(request: NextRequest) {
         const hashtagResults = await callTikTokActor(supabase, apifyKey, {
           hashtags: hashtags.slice(0, 5),
           resultsPerPage: 10,
-          oldestPostDate,
         })
         if (hashtagResults) {
           const result = await processTikTokPosts(supabase, hashtagResults, group.clientId, group.gameId, minFollowers)

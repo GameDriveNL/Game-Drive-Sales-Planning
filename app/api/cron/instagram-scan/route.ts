@@ -123,9 +123,10 @@ export async function GET(request: NextRequest) {
           if (!hashtags.includes(h)) hashtags.push(h)
         }
 
-        // Call Instagram hashtag scraper. resultsPerPage halved (20 → 10) to cut
-        // pay-per-result cost; the actor returns most-recent first so the top 10
-        // are the only ones likely to be new since the last daily run anyway.
+        // Call Instagram hashtag scraper. resultsLimit caps results per hashtag
+        // — actor returns most-recent first so 10 is enough to catch new posts
+        // between daily runs. (Pre-fix code used `resultsPerPage` which the
+        // actor silently ignored, leaving Instagram unbounded.)
         const posts = await callInstagramActor(supabase, apifyKey, hashtags.slice(0, 5), 10)
         if (posts) {
           const result = await processInstagramPosts(supabase, posts, group.clientId, group.gameId, minFollowers)
@@ -177,9 +178,13 @@ async function callInstagramActor(
   supabase: ReturnType<typeof getSupabase>,
   apifyKey: string,
   hashtags: string[],
-  resultsPerPage: number
+  resultsLimit: number
 ): Promise<InstagramPost[] | null> {
-  const input = { hashtags, resultsPerPage }
+  // Per actor input schema, the field is `resultsLimit`, NOT `resultsPerPage`.
+  // The pre-fix code used `resultsPerPage: 20` which the actor silently ignored
+  // — meaning Instagram was running unbounded. This was a contributor to the
+  // May 2026 cost overrun.
+  const input = { hashtags, resultsLimit }
   const actorRes = await fetch(
     `https://api.apify.com/v2/acts/${APIFY_INSTAGRAM_ACTOR}/run-sync-get-dataset-items?token=${apifyKey}`,
     {
