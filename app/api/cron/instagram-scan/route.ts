@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { inferTerritory } from '@/lib/territory'
 import { detectOutletCountry } from '@/lib/outlet-country'
-import { checkApifyCredits, notifyLowCredits } from '@/lib/apify-utils'
+import { checkApifyCredits, notifyLowCredits, checkApifyDailyBudget, logApifyRun } from '@/lib/apify-utils'
 
 function getSupabase() {
   return getServerSupabase()
@@ -50,6 +50,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         message: `Apify credits low ($${creditCheck.remainingUsd?.toFixed(2) ?? 'unknown'} remaining), skipping scan`,
         credits_remaining: creditCheck.remainingUsd
+      })
+    }
+
+    // Daily call budget — backstop against runaway spend.
+    const budget = await checkApifyDailyBudget(supabase)
+    if (!budget.ok) {
+      return NextResponse.json({
+        message: `Daily Apify call cap reached (${budget.callsToday}/${budget.limit}), skipping scan`,
+        calls_today: budget.callsToday,
       })
     }
 
@@ -101,6 +110,9 @@ export async function GET(request: NextRequest) {
     let totalFiltered = 0
 
     for (const [, group] of Array.from(keywordGroups.entries())) {
+      const midBudget = await checkApifyDailyBudget(supabase)
+      if (!midBudget.ok) { console.warn(`Instagram scan stopping: daily cap reached`); break }
+
       const queries = group.keywords.slice(0, 5)
 
       try {
@@ -111,8 +123,10 @@ export async function GET(request: NextRequest) {
           if (!hashtags.includes(h)) hashtags.push(h)
         }
 
-        // Call Instagram hashtag scraper
-        const posts = await callInstagramActor(apifyKey, hashtags.slice(0, 5), 20)
+        // Call Instagram hashtag scraper. resultsPerPage halved (20 → 10) to cut
+        // pay-per-result cost; the actor returns most-recent first so the top 10
+        // are the only ones likely to be new since the last daily run anyway.
+        const posts = await callInstagramActor(supabase, apifyKey, hashtags.slice(0, 5), 10)
         if (posts) {
           const result = await processInstagramPosts(supabase, posts, group.clientId, group.gameId, minFollowers)
           totalFound += result.found
@@ -160,29 +174,37 @@ export async function GET(request: NextRequest) {
 
 // Call the Apify Instagram hashtag scraper
 async function callInstagramActor(
+  supabase: ReturnType<typeof getSupabase>,
   apifyKey: string,
   hashtags: string[],
   resultsPerPage: number
 ): Promise<InstagramPost[] | null> {
+  const input = { hashtags, resultsPerPage }
   const actorRes = await fetch(
     `https://api.apify.com/v2/acts/${APIFY_INSTAGRAM_ACTOR}/run-sync-get-dataset-items?token=${apifyKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        hashtags,
-        resultsPerPage,
-      }),
+      body: JSON.stringify(input),
     }
   )
 
   if (!actorRes.ok) {
     console.error(`Apify Instagram actor error: ${actorRes.status}`)
+    await logApifyRun(supabase, {
+      scanner: 'instagram-scan', actor_id: APIFY_INSTAGRAM_ACTOR, input,
+      results_count: null, http_status: actorRes.status, ok: false, error: `HTTP ${actorRes.status}`,
+    })
     return null
   }
 
   const posts = await actorRes.json()
-  if (!Array.isArray(posts)) return null
+  const isArr = Array.isArray(posts)
+  await logApifyRun(supabase, {
+    scanner: 'instagram-scan', actor_id: APIFY_INSTAGRAM_ACTOR, input,
+    results_count: isArr ? posts.length : null, http_status: actorRes.status, ok: isArr, error: null,
+  })
+  if (!isArr) return null
   return posts as InstagramPost[]
 }
 

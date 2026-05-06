@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { inferTerritory } from '@/lib/territory'
 import { detectOutletCountry } from '@/lib/outlet-country'
-import { checkApifyCredits, notifyLowCredits } from '@/lib/apify-utils'
+import { checkApifyCredits, notifyLowCredits, checkApifyDailyBudget, logApifyRun } from '@/lib/apify-utils'
 
 function getSupabase() {
   return getServerSupabase()
@@ -48,41 +48,80 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // Get games to search for
+    // Daily call budget — backstop against runaway spend.
+    const budget = await checkApifyDailyBudget(supabase)
+    if (!budget.ok) {
+      return NextResponse.json({
+        message: `Daily Apify call cap reached (${budget.callsToday}/${budget.limit}), skipping scan`,
+        calls_today: budget.callsToday,
+      })
+    }
+
+    // Only scan games that have an active Twitch coverage_source. Was previously
+    // looping over EVERY game regardless of whether Twitch was enabled for it.
+    const { data: twitchSources } = await supabase
+      .from('coverage_sources')
+      .select('game_id')
+      .eq('source_type', 'twitch')
+      .eq('is_active', true)
+
+    if (!twitchSources || twitchSources.length === 0) {
+      return NextResponse.json({ message: 'No active Twitch sources configured, skipping' })
+    }
+
+    const enabledGameIds = new Set(twitchSources.map(s => s.game_id).filter(Boolean) as string[])
+    if (enabledGameIds.size === 0) {
+      return NextResponse.json({ message: 'No active Twitch sources have a game_id, skipping' })
+    }
+
     const { data: games } = await supabase
       .from('games')
       .select('id, name, client_id')
+      .in('id', Array.from(enabledGameIds))
 
     if (!games || games.length === 0) {
-      return NextResponse.json({ message: 'No games configured' })
+      return NextResponse.json({ message: 'No matching games for active Twitch sources' })
     }
 
     let totalFound = 0
     let totalNew = 0
 
     for (const game of games) {
+      const midBudget = await checkApifyDailyBudget(supabase)
+      if (!midBudget.ok) { console.warn(`Twitch scan stopping: daily cap reached`); break }
+
       try {
         // Run Apify Twitch scraper actor synchronously
+        const input = {
+          searchTerms: [game.name],
+          maxItems: 20,
+          type: 'videos',
+        }
         const actorRes = await fetch(
           `https://api.apify.com/v2/acts/${APIFY_TWITCH_ACTOR}/run-sync-get-dataset-items?token=${apifyKey}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              searchTerms: [game.name],
-              maxItems: 20,
-              type: 'videos',
-            }),
+            body: JSON.stringify(input),
           }
         )
 
         if (!actorRes.ok) {
           console.error(`Apify Twitch actor error for "${game.name}": ${actorRes.status}`)
+          await logApifyRun(supabase, {
+            scanner: 'twitch-scan', actor_id: APIFY_TWITCH_ACTOR, input,
+            results_count: null, http_status: actorRes.status, ok: false, error: `HTTP ${actorRes.status}`,
+          })
           continue
         }
 
         const vods = await actorRes.json()
-        if (!Array.isArray(vods)) continue
+        const isArr = Array.isArray(vods)
+        await logApifyRun(supabase, {
+          scanner: 'twitch-scan', actor_id: APIFY_TWITCH_ACTOR, input,
+          results_count: isArr ? vods.length : null, http_status: actorRes.status, ok: isArr, error: null,
+        })
+        if (!isArr) continue
 
         totalFound += vods.length
 

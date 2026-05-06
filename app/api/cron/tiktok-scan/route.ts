@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { inferTerritory } from '@/lib/territory'
 import { detectOutletCountry } from '@/lib/outlet-country'
-import { checkApifyCredits, notifyLowCredits } from '@/lib/apify-utils'
+import { checkApifyCredits, notifyLowCredits, checkApifyDailyBudget, logApifyRun } from '@/lib/apify-utils'
 
 function getSupabase() {
   return getServerSupabase()
@@ -55,6 +55,15 @@ export async function GET(request: NextRequest) {
       })
     }
 
+    // Daily call budget — backstop against runaway spend.
+    const budget = await checkApifyDailyBudget(supabase)
+    if (!budget.ok) {
+      return NextResponse.json({
+        message: `Daily Apify call cap reached (${budget.callsToday}/${budget.limit}), skipping scan`,
+        calls_today: budget.callsToday,
+      })
+    }
+
     // Get whitelist keywords grouped by client+game
     const { data: keywords } = await supabase
       .from('coverage_keywords')
@@ -82,17 +91,13 @@ export async function GET(request: NextRequest) {
       .eq('source_type', 'tiktok')
       .eq('is_active', true)
 
-    // Collect configured profiles and hashtags from sources
-    const configuredProfiles: Set<string> = new Set()
+    // Collect configured hashtags from sources
     const configuredHashtags: Set<string> = new Set()
     let minFollowers = MIN_FOLLOWERS
     if (tiktokSources) {
       for (const source of tiktokSources) {
         const cfg = source.config as Record<string, unknown> | null
         if (!cfg) continue
-        if (cfg.profiles && Array.isArray(cfg.profiles)) {
-          for (const p of cfg.profiles) configuredProfiles.add(String(p).toLowerCase().replace(/^@/, ''))
-        }
         if (cfg.hashtags && Array.isArray(cfg.hashtags)) {
           for (const h of cfg.hashtags) configuredHashtags.add(String(h).toLowerCase().replace(/^#/, ''))
         }
@@ -106,56 +111,37 @@ export async function GET(request: NextRequest) {
     let totalNew = 0
     let totalFiltered = 0
 
+    // Only fetch posts from the last 24h. Was previously unbounded — meaning each
+    // daily run paid Apify for the same recent posts repeatedly.
+    const oldestPostDate = new Date(Date.now() - 25 * 60 * 60 * 1000)
+      .toISOString()
+      .split('T')[0]
+
     for (const [, group] of Array.from(keywordGroups.entries())) {
+      const midBudget = await checkApifyDailyBudget(supabase)
+      if (!midBudget.ok) { console.warn(`TikTok scan stopping: daily cap reached`); break }
+
       const queries = group.keywords.slice(0, 5)
 
       try {
-        // Convert keywords to hashtags (remove spaces, lowercase)
+        // Single hashtag-based call per group. Dropped the separate keyword-search
+        // and profile-search passes — they tripled the per-group cost while
+        // returning largely overlapping results.
         const hashtags = queries.map(q => q.replace(/\s+/g, '').toLowerCase())
-        // Add any user-configured hashtags
         for (const h of Array.from(configuredHashtags)) {
           if (!hashtags.includes(h)) hashtags.push(h)
         }
 
-        // Hashtag search
-        const hashtagResults = await callTikTokActor(apifyKey, {
+        const hashtagResults = await callTikTokActor(supabase, apifyKey, {
           hashtags: hashtags.slice(0, 5),
           resultsPerPage: 10,
+          oldestPostDate,
         })
         if (hashtagResults) {
           const result = await processTikTokPosts(supabase, hashtagResults, group.clientId, group.gameId, minFollowers)
           totalFound += result.found
           totalNew += result.newItems
           totalFiltered += result.filtered
-        }
-
-        // Keyword search (for multi-word queries that don't work as hashtags)
-        const multiWordQueries = queries.filter(q => q.includes(' '))
-        if (multiWordQueries.length > 0) {
-          const keywordResults = await callTikTokActor(apifyKey, {
-            searchQueries: multiWordQueries.slice(0, 3),
-            resultsPerPage: 10,
-          })
-          if (keywordResults) {
-            const result = await processTikTokPosts(supabase, keywordResults, group.clientId, group.gameId, minFollowers)
-            totalFound += result.found
-            totalNew += result.newItems
-            totalFiltered += result.filtered
-          }
-        }
-
-        // Profile search — scan specific TikTok creators
-        if (configuredProfiles.size > 0) {
-          const profileResults = await callTikTokActor(apifyKey, {
-            profiles: Array.from(configuredProfiles),
-            resultsPerPage: 10,
-          })
-          if (profileResults) {
-            const result = await processTikTokPosts(supabase, profileResults, group.clientId, group.gameId, 0) // No follower filter for targeted profiles
-            totalFound += result.found
-            totalNew += result.newItems
-            totalFiltered += result.filtered
-          }
         }
       } catch (err) {
         console.error(`TikTok Apify scan error for keywords [${queries.join(', ')}]:`, err)
@@ -187,7 +173,7 @@ export async function GET(request: NextRequest) {
       found: totalFound,
       new_items: totalNew,
       filtered: totalFiltered,
-      profiles_tracked: Array.from(configuredProfiles),
+      hashtags_tracked: Array.from(configuredHashtags),
     })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error'
@@ -198,6 +184,7 @@ export async function GET(request: NextRequest) {
 
 // Call the Apify TikTok actor
 async function callTikTokActor(
+  supabase: ReturnType<typeof getSupabase>,
   apifyKey: string,
   body: Record<string, unknown>
 ): Promise<TikTokPost[] | null> {
@@ -212,11 +199,20 @@ async function callTikTokActor(
 
   if (!actorRes.ok) {
     console.error(`Apify TikTok actor error: ${actorRes.status}`)
+    await logApifyRun(supabase, {
+      scanner: 'tiktok-scan', actor_id: APIFY_TIKTOK_ACTOR, input: body,
+      results_count: null, http_status: actorRes.status, ok: false, error: `HTTP ${actorRes.status}`,
+    })
     return null
   }
 
   const videos = await actorRes.json()
-  if (!Array.isArray(videos)) return null
+  const isArr = Array.isArray(videos)
+  await logApifyRun(supabase, {
+    scanner: 'tiktok-scan', actor_id: APIFY_TIKTOK_ACTOR, input: body,
+    results_count: isArr ? videos.length : null, http_status: actorRes.status, ok: isArr, error: null,
+  })
+  if (!isArr) return null
   return videos as TikTokPost[]
 }
 

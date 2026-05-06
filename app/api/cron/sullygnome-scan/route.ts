@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { buildSullyGnomeUrl } from '@/lib/sullygnome'
-import { checkApifyCredits, notifyLowCredits } from '@/lib/apify-utils'
+import { checkApifyCredits, notifyLowCredits, checkApifyDailyBudget, logApifyRun } from '@/lib/apify-utils'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -145,6 +145,15 @@ async function handleScan(request: NextRequest) {
       })
     }
 
+    // Daily call budget — also gates the manual POST trigger from the Sources UI.
+    const budget = await checkApifyDailyBudget(supabase)
+    if (!budget.ok) {
+      return NextResponse.json({
+        message: `Daily Apify call cap reached (${budget.callsToday}/${budget.limit}), skipping scan`,
+        calls_today: budget.callsToday,
+      })
+    }
+
     // 2. Get active SullyGnome sources
     let sourceQuery = supabase
       .from('coverage_sources')
@@ -220,6 +229,9 @@ async function handleScan(request: NextRequest) {
       }
 
       try {
+        const midBudget = await checkApifyDailyBudget(supabase)
+        if (!midBudget.ok) { console.warn(`SullyGnome scan stopping: daily cap reached`); break }
+
         // Build SullyGnome URL
         const targetUrl = buildSullyGnomeUrl(slug, timeRange)
 
@@ -227,29 +239,43 @@ async function handleScan(request: NextRequest) {
         const webhookUrl = `${baseUrl}/api/sullygnome-collect?source_id=${source.id}`
 
         // Start Apify actor run ASYNC (returns immediately with run ID)
+        const input = {
+          startUrls: [{ url: targetUrl }],
+          pageFunction: buildPageFunction(),
+          maxPagesPerCrawl: 1,
+          proxyConfiguration: {
+            useApifyProxy: true,
+            apifyProxyGroups: ['RESIDENTIAL'],
+          },
+          pageFunctionTimeoutSecs: 60,
+          maxConcurrency: 1,
+        }
         const actorRes = await fetch(
           `https://api.apify.com/v2/acts/${APIFY_ACTOR}/runs?token=${apifyKey}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              startUrls: [{ url: targetUrl }],
-              pageFunction: buildPageFunction(),
-              maxPagesPerCrawl: 1,
-              proxyConfiguration: {
-                useApifyProxy: true,
-                apifyProxyGroups: ['RESIDENTIAL'],
-              },
-              pageFunctionTimeoutSecs: 60,
-              maxConcurrency: 1,
-            }),
+            body: JSON.stringify(input),
           }
         )
 
         if (!actorRes.ok) {
           const errText = await actorRes.text().catch(() => 'Unknown error')
+          await logApifyRun(supabase, {
+            scanner: 'sullygnome-scan', actor_id: APIFY_ACTOR,
+            input: { source_id: source.id, targetUrl },
+            results_count: null, http_status: actorRes.status, ok: false,
+            error: `HTTP ${actorRes.status}: ${errText.slice(0, 200)}`,
+          })
           throw new Error(`Apify returned ${actorRes.status}: ${errText.slice(0, 200)}`)
         }
+
+        await logApifyRun(supabase, {
+          scanner: 'sullygnome-scan', actor_id: APIFY_ACTOR,
+          input: { source_id: source.id, targetUrl },
+          // Async actor — results count comes in via the webhook callback later.
+          results_count: null, http_status: actorRes.status, ok: true, error: null,
+        })
 
         const runData = await actorRes.json() as { data?: { id?: string; defaultDatasetId?: string } }
         const runId = runData?.data?.id

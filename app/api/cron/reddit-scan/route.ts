@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { inferTerritory } from '@/lib/territory'
 import { detectOutletCountry } from '@/lib/outlet-country'
-import { checkApifyCredits, notifyLowCredits } from '@/lib/apify-utils'
+import { checkApifyCredits, notifyLowCredits, checkApifyDailyBudget, logApifyRun } from '@/lib/apify-utils'
 
 function getSupabase() {
   return getServerSupabase()
@@ -51,6 +51,15 @@ export async function GET(request: NextRequest) {
       })
     }
 
+    // Daily call budget — backstop against runaway spend.
+    const budget = await checkApifyDailyBudget(supabase)
+    if (!budget.ok) {
+      return NextResponse.json({
+        message: `Daily Apify call cap reached (${budget.callsToday}/${budget.limit}), skipping scan`,
+        calls_today: budget.callsToday,
+      })
+    }
+
     // Get whitelist keywords grouped by client+game
     const { data: keywords } = await supabase
       .from('coverage_keywords')
@@ -71,68 +80,58 @@ export async function GET(request: NextRequest) {
       keywordGroups.get(key)!.keywords.push(kw.keyword)
     }
 
-    // Get Reddit sources with subreddit configs
+    // Get Reddit sources with subreddit configs (each source is scoped to one game)
     const { data: redditSources } = await supabase
       .from('coverage_sources')
       .select('id, config, game_id')
       .eq('source_type', 'reddit')
       .eq('is_active', true)
 
-    // Collect all configured subreddits across all sources
-    const configuredSubreddits: Set<string> = new Set()
+    let totalFound = 0
+    let totalNew = 0
+
+    // Per-source scan: each source's subreddits run ONLY against that source's game's
+    // keywords. Was previously a global cross-product (every game's keywords against
+    // every source's subreddits = N_groups × N_subreddits calls/day).
     if (redditSources) {
       for (const source of redditSources) {
         const cfg = source.config as Record<string, unknown> | null
         if (!cfg) continue
-        // Support both singular and plural config fields
-        if (cfg.subreddits && Array.isArray(cfg.subreddits)) {
-          for (const sub of cfg.subreddits) configuredSubreddits.add(String(sub).toLowerCase())
+
+        // Find the matching keyword group for this source's game.
+        const matchingGroup = Array.from(keywordGroups.values()).find(g => g.gameId === source.game_id)
+        if (!matchingGroup) continue
+
+        const queries = matchingGroup.keywords.slice(0, 5)
+
+        // Collect subreddits for THIS source only.
+        const subreddits: string[] = []
+        if (Array.isArray(cfg.subreddits)) {
+          for (const sub of cfg.subreddits) subreddits.push(String(sub).toLowerCase())
         }
-        if (cfg.subreddit && typeof cfg.subreddit === 'string') {
-          configuredSubreddits.add(cfg.subreddit.toLowerCase())
+        if (typeof cfg.subreddit === 'string') {
+          subreddits.push(cfg.subreddit.toLowerCase())
         }
-      }
-    }
+        if (subreddits.length === 0) continue
 
-    let totalFound = 0
-    let totalNew = 0
-
-    for (const [, group] of Array.from(keywordGroups.entries())) {
-      // Use all keywords as search queries
-      const queries = group.keywords.slice(0, 5) // Max 5 queries per group to limit cost
-
-      try {
-        // subredditName is ADDITIVE — each call always includes general Reddit results
-        // plus results from the specified subreddit. So to save credits:
-        // - If user configured subreddits: make ONE call with the first subreddit
-        //   (this gets general results + that subreddit's results in a single call)
-        // - If no subreddits configured: make ONE general call (no subredditName)
-        // Dedup by URL prevents duplicate inserts across calls.
-
-        const subredditList = Array.from(configuredSubreddits)
-
-        if (subredditList.length === 0) {
-          // No subreddits configured — just do a general search
-          const res = await callRedditActor(apifyKey, queries, undefined)
-          if (res) {
-            const result = await processRedditPosts(supabase, res, group.clientId, group.gameId)
-            totalFound += result.found
-            totalNew += result.newItems
-          }
-        } else {
-          // Each call is additive (general + subreddit), so one call per subreddit.
-          // The general results overlap across calls but dedup handles it.
-          for (const subreddit of subredditList) {
-            const res = await callRedditActor(apifyKey, queries, subreddit)
+        try {
+          for (const subreddit of subreddits) {
+            // Re-check daily budget mid-loop.
+            const midBudget = await checkApifyDailyBudget(supabase)
+            if (!midBudget.ok) {
+              console.warn(`Reddit scan stopping mid-loop: daily cap reached (${midBudget.callsToday}/${midBudget.limit})`)
+              break
+            }
+            const res = await callRedditActor(supabase, apifyKey, queries, subreddit)
             if (res) {
-              const result = await processRedditPosts(supabase, res, group.clientId, group.gameId)
+              const result = await processRedditPosts(supabase, res, matchingGroup.clientId, matchingGroup.gameId)
               totalFound += result.found
               totalNew += result.newItems
             }
           }
+        } catch (err) {
+          console.error(`Reddit Apify scan error for source ${source.id}:`, err)
         }
-      } catch (err) {
-        console.error(`Reddit Apify scan error for keywords [${queries.join(', ')}]:`, err)
       }
     }
 
@@ -160,7 +159,7 @@ export async function GET(request: NextRequest) {
       message: `Reddit scan complete: ${totalFound} found, ${totalNew} new`,
       found: totalFound,
       new_items: totalNew,
-      subreddits_tracked: Array.from(configuredSubreddits),
+      sources_scanned: redditSources?.length ?? 0,
     })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error'
@@ -171,6 +170,7 @@ export async function GET(request: NextRequest) {
 
 // Call the Apify Reddit actor
 async function callRedditActor(
+  supabase: ReturnType<typeof getSupabase>,
   apifyKey: string,
   queries: string[],
   subredditName: string | undefined
@@ -182,10 +182,10 @@ async function callRedditActor(
     scrapeComments: false,
     includeNsfw: false,
     sort: 'new',
-    timeframe: 'month',
+    // 'day' = last 24h. Was 'month' — caused us to re-pay for 30 days of posts every day.
+    timeframe: 'day',
   }
 
-  // Only add subredditName if targeting a specific subreddit
   if (subredditName) {
     body.subredditName = subredditName
   }
@@ -201,11 +201,20 @@ async function callRedditActor(
 
   if (!actorRes.ok) {
     console.error(`Apify Reddit actor error: ${actorRes.status}`)
+    await logApifyRun(supabase, {
+      scanner: 'reddit-scan', actor_id: APIFY_REDDIT_ACTOR, input: body,
+      results_count: null, http_status: actorRes.status, ok: false, error: `HTTP ${actorRes.status}`,
+    })
     return null
   }
 
   const posts = await actorRes.json()
-  if (!Array.isArray(posts)) return null
+  const isArr = Array.isArray(posts)
+  await logApifyRun(supabase, {
+    scanner: 'reddit-scan', actor_id: APIFY_REDDIT_ACTOR, input: body,
+    results_count: isArr ? posts.length : null, http_status: actorRes.status, ok: isArr, error: null,
+  })
+  if (!isArr) return null
   return posts as RedditPost[]
 }
 

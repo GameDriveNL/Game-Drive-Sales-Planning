@@ -1,12 +1,23 @@
 /**
- * Apify utilities — credit checking, budget management
+ * Apify utilities — credit checking, budget management, audit logging
  */
+
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 interface ApifyUsageInfo {
   hasCredits: boolean
   remainingUsd: number | null
   error: string | null
 }
+
+interface DailyBudgetInfo {
+  ok: boolean
+  callsToday: number
+  limit: number
+  error: string | null
+}
+
+const DEFAULT_DAILY_CALL_LIMIT = 200
 
 /**
  * Check if the Apify account has sufficient credits remaining.
@@ -21,9 +32,10 @@ export async function checkApifyCredits(apiKey: string, threshold = 2.0): Promis
       return { hasCredits: false, remainingUsd: null, error: `Apify API returned ${res.status}` }
     }
     const data = await res.json()
-    // Apify returns usage info in the user object
-    const plan = data?.plan
-    const usage = data?.usage
+    // Apify wraps the user payload in `data` — handle both shapes.
+    const user = data?.data ?? data
+    const plan = user?.plan
+    const usage = user?.usage
 
     // Try to determine remaining credits
     // Apify's /users/me response includes plan limits and current usage
@@ -36,12 +48,86 @@ export async function checkApifyCredits(apiKey: string, threshold = 2.0): Promis
       }
     }
 
-    // If we can't determine credits, assume we have them (don't block on API changes)
-    return { hasCredits: true, remainingUsd: null, error: null }
+    // FAIL CLOSED. Previously returned hasCredits: true here, which let the
+    // scanners run unchecked when the API response shape changed — that bypassed
+    // the budget gate and was a contributor to the May 2026 cost overrun.
+    return { hasCredits: false, remainingUsd: null, error: 'Could not determine Apify usage from /users/me response' }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    return { hasCredits: true, remainingUsd: null, error: msg } // Don't block on check failure
+    // FAIL CLOSED on network errors too.
+    return { hasCredits: false, remainingUsd: null, error: msg }
   }
+}
+
+/**
+ * Check whether today's Apify call count is under the daily cap.
+ *
+ * This is the backstop that catches bugs we haven't thought of yet — even if
+ * a future scanner has a multiplication bug, the daily cap prevents runaway
+ * spend. Counts are deterministic (cost estimates are fuzzy across actors), so
+ * we gate on call count rather than dollars.
+ *
+ * Fails CLOSED on errors, like checkApifyCredits.
+ */
+export async function checkApifyDailyBudget(
+  supabase: SupabaseClient
+): Promise<DailyBudgetInfo> {
+  try {
+    // Read configured limit (defaults to DEFAULT_DAILY_CALL_LIMIT if missing).
+    const { data: setting } = await supabase
+      .from('service_settings')
+      .select('value')
+      .eq('key', 'apify_daily_call_limit')
+      .maybeSingle()
+
+    const limit = Number(setting?.value ?? DEFAULT_DAILY_CALL_LIMIT)
+
+    // Count rows from the last 24h.
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    const { count, error } = await supabase
+      .from('apify_runs')
+      .select('id', { count: 'exact', head: true })
+      .gte('created_at', since)
+
+    if (error) {
+      return { ok: false, callsToday: 0, limit, error: error.message }
+    }
+
+    const callsToday = count ?? 0
+    return { ok: callsToday < limit, callsToday, limit, error: null }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { ok: false, callsToday: 0, limit: DEFAULT_DAILY_CALL_LIMIT, error: msg }
+  }
+}
+
+/**
+ * Audit one Apify actor invocation. Best-effort — never throws, never blocks
+ * the caller. The whole point is observability when something goes wrong.
+ */
+export async function logApifyRun(
+  supabase: SupabaseClient,
+  args: {
+    scanner: string
+    actor_id: string
+    input: unknown
+    results_count: number | null
+    http_status: number | null
+    ok: boolean
+    error: string | null
+  }
+): Promise<void> {
+  try {
+    await supabase.from('apify_runs').insert({
+      scanner: args.scanner,
+      actor_id: args.actor_id,
+      input: args.input as object,
+      results_count: args.results_count,
+      http_status: args.http_status,
+      ok: args.ok,
+      error: args.error,
+    })
+  } catch { /* best effort — never block scans on audit-log writes */ }
 }
 
 /**

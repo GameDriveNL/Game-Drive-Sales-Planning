@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { inferTerritory } from '@/lib/territory'
 import { detectOutletCountry } from '@/lib/outlet-country'
-import { checkApifyCredits, notifyLowCredits } from '@/lib/apify-utils'
+import { checkApifyCredits, notifyLowCredits, checkApifyDailyBudget, logApifyRun } from '@/lib/apify-utils'
 
 function getSupabase() {
   return getServerSupabase()
@@ -48,6 +48,15 @@ export async function GET(request: NextRequest) {
       })
     }
 
+    // Daily call budget — backstop against runaway spend.
+    const budget = await checkApifyDailyBudget(supabase)
+    if (!budget.ok) {
+      return NextResponse.json({
+        message: `Daily Apify call cap reached (${budget.callsToday}/${budget.limit}), skipping scan`,
+        calls_today: budget.callsToday,
+      })
+    }
+
     // Get YouTube coverage_sources (for per-source status tracking)
     const { data: ytSources } = await supabase
       .from('coverage_sources')
@@ -79,32 +88,51 @@ export async function GET(request: NextRequest) {
 
     for (const [, term] of Array.from(searchTerms.entries())) {
       try {
+        // Re-check daily budget mid-loop in case earlier scanners burned through it.
+        const midBudget = await checkApifyDailyBudget(supabase)
+        if (!midBudget.ok) {
+          console.warn(`YouTube scan stopping mid-loop: daily cap reached (${midBudget.callsToday}/${midBudget.limit})`)
+          break
+        }
+
         // Run Apify YouTube scraper actor synchronously
         // Uses verified input schema from streamers~youtube-scraper
+        const input = {
+          searchQueries: [term.query],
+          maxResults: 10,
+          maxResultStreams: 0,
+          maxResultsShorts: 0,
+          sortVideosBy: 'NEWEST',
+          // 'today' = last 24h. Dedup handles overlap with yesterday's run.
+          // Was 'month' — caused us to re-pay for the same 30 days every day.
+          dateFilter: 'today',
+          downloadSubtitles: false,
+        }
         const actorRes = await fetch(
           `https://api.apify.com/v2/acts/${APIFY_YOUTUBE_ACTOR}/run-sync-get-dataset-items?token=${apifyKey}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              searchQueries: [term.query],
-              maxResults: 10,
-              maxResultStreams: 0,
-              maxResultsShorts: 0,
-              sortVideosBy: 'NEWEST',
-              dateFilter: 'month',
-              downloadSubtitles: false,
-            }),
+            body: JSON.stringify(input),
           }
         )
 
         if (!actorRes.ok) {
           console.error(`Apify YouTube actor error for "${term.query}": ${actorRes.status}`)
+          await logApifyRun(supabase, {
+            scanner: 'youtube-scan', actor_id: APIFY_YOUTUBE_ACTOR, input,
+            results_count: null, http_status: actorRes.status, ok: false, error: `HTTP ${actorRes.status}`,
+          })
           continue
         }
 
         const videos = await actorRes.json()
-        if (!Array.isArray(videos)) continue
+        const isArr = Array.isArray(videos)
+        await logApifyRun(supabase, {
+          scanner: 'youtube-scan', actor_id: APIFY_YOUTUBE_ACTOR, input,
+          results_count: isArr ? videos.length : null, http_status: actorRes.status, ok: isArr, error: null,
+        })
+        if (!isArr) continue
 
         totalFound += videos.length
 

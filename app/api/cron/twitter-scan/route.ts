@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { inferTerritory } from '@/lib/territory'
 import { detectOutletCountry } from '@/lib/outlet-country'
-import { checkApifyCredits, notifyLowCredits } from '@/lib/apify-utils'
+import { checkApifyCredits, notifyLowCredits, checkApifyDailyBudget, logApifyRun } from '@/lib/apify-utils'
 
 function getSupabase() {
   return getServerSupabase()
@@ -51,6 +51,15 @@ export async function GET(request: NextRequest) {
       })
     }
 
+    // Daily call budget — backstop against runaway spend.
+    const budget = await checkApifyDailyBudget(supabase)
+    if (!budget.ok) {
+      return NextResponse.json({
+        message: `Daily Apify call cap reached (${budget.callsToday}/${budget.limit}), skipping scan`,
+        calls_today: budget.callsToday,
+      })
+    }
+
     // Get whitelist keywords grouped by client+game
     const { data: keywords } = await supabase
       .from('coverage_keywords')
@@ -71,55 +80,67 @@ export async function GET(request: NextRequest) {
       keywordGroups.get(key)!.keywords.push(kw.keyword)
     }
 
-    // Get Twitter sources with handle configs
+    // Get Twitter sources (each scoped to one game)
     const { data: twitterSources } = await supabase
       .from('coverage_sources')
       .select('id, config, game_id')
       .eq('source_type', 'twitter')
       .eq('is_active', true)
 
-    // Collect all configured handles across all sources
-    const configuredHandles: Set<string> = new Set()
-    if (twitterSources) {
-      for (const source of twitterSources) {
-        const cfg = source.config as Record<string, unknown> | null
-        if (!cfg) continue
-        if (cfg.handles && Array.isArray(cfg.handles)) {
-          for (const handle of cfg.handles) configuredHandles.add(String(handle).toLowerCase().replace(/^@/, ''))
-        }
-        if (cfg.handle && typeof cfg.handle === 'string') {
-          configuredHandles.add(cfg.handle.toLowerCase().replace(/^@/, ''))
-        }
-      }
-    }
-
     let totalFound = 0
     let totalNew = 0
 
+    // Pass 1: keyword search per group (general Twitter search).
     for (const [, group] of Array.from(keywordGroups.entries())) {
-      const queries = group.keywords.slice(0, 5) // Max 5 queries per group
-
+      const midBudget = await checkApifyDailyBudget(supabase)
+      if (!midBudget.ok) { console.warn(`Twitter scan stopping: daily cap reached`); break }
+      const queries = group.keywords.slice(0, 5)
       try {
-        // Keyword search — search across all of Twitter
-        const keywordResults = await callTwitterActor(apifyKey, queries, undefined)
+        const keywordResults = await callTwitterActor(supabase, apifyKey, queries, undefined)
         if (keywordResults) {
           const result = await processTwitterPosts(supabase, keywordResults, group.clientId, group.gameId)
           totalFound += result.found
           totalNew += result.newItems
         }
-
-        // Handle search — search specific handles (one call per handle since
-        // twitterHandles may not be additive with searchTerms)
-        for (const handle of Array.from(configuredHandles)) {
-          const handleResults = await callTwitterActor(apifyKey, undefined, [handle])
-          if (handleResults) {
-            const result = await processTwitterPosts(supabase, handleResults, group.clientId, group.gameId)
-            totalFound += result.found
-            totalNew += result.newItems
-          }
-        }
       } catch (err) {
         console.error(`Twitter Apify scan error for keywords [${queries.join(', ')}]:`, err)
+      }
+    }
+
+    // Pass 2: handle search PER SOURCE — handles only run against the keywords
+    // for that source's game. Was previously a global cross-product
+    // (every group × every handle = N_groups × N_handles calls/day).
+    if (twitterSources) {
+      for (const source of twitterSources) {
+        const cfg = source.config as Record<string, unknown> | null
+        if (!cfg) continue
+
+        const matchingGroup = Array.from(keywordGroups.values()).find(g => g.gameId === source.game_id)
+        if (!matchingGroup) continue
+
+        const handles: string[] = []
+        if (Array.isArray(cfg.handles)) {
+          for (const h of cfg.handles) handles.push(String(h).toLowerCase().replace(/^@/, ''))
+        }
+        if (typeof cfg.handle === 'string') {
+          handles.push(cfg.handle.toLowerCase().replace(/^@/, ''))
+        }
+        if (handles.length === 0) continue
+
+        try {
+          for (const handle of handles) {
+            const midBudget = await checkApifyDailyBudget(supabase)
+            if (!midBudget.ok) { console.warn(`Twitter scan stopping: daily cap reached`); break }
+            const handleResults = await callTwitterActor(supabase, apifyKey, undefined, [handle])
+            if (handleResults) {
+              const result = await processTwitterPosts(supabase, handleResults, matchingGroup.clientId, matchingGroup.gameId)
+              totalFound += result.found
+              totalNew += result.newItems
+            }
+          }
+        } catch (err) {
+          console.error(`Twitter Apify scan error for source ${source.id}:`, err)
+        }
       }
     }
 
@@ -147,7 +168,7 @@ export async function GET(request: NextRequest) {
       message: `Twitter scan complete: ${totalFound} found, ${totalNew} new`,
       found: totalFound,
       new_items: totalNew,
-      handles_tracked: Array.from(configuredHandles),
+      sources_scanned: twitterSources?.length ?? 0,
     })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error'
@@ -158,6 +179,7 @@ export async function GET(request: NextRequest) {
 
 // Call the Apify Twitter actor
 async function callTwitterActor(
+  supabase: ReturnType<typeof getSupabase>,
   apifyKey: string,
   searchTerms: string[] | undefined,
   twitterHandles: string[] | undefined
@@ -194,11 +216,20 @@ async function callTwitterActor(
 
   if (!actorRes.ok) {
     console.error(`Apify Twitter actor error: ${actorRes.status}`)
+    await logApifyRun(supabase, {
+      scanner: 'twitter-scan', actor_id: APIFY_TWITTER_ACTOR, input: body,
+      results_count: null, http_status: actorRes.status, ok: false, error: `HTTP ${actorRes.status}`,
+    })
     return null
   }
 
   const tweets = await actorRes.json()
-  if (!Array.isArray(tweets)) return null
+  const isArr = Array.isArray(tweets)
+  await logApifyRun(supabase, {
+    scanner: 'twitter-scan', actor_id: APIFY_TWITTER_ACTOR, input: body,
+    results_count: isArr ? tweets.length : null, http_status: actorRes.status, ok: isArr, error: null,
+  })
+  if (!isArr) return null
   return tweets as TwitterPost[]
 }
 
