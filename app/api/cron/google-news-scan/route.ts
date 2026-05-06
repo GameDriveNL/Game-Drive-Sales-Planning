@@ -5,6 +5,7 @@ import { domainToOutletName } from '@/lib/outlet-utils'
 import { detectOutletCountry } from '@/lib/outlet-country'
 import { classifyCoverageType } from '@/lib/coverage-utils'
 import { inferTerritory } from '@/lib/territory'
+import { verifyCronAuth } from '@/lib/cron-auth'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -139,14 +140,9 @@ export async function GET(request: Request) {
   const supabase = getServerSupabase()
 
   try {
-    // Auth: allow Vercel cron or manual browser test
-    const authHeader = request.headers.get('authorization')
-    const expectedAuth = `Bearer ${process.env.CRON_SECRET}`
-    const isManualTest = request.headers.get('user-agent')?.includes('Mozilla')
-
-    if (!isManualTest && authHeader !== expectedAuth) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    // Auth — fails closed (was a Mozilla User-Agent bypass; trivially spoofed).
+    const authError = verifyCronAuth(request)
+    if (authError) return authError
 
     // 1. Fetch all games with PR tracking enabled (join with clients for client_id)
     const { data: games, error: gamesErr } = await supabase

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
+import { verifyCronAuth } from '@/lib/cron-auth'
 
 function getSupabase() {
   return getServerSupabase()
@@ -116,11 +117,8 @@ function escapeHtml(str: string): string {
 
 // GET /api/cron/coverage-digest — Send scheduled coverage digest emails
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('authorization')
-  const cronSecret = process.env.CRON_SECRET
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const authError = verifyCronAuth(request)
+  if (authError) return authError
 
   const supabase = getSupabase()
 

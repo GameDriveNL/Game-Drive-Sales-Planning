@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import Parser from 'rss-parser'
+import { verifyCronAuth } from '@/lib/cron-auth'
 import { inferTerritory } from '@/lib/territory'
 import { domainToOutletName } from '@/lib/outlet-utils'
 import { detectOutletCountry } from '@/lib/outlet-country'
@@ -140,14 +141,9 @@ export async function GET(request: Request) {
   const supabase = getServerSupabase()
 
   try {
-    // Auth: allow Vercel cron or manual browser test
-    const authHeader = request.headers.get('authorization')
-    const expectedAuth = `Bearer ${process.env.CRON_SECRET}`
-    const isManualTest = request.headers.get('user-agent')?.includes('Mozilla')
-
-    if (!isManualTest && authHeader !== expectedAuth) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    // Auth — fails closed (was a Mozilla User-Agent bypass; trivially spoofed).
+    const authError = verifyCronAuth(request)
+    if (authError) return authError
 
     // 1. Fetch all active RSS sources with their linked outlets
     const { data: sources, error: srcErr } = await supabase

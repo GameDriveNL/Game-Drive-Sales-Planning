@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { buildSullyGnomeUrl } from '@/lib/sullygnome'
 import { checkApifyCredits, notifyLowCredits, checkApifyDailyBudget, logApifyRun } from '@/lib/apify-utils'
+import { verifyCronAuth } from '@/lib/cron-auth'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -95,11 +96,8 @@ export async function POST(request: NextRequest) {
 
 // GET — Cron trigger (auth required)
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('authorization')
-  const cronSecret = process.env.CRON_SECRET
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const authError = verifyCronAuth(request)
+  if (authError) return authError
   return handleScan(request)
 }
 

@@ -3,6 +3,7 @@ import { getServerSupabase } from '@/lib/supabase'
 import { inferTerritory } from '@/lib/territory'
 import { detectOutletCountry } from '@/lib/outlet-country'
 import { checkApifyCredits, notifyLowCredits, checkApifyDailyBudget, logApifyRun } from '@/lib/apify-utils'
+import { verifyCronAuth } from '@/lib/cron-auth'
 
 function getSupabase() {
   return getServerSupabase()
@@ -20,11 +21,8 @@ const MIN_FOLLOWERS = 1000
 //   2. Keyword search — full-text search queries
 //   3. Profile search — scans specific TikTok profiles from coverage_sources config
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('authorization')
-  const cronSecret = process.env.CRON_SECRET
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const authError = verifyCronAuth(request)
+  if (authError) return authError
 
   const supabase = getSupabase()
 

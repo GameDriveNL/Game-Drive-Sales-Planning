@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
+import { verifyCronAuth } from '@/lib/cron-auth'
 
 function getSupabase() {
   return getServerSupabase()
@@ -86,11 +87,8 @@ const TITLE_SIMILARITY_THRESHOLD = 0.85
 
 // GET /api/cron/coverage-dedup — Detect and group duplicate/syndicated coverage items
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('authorization')
-  const cronSecret = process.env.CRON_SECRET
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const authError = verifyCronAuth(request)
+  if (authError) return authError
 
   const supabase = getSupabase()
 

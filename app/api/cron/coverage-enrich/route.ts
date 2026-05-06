@@ -4,6 +4,7 @@ import { GoogleGenAI } from '@google/genai'
 import { sendDiscordNotification } from '@/lib/discord'
 import { getGeminiConfig } from '@/lib/gemini-config'
 import { inferTerritory } from '@/lib/territory'
+import { verifyCronAuth } from '@/lib/cron-auth'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -267,14 +268,9 @@ async function applyScoreResult(
 
 // GET /api/cron/coverage-enrich — Process unscored coverage items (batch mode: 5 items per Gemini call)
 export async function GET(request: NextRequest) {
-  // Verify cron secret (allow manual browser testing)
-  const authHeader = request.headers.get('authorization')
-  const cronSecret = process.env.CRON_SECRET
-  const isManualTest = request.headers.get('user-agent')?.includes('Mozilla')
-
-  if (!isManualTest && cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  // Auth — fails closed (was a Mozilla User-Agent bypass; trivially spoofed).
+  const authError = verifyCronAuth(request)
+  if (authError) return authError
 
   const supabase = getSupabase()
 

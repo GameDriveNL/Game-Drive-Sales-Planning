@@ -4,6 +4,7 @@ import { domainToOutletName } from '@/lib/outlet-utils'
 import { detectOutletCountry } from '@/lib/outlet-country'
 import { matchGameFromContent, classifyCoverageType } from '@/lib/coverage-utils'
 import { inferTerritory } from '@/lib/territory'
+import { verifyCronAuth } from '@/lib/cron-auth'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -175,14 +176,9 @@ export async function GET(request: Request) {
   const supabase = getServerSupabase()
 
   try {
-    // Auth
-    const authHeader = request.headers.get('authorization')
-    const expectedAuth = `Bearer ${process.env.CRON_SECRET}`
-    const isManualTest = request.headers.get('user-agent')?.includes('Mozilla')
-
-    if (!isManualTest && authHeader !== expectedAuth) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    // Auth — fails closed (was a Mozilla User-Agent bypass; trivially spoofed).
+    const authError = verifyCronAuth(request)
+    if (authError) return authError
 
     // 1. Fetch outlets that DON'T have RSS feeds and are worth scraping
     //    Focus on Tier A/B outlets without RSS — these are the gap

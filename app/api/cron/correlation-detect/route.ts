@@ -1,5 +1,6 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { verifyCronAuth } from '@/lib/cron-auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,7 +15,10 @@ const SPIKE_THRESHOLD = 0.15 // 15%
 const WINDOW_DAYS = 3 // ±3 days (72 hours total)
 const REVERSE_WINDOW_DAYS = 5 // Check for PR mentions within 5 days after a sales event
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const authError = verifyCronAuth(request)
+  if (authError) return authError
+
   const db = getSupabase()
   let candidatesCreated = 0
 

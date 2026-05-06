@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { serverSupabase as supabase } from '@/lib/supabase';
+import { verifyCronAuth } from '@/lib/cron-auth';
 
 const STEAM_PARTNER_API = 'https://partner.steam-api.com';
 const DOMO_AUTH_URL = 'https://api.domo.com/oauth/token';
@@ -19,29 +20,10 @@ export const maxDuration = 60;
 // It processes one pending job at a time
 export async function GET(request: Request) {
   try {
-    // Verify this is a cron request (Vercel adds this header)
-    const authHeader = request.headers.get('authorization');
-    const expectedAuth = `Bearer ${process.env.CRON_SECRET}`;
-
-    // Log for debugging
-    console.log('[Cron] Auth check:', {
-      hasAuthHeader: !!authHeader,
-      hasCronSecret: !!process.env.CRON_SECRET,
-      authMatches: authHeader === expectedAuth
-    });
-
-    // Temporarily allow manual testing - REMOVE THIS LATER
-    const isManualTest = request.headers.get('user-agent')?.includes('Mozilla');
-
-    if (!isManualTest && authHeader !== expectedAuth) {
-      return NextResponse.json({
-        error: 'Unauthorized',
-        debug: {
-          hasAuthHeader: !!authHeader,
-          hasCronSecret: !!process.env.CRON_SECRET
-        }
-      }, { status: 401 });
-    }
+    // Auth — fails closed. Was a Mozilla User-Agent bypass labeled
+    // "REMOVE THIS LATER" — that label is now honored.
+    const authError = verifyCronAuth(request);
+    if (authError) return authError;
 
     console.log('[Cron] Starting sync job processor');
 
