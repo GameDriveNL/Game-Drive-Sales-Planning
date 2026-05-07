@@ -4,7 +4,7 @@
 
 Professional sales planning platform for game publishers managing Steam, PlayStation, Nintendo, Xbox, and Epic sales campaigns. Built for Game Drive (Utrecht, Netherlands) with multi-client architecture and platform cooldown management.
 
-**🔥 LIVE: https://gamedrivesalesplanning-two.vercel.app/**
+**🔥 LIVE: https://platform.game-drive.nl/**
 
 ---
 
@@ -126,7 +126,7 @@ docs/
 
 ## Repository
 
-- **GitHub**: https://github.com/joshmartin1186/Game-Drive-Sales-Planning
+- **GitHub**: https://github.com/GameDriveNL/Game-Drive-Sales-Planning
 - **Supabase**: Project ID `znueqcmlqfdhetnierno` (eu-west-1)
 - **Vercel**: Auto-deploys from main branch
 

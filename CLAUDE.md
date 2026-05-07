@@ -125,8 +125,10 @@ npm run lint              # ESLint
 
 ## Key Reference
 
-- **Production:** https://gamedrivesalesplanning.vercel.app/
-- **GitHub Issues:** https://github.com/joshmartin1186/Game-Drive-Sales-Planning/issues
+- **Production:** https://platform.game-drive.nl/ (custom domain → `game-drive-sales-planning` Vercel project on GameDriveNL team)
+- **Backup URL:** https://game-drive-sales-planning.vercel.app/
+- **GitHub repo:** https://github.com/GameDriveNL/Game-Drive-Sales-Planning (canonical — `joshmartin1186/Game-Drive-Sales-Planning` was archived 2026-05-07)
+- **GitHub Issues:** https://github.com/GameDriveNL/Game-Drive-Sales-Planning/issues
 - **Supabase:** https://supabase.com/dashboard/project/znueqcmlqfdhetnierno
 - **Full MCP tools reference:** See `CLAUDE_CONTEXT.md`
 - **PR Coverage spec:** See `docs/PR_COVERAGE_ARCHITECTURE.md`

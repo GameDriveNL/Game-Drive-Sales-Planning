@@ -307,8 +307,8 @@ For Claude Projects, maintain context with this structure:
 
 ```markdown
 **Project:** GameDrive Sales Planning Tool
-**Live URL:** https://gamedrivesalesplanning-two.vercel.app/
-**Repo:** joshmartin1186/Game-Drive-Sales-Planning
+**Live URL:** https://platform.game-drive.nl/
+**Repo:** GameDriveNL/Game-Drive-Sales-Planning
 **Supabase:** znueqcmlqfdhetnierno
 
 **Last Session:**

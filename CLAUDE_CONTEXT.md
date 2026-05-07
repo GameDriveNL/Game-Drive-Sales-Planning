@@ -37,9 +37,9 @@ npm run lint
 
 | Resource | Value |
 |----------|-------|
-| GitHub Repo | `joshmartin1186/Game-Drive-Sales-Planning` |
+| GitHub Repo | `GameDriveNL/Game-Drive-Sales-Planning` |
 | Main Branch | `main` |
-| Production URL | https://gamedrivesalesplanning.vercel.app/ |
+| Production URL | https://platform.game-drive.nl/ |
 | Vercel Team ID | `team_6piiLSU3y16pH8Kt0uAlDFUu` |
 | Vercel Project ID | `prj_aKbiJdM5fbOPa8YeCc5aCEQWqzcK` |
 | Vercel Project Name | `game_drive_sales_planning` |
@@ -268,14 +268,14 @@ mcp__a4288cc3-ead4-4a33-8068-db81680ffa2b__get_project(
 When a deployment URL returns 401/403:
 ```
 mcp__a4288cc3-ead4-4a33-8068-db81680ffa2b__web_fetch_vercel_url(
-  url="https://gamedrivesalesplanning.vercel.app/"
+  url="https://platform.game-drive.nl/"
 )
 ```
 
 Or create a temporary shareable link (23-hour expiry):
 ```
 mcp__a4288cc3-ead4-4a33-8068-db81680ffa2b__get_access_to_vercel_url(
-  url="https://gamedrivesalesplanning-abc123.vercel.app"
+  url="https://game-drive-sales-planning-abc123.vercel.app"
 )
 ```
 
@@ -685,7 +685,7 @@ git push origin main
 ### 5. Verify Deployment
 - Wait 2-3 minutes for Vercel build
 - Check deployment status via MCP tools
-- Check https://gamedrivesalesplanning.vercel.app/
+- Check https://platform.game-drive.nl/
 - If errors, check build logs and runtime logs
 
 ### 6. Update Progress Tracker
@@ -786,8 +786,8 @@ Before pushing to production:
 
 ## Contact & Resources
 
-- **Production Site:** https://gamedrivesalesplanning.vercel.app/
-- **GitHub:** https://github.com/joshmartin1186/Game-Drive-Sales-Planning
+- **Production Site:** https://platform.game-drive.nl/
+- **GitHub:** https://github.com/GameDriveNL/Game-Drive-Sales-Planning
 - **Vercel Dashboard:** https://vercel.com/team_6piiLSU3y16pH8Kt0uAlDFUu
 - **Supabase Dashboard:** https://supabase.com/dashboard/project/znueqcmlqfdhetnierno
 

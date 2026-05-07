@@ -47,7 +47,7 @@ type KeywordMeta = { keyword: string; client_id: string; game_id: string | null 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 const FETCH_TIMEOUT = 12000
-const USER_AGENT = 'Mozilla/5.0 (compatible; GameDrive/1.0; +https://gamedrivesalesplanning.vercel.app)'
+const USER_AGENT = 'Mozilla/5.0 (compatible; GameDrive/1.0; +https://platform.game-drive.nl)'
 
 function normalizeUrl(url: string): string {
   try {

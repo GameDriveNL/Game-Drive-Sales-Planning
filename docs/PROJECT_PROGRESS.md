@@ -6,17 +6,17 @@
 - **Budget:** $5,000 fixed price
 - **Start Date:** December 23, 2024
 - **Target Completion:** January 22, 2025
-- **Live URL:** https://gamedrivesalesplanning.vercel.app/
+- **Live URL:** https://platform.game-drive.nl/
 
 ---
 
 ## Quick Reference for New Sessions
 
 ### Repository & Deployment
-- **GitHub:** joshmartin1186/Game-Drive-Sales-Planning (main branch)
+- **GitHub:** GameDriveNL/Game-Drive-Sales-Planning (main branch)
 - **Vercel Team ID:** team_6piiLSU3y16pH8Kt0uAlDFUu
 - **Vercel Project ID:** prj_G1cbQAX5nL5VDKO37D73HnHNHnnR
-- **Production URL:** https://gamedrivesalesplanning.vercel.app
+- **Production URL:** https://platform.game-drive.nl
 - **Supabase Project ID:** znueqcmlqfdhetnierno (eu-west-1)
 
 ### Critical Technical Notes
@@ -757,9 +757,9 @@ Identified and fixed critical issues for real data import:
 ---
 
 ## Repository Info
-- **GitHub:** https://github.com/joshmartin1186/Game-Drive-Sales-Planning
-- **Live Site:** https://gamedrivesalesplanning.vercel.app/
-- **Analytics:** https://gamedrivesalesplanning.vercel.app/analytics
+- **GitHub:** https://github.com/GameDriveNL/Game-Drive-Sales-Planning
+- **Live Site:** https://platform.game-drive.nl/
+- **Analytics:** https://platform.game-drive.nl/analytics
 - **Supabase Project:** znueqcmlqfdhetnierno (eu-west-1)
 - **Vercel Team ID:** team_6piiLSU3y16pH8Kt0uAlDFUu
 - **Vercel Project ID:** prj_G1cbQAX5nL5VDKO37D73HnHNHnnR
