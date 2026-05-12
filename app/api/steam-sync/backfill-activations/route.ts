@@ -114,44 +114,43 @@ export async function POST(request: Request) {
           pages++
         }
 
-        // Only rows with non-zero activations need an UPDATE
+        // Only rows with non-zero activations need to be written
         const activationRows = allRows.filter(r => Number(r.gross_units_activated || 0) > 0)
         if (activationRows.length === 0) continue
 
-        for (const row of activationRows) {
+        // Build all upsert rows for this date, then send as a single batch — avoids
+        // O(rows) round-trips that would blow past Vercel's 60s function timeout.
+        const upsertPayload = activationRows.flatMap(row => {
           const productName = row.packageid
             ? packageNames.get(row.packageid)
             : row.appid
               ? appNames.get(row.appid)
-              : 'Unknown'
-          if (!productName) continue
+              : null
+          if (!productName) return []
+          return [{
+            client_id,
+            date,
+            product_name: productName,
+            platform: row.platform || 'Steam',
+            country_code: row.country_code,
+            gross_units_activated: row.gross_units_activated,
+            gross_units_sold: 0,
+            net_units_sold: 0,
+            gross_revenue_usd: 0,
+            net_revenue_usd: 0,
+          }]
+        })
 
-          // UPDATE the existing performance_metrics row — never insert.
-          // The original sync code already inserted rows for every Steam result with
-          // gross_units_activated=0; we're just filling in the value now.
-          // Upsert: matches the original sync's onConflict key. For clients whose data
-          // lives in steam_sales (legacy CSV imports), no performance_metrics row exists yet,
-          // so we have to INSERT. For clients on the new sync, the row already exists and
-          // we UPDATE just the activation field. Either way the conflict key handles it.
-          const { error: upErr } = await supabase
-            .from('performance_metrics')
-            .upsert({
-              client_id,
-              date,
-              product_name: productName,
-              platform: row.platform || 'Steam',
-              country_code: row.country_code,
-              gross_units_activated: row.gross_units_activated,
-              gross_units_sold: 0,
-              net_units_sold: 0,
-              gross_revenue_usd: 0,
-              net_revenue_usd: 0,
-            }, { onConflict: 'client_id,date,product_name,platform,country_code' })
-          if (upErr) {
-            errors.push(`${date}/${productName}/${row.country_code}: ${upErr.message}`)
-          } else {
-            totalRowsUpdated += 1
-          }
+        if (upsertPayload.length === 0) continue
+
+        const { error: upErr } = await supabase
+          .from('performance_metrics')
+          .upsert(upsertPayload, { onConflict: 'client_id,date,product_name,platform,country_code' })
+
+        if (upErr) {
+          errors.push(`${date}: ${upErr.message}`)
+        } else {
+          totalRowsUpdated += upsertPayload.length
         }
       } catch (e) {
         errors.push(`${date}: ${e instanceof Error ? e.message : String(e)}`)
