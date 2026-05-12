@@ -909,6 +909,33 @@ export default function WishlistsPage() {
               {/* Demo Tab */}
               {activeTab === 'Demo' && (
                 <div>
+                  {/* Client-scoped backfill — visible regardless of whether this game has demos,
+                      because the operation hits the whole client's historical data. */}
+                  {canEdit && (
+                    <div style={{ ...cardStyle, display: 'flex', gap: '12px', alignItems: 'center' }}>
+                      <button
+                        onClick={runBackfillBatch}
+                        disabled={backfillRunning}
+                        style={{
+                          fontSize: '13px', padding: '8px 14px',
+                          backgroundColor: backfillRunning ? '#94a3b8' : '#7c3aed', color: 'white',
+                          border: 'none', borderRadius: '6px',
+                          cursor: backfillRunning ? 'not-allowed' : 'pointer', fontWeight: 500,
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {backfillRunning
+                          ? 'Backfilling…'
+                          : backfillStartDate
+                            ? `Continue backfill (from ${backfillStartDate})`
+                            : 'Backfill historical activations'}
+                      </button>
+                      <span style={{ fontSize: '11px', color: '#64748b', flex: 1 }}>
+                        {backfillProgress || `Re-fetches Steam GetDetailedSales for this client's past dates and writes gross_units_activated on existing rows. Until 2026-05-12 this field was discarded — without backfill, historical demos show zero activations. 30 dates per click.`}
+                      </span>
+                    </div>
+                  )}
+
                   {demoProducts.length === 0 ? (
                     <div style={{ ...cardStyle, textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
                       <p style={{ fontSize: '16px', fontWeight: 500, marginBottom: '8px' }}>No demo products for this game</p>
@@ -963,30 +990,6 @@ export default function WishlistsPage() {
                             Narrow this for event demos (e.g. one Next Fest week).
                           </span>
                         </div>
-
-                        {canEdit && (
-                          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', paddingTop: '12px', marginTop: '12px', borderTop: '1px solid #f1f5f9' }}>
-                            <button
-                              onClick={runBackfillBatch}
-                              disabled={backfillRunning}
-                              style={{
-                                fontSize: '13px', padding: '8px 14px',
-                                backgroundColor: backfillRunning ? '#94a3b8' : '#7c3aed', color: 'white',
-                                border: 'none', borderRadius: '6px',
-                                cursor: backfillRunning ? 'not-allowed' : 'pointer', fontWeight: 500,
-                              }}
-                            >
-                              {backfillRunning
-                                ? 'Backfilling…'
-                                : backfillStartDate
-                                  ? `Continue backfill (from ${backfillStartDate})`
-                                  : 'Backfill historical activations from Steam'}
-                            </button>
-                            <span style={{ fontSize: '11px', color: '#64748b', flex: 1 }}>
-                              {backfillProgress || 'Re-fetches GetDetailedSales for past dates and writes gross_units_activated. Processes 30 dates per click.'}
-                            </span>
-                          </div>
-                        )}
                       </div>
 
                       {demoLoading ? (
