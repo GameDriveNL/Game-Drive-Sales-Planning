@@ -249,6 +249,13 @@ export default function WishlistsPage() {
   const [demoWindowStart, setDemoWindowStart] = useState('')
   const [demoWindowEnd, setDemoWindowEnd] = useState('')
 
+  // Historical activation backfill — until 2026-05-12 the Steam sync threw away
+  // gross_units_activated, so every existing row has 0. This calls a server endpoint
+  // that re-fetches Steam data and UPDATEs the column on existing rows.
+  const [backfillRunning, setBackfillRunning] = useState(false)
+  const [backfillProgress, setBackfillProgress] = useState<string | null>(null)
+  const [backfillStartDate, setBackfillStartDate] = useState<string | null>(null)
+
   // Wishlist state
   const [wishlistData, setWishlistData] = useState<WishlistRow[]>([])
   const [wishlistSummary, setWishlistSummary] = useState<WishlistSummary | null>(null)
@@ -323,6 +330,43 @@ export default function WishlistsPage() {
       setGames(prev => prev.map(g => g.id === data.id ? (data as GameMeta) : g))
     }
   }, [selectedGame, supabase])
+
+  const runBackfillBatch = useCallback(async () => {
+    if (!selectedClient || backfillRunning) return
+    setBackfillRunning(true)
+    setBackfillProgress('Fetching from Steam…')
+    try {
+      const res = await fetch('/api/steam-sync/backfill-activations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: selectedClient,
+          start_date: backfillStartDate,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        setBackfillProgress(`Error: ${json.error || 'unknown'}`)
+      } else {
+        const msg = `Backfilled ${json.dates_processed} dates (${json.rows_updated} rows updated).` +
+          (json.has_more ? ` ${json.remaining_dates} dates remain — click again to continue.` : ' Backfill complete.')
+        setBackfillProgress(msg)
+        if (json.has_more && json.next_start_date) {
+          setBackfillStartDate(json.next_start_date)
+        } else {
+          setBackfillStartDate(null)
+          // Refetch the demo widget's data so the new numbers show up
+          if (activeTab === 'Demo') {
+            // touch the demo refresh by toggling state
+            setSelectedDemoId(prev => prev)
+          }
+        }
+      }
+    } catch (err) {
+      setBackfillProgress(`Network error: ${err instanceof Error ? err.message : String(err)}`)
+    }
+    setBackfillRunning(false)
+  }, [selectedClient, backfillStartDate, backfillRunning, activeTab])
 
   const handleSaveStoreDate = async () => {
     if (!selectedGame) return
@@ -919,6 +963,30 @@ export default function WishlistsPage() {
                             Narrow this for event demos (e.g. one Next Fest week).
                           </span>
                         </div>
+
+                        {canEdit && (
+                          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', paddingTop: '12px', marginTop: '12px', borderTop: '1px solid #f1f5f9' }}>
+                            <button
+                              onClick={runBackfillBatch}
+                              disabled={backfillRunning}
+                              style={{
+                                fontSize: '13px', padding: '8px 14px',
+                                backgroundColor: backfillRunning ? '#94a3b8' : '#7c3aed', color: 'white',
+                                border: 'none', borderRadius: '6px',
+                                cursor: backfillRunning ? 'not-allowed' : 'pointer', fontWeight: 500,
+                              }}
+                            >
+                              {backfillRunning
+                                ? 'Backfilling…'
+                                : backfillStartDate
+                                  ? `Continue backfill (from ${backfillStartDate})`
+                                  : 'Backfill historical activations from Steam'}
+                            </button>
+                            <span style={{ fontSize: '11px', color: '#64748b', flex: 1 }}>
+                              {backfillProgress || 'Re-fetches GetDetailedSales for past dates and writes gross_units_activated. Processes 30 dates per click.'}
+                            </span>
+                          </div>
+                        )}
                       </div>
 
                       {demoLoading ? (

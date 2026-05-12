@@ -3,6 +3,7 @@
 // Cache invalidation: 2026-02-11T12:00:00Z - Replaced AnalyticsSidebar with global Sidebar
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import Link from 'next/link'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import styles from './page.module.css'
 import * as XLSX from 'xlsx'
@@ -2745,6 +2746,17 @@ export default function AnalyticsPage() {
               </>
             ) : (
               <>
+                <Link
+                  href="/analytics/wishlists"
+                  className={styles.editButton}
+                  style={{ textDecoration: 'none' }}
+                  title="Track wishlists, bundles, and demo-to-wishlist conversion"
+                >
+                  <svg className={styles.buttonIcon} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                  </svg>
+                  Wishlists &amp; Demo
+                </Link>
                 <button className={styles.editButton} onClick={() => setIsEditMode(true)}>
                   <svg className={styles.buttonIcon} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
