@@ -467,9 +467,11 @@ export default function WishlistsPage() {
     if (!demo) return
     setDemoLoading(true)
     try {
-      // Demo activations (Steam reports free-demo installs as gross_units_activated)
+      // Demo activations (Steam reports free-demo installs as gross_units_activated).
+      // Query performance_metrics directly — going through analytics_data_view (a UNION ALL
+      // with steam_sales) hits the statement timeout when filtering by product_name.
       let actQuery = supabase
-        .from('analytics_data_view')
+        .from('performance_metrics')
         .select('date, gross_units_activated')
         .eq('product_name', demo.name)
         .eq('platform', 'Steam')
