@@ -49,7 +49,7 @@ export function matchGameFromContent(
   // Sort by name length descending so "We Were Here Forever" matches before "We Were Here"
   const sortedGames = [...clientGames].sort((a, b) => b.name.length - a.name.length)
   for (const game of sortedGames) {
-    if (combinedLower.includes(game.name.toLowerCase())) {
+    if (matchesWord(combinedLower, game.name)) {
       return game.id
     }
   }
@@ -60,13 +60,31 @@ export function matchGameFromContent(
       k => k.game_id === game.id && k.keyword.toLowerCase() !== game.name.toLowerCase()
     )
     for (const gk of gameKeywords) {
-      if (titleLower.includes(gk.keyword.toLowerCase())) {
+      if (matchesWord(titleLower, gk.keyword)) {
         return game.id
       }
     }
   }
 
   return null
+}
+
+/**
+ * Word-boundary match. "test" matches "test", "the test", "test." but NOT
+ * "tested", "testing", "contest", "latest". Use this everywhere we match
+ * RSS/scrape content against user keywords or game names — substring matching
+ * causes massive false-positive ingestion for short/common game names.
+ */
+export function matchesWord(text: string, keyword: string): boolean {
+  const trimmed = keyword.trim()
+  if (!trimmed) return false
+  const escaped = trimmed.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  // \b only fires at word-char boundaries. For keywords that start/end with
+  // non-word chars (e.g. ".io"), fall back to substring match for those edges.
+  const startBoundary = /^\w/.test(trimmed) ? '\\b' : '(?:^|\\W)'
+  const endBoundary = /\w$/.test(trimmed) ? '\\b' : '(?:$|\\W)'
+  const re = new RegExp(`${startBoundary}${escaped}${endBoundary}`, 'i')
+  return re.test(text)
 }
 
 /** Domains that should be auto-classified as 'informational' coverage type.

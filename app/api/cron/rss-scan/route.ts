@@ -5,7 +5,7 @@ import { verifyCronAuth } from '@/lib/cron-auth'
 import { inferTerritory } from '@/lib/territory'
 import { domainToOutletName } from '@/lib/outlet-utils'
 import { detectOutletCountry } from '@/lib/outlet-country'
-import { matchGameFromContent, classifyCoverageType } from '@/lib/coverage-utils'
+import { matchGameFromContent, matchesWord, classifyCoverageType } from '@/lib/coverage-utils'
 import { autoDiscoverAndCreateRssSource } from '@/lib/rss-discovery'
 
 export const dynamic = 'force-dynamic'
@@ -86,11 +86,12 @@ function matchesKeywords(
   blacklistKeywords: string[]
 ): { matched: boolean; score: number; matchedTerms: string[] } {
   const text = `${title} ${description}`.toLowerCase()
+  const titleLower = title.toLowerCase()
   const matchedTerms: string[] = []
 
-  // Check blacklist first — if any blacklist keyword matches, reject
+  // Check blacklist first — if any blacklist keyword matches (word-boundary), reject
   for (const kw of blacklistKeywords) {
-    if (text.includes(kw.toLowerCase())) {
+    if (matchesWord(text, kw)) {
       return { matched: false, score: 0, matchedTerms: [] }
     }
   }
@@ -100,14 +101,13 @@ function matchesKeywords(
     return { matched: true, score: 50, matchedTerms: [] }
   }
 
-  // Check whitelist — need at least one match
+  // Check whitelist — need at least one word-boundary match
   let score = 0
   for (const kw of whitelistKeywords) {
-    const kwLower = kw.toLowerCase()
-    if (text.includes(kwLower)) {
+    if (matchesWord(text, kw)) {
       matchedTerms.push(kw)
       // Exact title match scores higher
-      if (title.toLowerCase().includes(kwLower)) score += 30
+      if (matchesWord(titleLower, kw)) score += 30
       else score += 15
     }
   }

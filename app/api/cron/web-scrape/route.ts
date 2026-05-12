@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { domainToOutletName } from '@/lib/outlet-utils'
 import { detectOutletCountry } from '@/lib/outlet-country'
-import { matchGameFromContent, classifyCoverageType } from '@/lib/coverage-utils'
+import { matchGameFromContent, matchesWord, classifyCoverageType } from '@/lib/coverage-utils'
 import { inferTerritory } from '@/lib/territory'
 import { verifyCronAuth } from '@/lib/cron-auth'
 
@@ -145,7 +145,7 @@ function matchesKeywords(
   const matchedTerms: string[] = []
 
   for (const kw of blacklistKeywords) {
-    if (text.includes(kw.toLowerCase())) {
+    if (matchesWord(text, kw)) {
       return { matched: false, score: 0, matchedTerms: [] }
     }
   }
@@ -156,7 +156,7 @@ function matchesKeywords(
 
   let score = 0
   for (const kw of whitelistKeywords) {
-    if (text.includes(kw.toLowerCase())) {
+    if (matchesWord(text, kw)) {
       matchedTerms.push(kw)
       score += 25
     }

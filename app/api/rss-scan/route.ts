@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import Parser from 'rss-parser'
+import { matchesWord } from '@/lib/coverage-utils'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -58,10 +59,11 @@ function matchesKeywords(
   blacklistKeywords: string[]
 ): { matched: boolean; score: number; matchedTerms: string[] } {
   const text = `${title} ${description}`.toLowerCase()
+  const titleLower = title.toLowerCase()
   const matchedTerms: string[] = []
 
   for (const kw of blacklistKeywords) {
-    if (text.includes(kw.toLowerCase())) {
+    if (matchesWord(text, kw)) {
       return { matched: false, score: 0, matchedTerms: [] }
     }
   }
@@ -72,10 +74,9 @@ function matchesKeywords(
 
   let score = 0
   for (const kw of whitelistKeywords) {
-    const kwLower = kw.toLowerCase()
-    if (text.includes(kwLower)) {
+    if (matchesWord(text, kw)) {
       matchedTerms.push(kw)
-      if (title.toLowerCase().includes(kwLower)) score += 30
+      if (matchesWord(titleLower, kw)) score += 30
       else score += 15
     }
   }
