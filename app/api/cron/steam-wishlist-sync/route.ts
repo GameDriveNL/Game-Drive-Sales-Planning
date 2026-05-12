@@ -120,8 +120,19 @@ export async function POST(request: NextRequest) {
     const errors: string[] = []
     const gameResults: { game: string; imported: number; error?: string }[] = []
 
+    // Look up current store_page_live_date sources so we know which games to auto-update
+    const { data: gameMeta } = await supabase
+      .from('games')
+      .select('id, store_page_live_date, store_page_live_date_source')
+      .in('id', gamesToSync.map(g => g.id))
+    const metaById = new Map<string, { live: string | null; source: string | null }>()
+    for (const g of gameMeta || []) {
+      metaById.set(g.id, { live: g.store_page_live_date, source: g.store_page_live_date_source })
+    }
+
     for (const game of gamesToSync) {
       let gameImported = 0
+      let earliestAppMinDate: string | null = null
 
       for (const date of datesToSync) {
         try {
@@ -140,6 +151,17 @@ export async function POST(request: NextRequest) {
 
           const data: WishlistReportResponse = await response.json()
           const summary = data.response?.wishlist_summary
+
+          // Capture app_min_date — the earliest date Steam has wishlist data for this app.
+          // This is functionally equivalent to "store page live date" because you can only
+          // wishlist a game once its store page exists.
+          const appMinDate = data.response?.app_min_date
+          if (appMinDate) {
+            const normalized = appMinDate.replace(/\//g, '-')
+            if (!earliestAppMinDate || normalized < earliestAppMinDate) {
+              earliestAppMinDate = normalized
+            }
+          }
 
           if (!summary) continue
 
@@ -169,6 +191,25 @@ export async function POST(request: NextRequest) {
           const msg = err instanceof Error ? err.message : String(err)
           errors.push(`${game.name} (${date}): ${msg}`)
           totalSkipped++
+        }
+      }
+
+      // Update store_page_live_date from app_min_date if we have one and the current
+      // value is either empty or was previously auto-set. Manual overrides are preserved.
+      if (earliestAppMinDate) {
+        const meta = metaById.get(game.id)
+        const shouldUpdate = !meta?.source || meta.source === 'auto'
+        if (shouldUpdate && meta?.live !== earliestAppMinDate) {
+          const { error: updErr } = await supabase
+            .from('games')
+            .update({
+              store_page_live_date: earliestAppMinDate,
+              store_page_live_date_source: 'auto',
+            })
+            .eq('id', game.id)
+          if (updErr) {
+            console.error(`[Wishlist Sync] Failed to update store_page_live_date for ${game.name}:`, updErr.message)
+          }
         }
       }
 

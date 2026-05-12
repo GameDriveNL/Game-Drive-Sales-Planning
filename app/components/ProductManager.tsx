@@ -71,7 +71,7 @@ export default function ProductManager({
   // Product form
   const [productName, setProductName] = useState('')
   const [productGameId, setProductGameId] = useState('')
-  const [productType, setProductType] = useState<'base' | 'edition' | 'dlc' | 'soundtrack'>('base')
+  const [productType, setProductType] = useState<'base' | 'edition' | 'dlc' | 'soundtrack' | 'demo'>('base')
   const [steamProductId, setSteamProductId] = useState('')
   const [launchDate, setLaunchDate] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [autoGenerateCalendar, setAutoGenerateCalendar] = useState(true)
@@ -240,7 +240,13 @@ export default function ProductManager({
     setEditing({
       type: 'game',
       id: game.id,
-      data: { name: game.name, client_id: game.client_id, steam_app_id: game.steam_app_id || '' }
+      data: {
+        name: game.name,
+        client_id: game.client_id,
+        steam_app_id: game.steam_app_id || '',
+        store_page_live_date: game.store_page_live_date || '',
+        store_page_live_date_source: game.store_page_live_date_source || null,
+      }
     })
   }
 
@@ -279,11 +285,16 @@ export default function ProductManager({
           email: editing.data.email.trim() || undefined
         })
       } else if (editing.type === 'game' && onGameUpdate) {
-        await onGameUpdate(editing.id, {
+        const payload: Record<string, unknown> = {
           name: editing.data.name.trim(),
           client_id: editing.data.client_id,
-          steam_app_id: editing.data.steam_app_id.trim() || undefined
-        })
+          steam_app_id: editing.data.steam_app_id.trim() || undefined,
+        }
+        // Only send store_page_live_date if it changed — the games PUT API treats any
+        // present value as a manual override.
+        const dateInput = (editing.data.store_page_live_date || '').trim() || null
+        payload.store_page_live_date = dateInput
+        await onGameUpdate(editing.id, payload)
       } else if (editing.type === 'product' && onProductUpdate) {
         const aliases = editing.data.product_aliases
           ? editing.data.product_aliases.split(',').map((a: string) => a.trim()).filter(Boolean)
@@ -627,6 +638,18 @@ export default function ProductManager({
                               onChange={(e) => updateEditData('steam_app_id', e.target.value)}
                               placeholder="Steam App ID"
                             />
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                              <label style={{ fontSize: '11px', color: '#64748b' }}>
+                                Store page live date {editing.data.store_page_live_date_source === 'auto' && <span style={{ color: '#7c3aed' }}>(auto-pulled from Steam — edit to override)</span>}
+                                {editing.data.store_page_live_date_source === 'manual' && <span style={{ color: '#059669' }}>(manual override)</span>}
+                              </label>
+                              <input
+                                type="date"
+                                value={editing.data.store_page_live_date || ''}
+                                onChange={(e) => updateEditData('store_page_live_date', e.target.value)}
+                                placeholder="YYYY-MM-DD"
+                              />
+                            </div>
                             <div className={styles.editActions}>
                               <button className={styles.saveBtn} onClick={handleSaveEdit} disabled={loading}>
                                 {loading ? '...' : '✓'}
@@ -640,6 +663,16 @@ export default function ProductManager({
                               <strong>{game.name}</strong>
                               <span className={styles.meta}> ({game.client?.name})</span>
                               {game.steam_app_id && <span className={styles.meta}> - Steam: {game.steam_app_id}</span>}
+                              {game.store_page_live_date && (
+                                <span
+                                  className={styles.meta}
+                                  title={game.store_page_live_date_source === 'manual' ? 'Manual override' : 'Auto-pulled from Steam'}
+                                  style={{ marginLeft: '6px' }}
+                                >
+                                  📅 Store live: {game.store_page_live_date}
+                                  {game.store_page_live_date_source === 'manual' ? ' ✎' : ''}
+                                </span>
+                              )}
                               {game.pr_tracking_enabled ? (
                                 <span className={styles.prBadgeOn}>PR On</span>
                               ) : (
@@ -729,6 +762,7 @@ export default function ProductManager({
                       <option value="dlc">DLC</option>
                       <option value="edition">Edition/Bundle</option>
                       <option value="soundtrack">Soundtrack</option>
+                      <option value="demo">Demo</option>
                     </select>
                   </div>
                   <div className={styles.field}>
@@ -847,6 +881,7 @@ export default function ProductManager({
                               <option value="dlc">DLC</option>
                               <option value="edition">Edition/Bundle</option>
                               <option value="soundtrack">Soundtrack</option>
+                              <option value="demo">Demo</option>
                             </select>
                             <input
                               type="date"

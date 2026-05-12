@@ -63,7 +63,7 @@ function formatCurrency(n: number): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n)
 }
 
-function WishlistChart({ data }: { data: WishlistRow[] }) {
+function WishlistChart({ data, storePageLiveDate }: { data: WishlistRow[]; storePageLiveDate?: string | null }) {
   if (data.length < 2) return null
 
   // Sort by date ascending for the chart
@@ -74,6 +74,20 @@ function WishlistChart({ data }: { data: WishlistRow[] }) {
   const chartW = W - PAD.left - PAD.right
   const chartH = H - PAD.top - PAD.bottom
 
+  // X-axis is anchored to store_page_live_date if it exists and falls before the first
+  // wishlist data row — that way pre-release wishlist growth shows the full timeline.
+  const firstDataDate = sorted[0].date
+  const lastDataDate = sorted[sorted.length - 1].date
+  const anchorBeforeData = !!(storePageLiveDate && storePageLiveDate < firstDataDate)
+  const xMinDate = anchorBeforeData ? storePageLiveDate! : firstDataDate
+  const xMaxDate = lastDataDate
+  // Convert dates to ms for linear positioning when we have an anchor that's outside data range
+  const dateToMs = (d: string) => new Date(d + 'T00:00:00').getTime()
+  const xMinMs = dateToMs(xMinDate)
+  const xMaxMs = dateToMs(xMaxDate)
+  const xRangeMs = Math.max(1, xMaxMs - xMinMs)
+  const dateToX = (d: string) => PAD.left + ((dateToMs(d) - xMinMs) / xRangeMs) * chartW
+
   const maxAdds = Math.max(...sorted.map(r => r.additions || 0), 1)
   const maxDel = Math.max(...sorted.map(r => r.deletions || 0), 1)
   const maxPurch = Math.max(...sorted.map(r => r.purchases_and_activations || 0), 1)
@@ -82,12 +96,11 @@ function WishlistChart({ data }: { data: WishlistRow[] }) {
   // Round up to a nice number
   const niceMax = Math.ceil(maxVal / 100) * 100
 
-  const xStep = chartW / (sorted.length - 1)
   const yScale = (v: number) => PAD.top + chartH - (v / niceMax) * chartH
 
   const makePath = (key: 'additions' | 'deletions' | 'purchases_and_activations') => {
     return sorted.map((r, i) => {
-      const x = PAD.left + i * xStep
+      const x = dateToX(r.date)
       const y = yScale((r[key] as number) || 0)
       return `${i === 0 ? 'M' : 'L'}${x},${y}`
     }).join(' ')
@@ -95,12 +108,13 @@ function WishlistChart({ data }: { data: WishlistRow[] }) {
 
   const makeArea = (key: 'additions' | 'deletions' | 'purchases_and_activations') => {
     const line = sorted.map((r, i) => {
-      const x = PAD.left + i * xStep
+      const x = dateToX(r.date)
       const y = yScale((r[key] as number) || 0)
       return `${i === 0 ? 'M' : 'L'}${x},${y}`
     }).join(' ')
-    const lastX = PAD.left + (sorted.length - 1) * xStep
-    return `${line} L${lastX},${PAD.top + chartH} L${PAD.left},${PAD.top + chartH} Z`
+    const lastX = dateToX(sorted[sorted.length - 1].date)
+    const firstX = dateToX(sorted[0].date)
+    return `${line} L${lastX},${PAD.top + chartH} L${firstX},${PAD.top + chartH} Z`
   }
 
   // Y-axis labels
@@ -145,20 +159,66 @@ function WishlistChart({ data }: { data: WishlistRow[] }) {
         {/* X-axis labels */}
         {sorted.map((r, i) => {
           if (i % xLabelStep !== 0 && i !== sorted.length - 1) return null
-          const x = PAD.left + i * xStep
+          const x = dateToX(r.date)
           const d = new Date(r.date + 'T00:00:00')
           const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
           return (
             <text key={i} x={x} y={H - 10} textAnchor="middle" fontSize={10} fill="#94a3b8">{label}</text>
           )
         })}
+
+        {/* Store-page-live anchor marker */}
+        {anchorBeforeData && storePageLiveDate && (
+          <g>
+            <line
+              x1={dateToX(storePageLiveDate)}
+              y1={PAD.top}
+              x2={dateToX(storePageLiveDate)}
+              y2={PAD.top + chartH}
+              stroke="#7c3aed"
+              strokeWidth={1.5}
+              strokeDasharray="4 3"
+            />
+            <text
+              x={dateToX(storePageLiveDate) + 4}
+              y={PAD.top + 12}
+              fontSize={10}
+              fill="#7c3aed"
+              fontWeight={600}
+            >
+              Store page live
+            </text>
+          </g>
+        )}
       </svg>
     </div>
   )
 }
 
-const TABS = ['Wishlists', 'Bundles'] as const
+const TABS = ['Wishlists', 'Bundles', 'Demo'] as const
 type Tab = typeof TABS[number]
+
+interface GameMeta {
+  id: string
+  name: string
+  client_id: string
+  steam_app_id: string | null
+  store_page_live_date: string | null
+  store_page_live_date_source: 'manual' | 'auto' | null
+}
+
+interface DemoProduct {
+  id: string
+  name: string
+  steam_product_id: string | null
+  launch_date: string | null
+}
+
+interface DemoDailyPoint {
+  date: string
+  downloads: number
+  wishlist_adds: number
+}
 
 export default function WishlistsPage() {
   const supabase = createClientComponentClient()
@@ -168,9 +228,21 @@ export default function WishlistsPage() {
 
   const [activeTab, setActiveTab] = useState<Tab>('Wishlists')
   const [clients, setClients] = useState<{ id: string; name: string }[]>([])
-  const [games, setGames] = useState<{ id: string; name: string; client_id: string; steam_app_id: string | null }[]>([])
+  const [games, setGames] = useState<GameMeta[]>([])
   const [selectedClient, setSelectedClient] = useState('')
   const [selectedGame, setSelectedGame] = useState('')
+
+  // Store-page-live-date editor state
+  const [editingStoreDate, setEditingStoreDate] = useState(false)
+  const [storeDateInput, setStoreDateInput] = useState('')
+  const [storeDateSaving, setStoreDateSaving] = useState(false)
+
+  // Demo tab state
+  const [demoProducts, setDemoProducts] = useState<DemoProduct[]>([])
+  const [selectedDemoId, setSelectedDemoId] = useState('')
+  const [demoSeries, setDemoSeries] = useState<DemoDailyPoint[]>([])
+  const [demoLoading, setDemoLoading] = useState(false)
+  const [demoCoverageCount, setDemoCoverageCount] = useState<number | null>(null)
 
   // Wishlist state
   const [wishlistData, setWishlistData] = useState<WishlistRow[]>([])
@@ -217,10 +289,54 @@ export default function WishlistsPage() {
 
   useEffect(() => {
     if (!selectedClient) { setGames([]); return }
-    supabase.from('games').select('id, name, client_id, steam_app_id').eq('client_id', selectedClient).order('name').then(({ data }) => {
-      if (data) setGames(data)
-    })
+    supabase
+      .from('games')
+      .select('id, name, client_id, steam_app_id, store_page_live_date, store_page_live_date_source')
+      .eq('client_id', selectedClient)
+      .order('name')
+      .then(({ data }) => {
+        if (data) setGames(data as GameMeta[])
+      })
   }, [selectedClient, supabase])
+
+  const selectedGameMeta: GameMeta | null = games.find(g => g.id === selectedGame) || null
+
+  // Reset store-date editor whenever the selected game changes
+  useEffect(() => {
+    setEditingStoreDate(false)
+    setStoreDateInput(selectedGameMeta?.store_page_live_date || '')
+  }, [selectedGame, selectedGameMeta?.store_page_live_date])
+
+  const refreshSelectedGame = useCallback(async () => {
+    if (!selectedGame) return
+    const { data } = await supabase
+      .from('games')
+      .select('id, name, client_id, steam_app_id, store_page_live_date, store_page_live_date_source')
+      .eq('id', selectedGame)
+      .single()
+    if (data) {
+      setGames(prev => prev.map(g => g.id === data.id ? (data as GameMeta) : g))
+    }
+  }, [selectedGame, supabase])
+
+  const handleSaveStoreDate = async () => {
+    if (!selectedGame) return
+    setStoreDateSaving(true)
+    try {
+      const res = await fetch('/api/games', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: selectedGame, store_page_live_date: storeDateInput || null }),
+      })
+      if (res.ok) {
+        await refreshSelectedGame()
+        setEditingStoreDate(false)
+      }
+    } catch (err) {
+      console.error('Failed to save store_page_live_date:', err)
+    }
+    setStoreDateSaving(false)
+  }
 
   const fetchWishlists = useCallback(async () => {
     if (!selectedGame) return
@@ -292,6 +408,90 @@ export default function WishlistsPage() {
     if (selectedGame && activeTab === 'Wishlists') fetchWishlists()
     if (selectedGame && activeTab === 'Bundles') fetchBundles()
   }, [selectedGame, activeTab, fetchWishlists, fetchBundles])
+
+  // Load demo products for the selected game whenever the game changes
+  useEffect(() => {
+    if (!selectedGame) { setDemoProducts([]); setSelectedDemoId(''); return }
+    fetch(`/api/products?game_id=${selectedGame}`)
+      .then(r => r.json())
+      .then((products: Array<{ id: string; name: string; product_type: string; steam_product_id: string | null; launch_date: string | null }>) => {
+        const demos = products
+          .filter(p => p.product_type === 'demo')
+          .map(p => ({ id: p.id, name: p.name, steam_product_id: p.steam_product_id, launch_date: p.launch_date }))
+        setDemoProducts(demos)
+        setSelectedDemoId(prev => demos.find(d => d.id === prev) ? prev : (demos[0]?.id || ''))
+      })
+      .catch(err => console.error('Failed to load demo products:', err))
+  }, [selectedGame])
+
+  // Build the Demo widget's data series from existing sources:
+  //   - downloads = sum(gross_units_sold) per day from analytics_data_view filtered to the demo product's name
+  //     (demos are free, so units sold ≈ downloads)
+  //   - wishlist_adds = additions on the parent game during the same period
+  //   - coverage count = coverage_items rows for the game published during the demo's lifetime
+  const fetchDemo = useCallback(async () => {
+    if (!selectedGame || !selectedDemoId) {
+      setDemoSeries([])
+      setDemoCoverageCount(null)
+      return
+    }
+    const demo = demoProducts.find(d => d.id === selectedDemoId)
+    if (!demo) return
+    setDemoLoading(true)
+    try {
+      const startDate = demo.launch_date || null
+
+      // Downloads (units sold on Steam for the demo product name)
+      let downloadsQuery = supabase
+        .from('analytics_data_view')
+        .select('date, gross_units_sold')
+        .eq('product_name', demo.name)
+        .eq('platform', 'Steam')
+      if (startDate) downloadsQuery = downloadsQuery.gte('date', startDate)
+      const { data: downloadRows } = await downloadsQuery
+
+      // Wishlist adds for the PARENT game in the same window
+      let wlQuery = supabase
+        .from('steam_wishlists')
+        .select('date, additions')
+        .eq('game_id', selectedGame)
+      if (startDate) wlQuery = wlQuery.gte('date', startDate)
+      const { data: wlRows } = await wlQuery
+
+      // Aggregate by date
+      const byDate = new Map<string, DemoDailyPoint>()
+      for (const r of downloadRows || []) {
+        const key = String(r.date)
+        const pt = byDate.get(key) || { date: key, downloads: 0, wishlist_adds: 0 }
+        pt.downloads += Number(r.gross_units_sold || 0)
+        byDate.set(key, pt)
+      }
+      for (const r of wlRows || []) {
+        const key = String(r.date)
+        const pt = byDate.get(key) || { date: key, downloads: 0, wishlist_adds: 0 }
+        pt.wishlist_adds += Number(r.additions || 0)
+        byDate.set(key, pt)
+      }
+      const series = Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date))
+      setDemoSeries(series)
+
+      // Coverage count for this game during demo lifetime
+      let covQuery = supabase
+        .from('coverage_items')
+        .select('id', { count: 'exact', head: true })
+        .eq('game_id', selectedGame)
+      if (startDate) covQuery = covQuery.gte('publish_date', startDate)
+      const { count } = await covQuery
+      setDemoCoverageCount(count || 0)
+    } catch (err) {
+      console.error('Failed to fetch demo data:', err)
+    }
+    setDemoLoading(false)
+  }, [selectedGame, selectedDemoId, demoProducts, supabase])
+
+  useEffect(() => {
+    if (selectedGame && activeTab === 'Demo') fetchDemo()
+  }, [selectedGame, activeTab, fetchDemo])
 
   const handleWlUpload = async (file: File) => {
     if (!selectedGame || !selectedClient) return
@@ -417,6 +617,62 @@ export default function WishlistsPage() {
                 </select>
               </div>
             </div>
+
+            {selectedGameMeta && (
+              <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '13px', color: '#475569', fontWeight: 500 }}>Store page live date:</span>
+                {!editingStoreDate ? (
+                  <>
+                    <span style={{ fontSize: '13px', color: selectedGameMeta.store_page_live_date ? '#1e293b' : '#94a3b8' }}>
+                      {selectedGameMeta.store_page_live_date || '— not set —'}
+                    </span>
+                    {selectedGameMeta.store_page_live_date_source === 'auto' && (
+                      <span style={{ fontSize: '11px', padding: '2px 6px', borderRadius: '4px', backgroundColor: '#ede9fe', color: '#6b21a8' }}>
+                        Auto from Steam
+                      </span>
+                    )}
+                    {selectedGameMeta.store_page_live_date_source === 'manual' && (
+                      <span style={{ fontSize: '11px', padding: '2px 6px', borderRadius: '4px', backgroundColor: '#dcfce7', color: '#166534' }}>
+                        Manual override
+                      </span>
+                    )}
+                    {canEdit && (
+                      <button
+                        style={{ fontSize: '12px', padding: '4px 10px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', borderRadius: '4px', cursor: 'pointer' }}
+                        onClick={() => setEditingStoreDate(true)}
+                      >
+                        {selectedGameMeta.store_page_live_date ? 'Override' : 'Set'}
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <input
+                      type="date"
+                      value={storeDateInput}
+                      onChange={e => setStoreDateInput(e.target.value)}
+                      style={{ padding: '4px 8px', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '13px' }}
+                    />
+                    <button
+                      style={{ fontSize: '12px', padding: '4px 10px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', opacity: storeDateSaving ? 0.6 : 1 }}
+                      onClick={handleSaveStoreDate}
+                      disabled={storeDateSaving}
+                    >
+                      {storeDateSaving ? 'Saving…' : 'Save'}
+                    </button>
+                    <button
+                      style={{ fontSize: '12px', padding: '4px 10px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', borderRadius: '4px', cursor: 'pointer' }}
+                      onClick={() => { setEditingStoreDate(false); setStoreDateInput(selectedGameMeta?.store_page_live_date || '') }}
+                    >
+                      Cancel
+                    </button>
+                  </>
+                )}
+                <span style={{ fontSize: '11px', color: '#94a3b8', marginLeft: 'auto' }}>
+                  Wishlist charts for unreleased games anchor to this date.
+                </span>
+              </div>
+            )}
           </div>
 
           {!selectedGame && (
@@ -471,7 +727,12 @@ export default function WishlistsPage() {
                   )}
 
                   {/* Chart */}
-                  {wishlistData.length >= 2 && <WishlistChart data={wishlistData} />}
+                  {wishlistData.length >= 2 && (
+                    <WishlistChart
+                      data={wishlistData}
+                      storePageLiveDate={selectedGameMeta?.store_page_live_date || null}
+                    />
+                  )}
 
                   {/* Actions */}
                   {canEdit && (
@@ -566,6 +827,95 @@ export default function WishlistsPage() {
                         </tbody>
                       </table>
                     </div>
+                  )}
+                </div>
+              )}
+
+              {/* Demo Tab */}
+              {activeTab === 'Demo' && (
+                <div>
+                  {demoProducts.length === 0 ? (
+                    <div style={{ ...cardStyle, textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
+                      <p style={{ fontSize: '16px', fontWeight: 500, marginBottom: '8px' }}>No demo products for this game</p>
+                      <p style={{ fontSize: '13px' }}>
+                        Add a product with type <strong>Demo</strong> from the Manage menu. Use the demo&apos;s separate Steam App ID as the product&apos;s Steam Product ID.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ ...cardStyle, display: 'flex', gap: '16px', alignItems: 'flex-end' }}>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#374151', marginBottom: '4px' }}>Demo Product</label>
+                          <select style={selectStyle} value={selectedDemoId} onChange={e => setSelectedDemoId(e.target.value)}>
+                            {demoProducts.map(d => (
+                              <option key={d.id} value={d.id}>
+                                {d.name}{d.launch_date ? ` (live since ${d.launch_date})` : ''}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      {demoLoading ? (
+                        <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>Loading…</div>
+                      ) : (
+                        <>
+                          {/* Summary tiles */}
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '16px' }}>
+                            <div style={statCard}>
+                              <div style={{ fontSize: '22px', fontWeight: 700, color: '#1e293b' }}>
+                                {formatNumber(demoSeries.reduce((s, p) => s + p.downloads, 0))}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Demo downloads (lifetime)</div>
+                            </div>
+                            <div style={statCard}>
+                              <div style={{ fontSize: '22px', fontWeight: 700, color: '#16a34a' }}>
+                                +{formatNumber(demoSeries.reduce((s, p) => s + p.wishlist_adds, 0))}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Parent-game wishlist adds during demo lifetime</div>
+                            </div>
+                            <div style={statCard}>
+                              <div style={{ fontSize: '22px', fontWeight: 700, color: '#7c3aed' }}>
+                                {demoCoverageCount == null ? '—' : formatNumber(demoCoverageCount)}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Press coverage items during demo lifetime</div>
+                            </div>
+                          </div>
+
+                          {/* Daily breakdown table */}
+                          {demoSeries.length === 0 ? (
+                            <div style={{ ...cardStyle, textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
+                              <p style={{ fontSize: '14px', marginBottom: '8px' }}>No demo data yet.</p>
+                              <p style={{ fontSize: '12px' }}>
+                                Demo downloads come from Steam sales sync (using the demo&apos;s product name). Wishlist adds need a wishlist sync.
+                              </p>
+                            </div>
+                          ) : (
+                            <div style={cardStyle}>
+                              <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#1e293b', margin: '0 0 12px 0' }}>Daily breakdown</h3>
+                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                                <thead>
+                                  <tr>
+                                    <th style={{ textAlign: 'left', padding: '8px', borderBottom: '2px solid #e2e8f0', color: '#475569', fontWeight: 600 }}>Date</th>
+                                    <th style={{ textAlign: 'right', padding: '8px', borderBottom: '2px solid #e2e8f0', color: '#475569', fontWeight: 600 }}>Demo downloads</th>
+                                    <th style={{ textAlign: 'right', padding: '8px', borderBottom: '2px solid #e2e8f0', color: '#475569', fontWeight: 600 }}>Wishlist adds (parent)</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {demoSeries.slice().reverse().map(p => (
+                                    <tr key={p.date} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                      <td style={{ padding: '6px 8px', color: '#475569' }}>{p.date}</td>
+                                      <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600 }}>{formatNumber(p.downloads)}</td>
+                                      <td style={{ padding: '6px 8px', textAlign: 'right', color: '#16a34a', fontWeight: 500 }}>{p.wishlist_adds ? `+${formatNumber(p.wishlist_adds)}` : '—'}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </>
                   )}
                 </div>
               )}

@@ -38,7 +38,7 @@ export interface Product {
   id: string
   game_id: string
   name: string
-  product_type: 'base' | 'edition' | 'dlc' | 'soundtrack' | 'bundle'
+  product_type: 'base' | 'edition' | 'dlc' | 'soundtrack' | 'bundle' | 'demo'
   base_price_usd?: number
   steam_product_id?: string
   launch_date?: string | null
@@ -65,6 +65,10 @@ export interface Game {
   steam_app_id?: string
   pr_tracking_enabled: boolean
   sales_planning_enabled: boolean
+  /** The date the Steam store page went live — used as the x-axis anchor for pre-release wishlist charts. */
+  store_page_live_date?: string | null
+  /** 'manual' means a user typed this in and auto-sync must NOT overwrite it. 'auto' means it was pulled from Steam (via wishlist sync's app_min_date). */
+  store_page_live_date_source?: 'manual' | 'auto' | null
   created_at: string
   client?: Client
 }

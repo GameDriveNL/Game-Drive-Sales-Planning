@@ -190,6 +190,13 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: 'Game id is required' }, { status: 400 })
     }
 
+    // If the caller is setting store_page_live_date, treat it as a manual override
+    // unless they explicitly passed a source (e.g. the cron sync writing 'auto').
+    if (Object.prototype.hasOwnProperty.call(updates, 'store_page_live_date')
+        && !Object.prototype.hasOwnProperty.call(updates, 'store_page_live_date_source')) {
+      updates.store_page_live_date_source = 'manual'
+    }
+
     const { data, error } = await supabase
       .from('games')
       .update(updates)

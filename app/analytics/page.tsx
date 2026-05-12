@@ -49,6 +49,9 @@ export default function AnalyticsPage() {
   const [hoveredLinePoint, setHoveredLinePoint] = useState<{ index: number; x: number; y: number } | null>(null)
   const [editingWidget, setEditingWidget] = useState<DashboardWidget | null>(null)
   const [products, setProducts] = useState<string[]>([])
+  // Set of product names whose product_type is 'demo' (for the current client) — used to
+  // render a "Demo" badge in the product filter dropdown and on table rows.
+  const [demoProductNames, setDemoProductNames] = useState<Set<string>>(new Set())
   const [clients, setClients] = useState<{id: string, name: string}[]>([])
   const [clientPlatformMap, setClientPlatformMap] = useState<Record<string, string[]>>({})
   const [regions, setRegions] = useState<string[]>([])
@@ -215,6 +218,34 @@ export default function AnalyticsPage() {
     }
     fetchWishlistData()
   }, [supabase, selectedClient, selectedProduct, dateRange])
+
+  // Load demo product names for the current client so we can decorate the product dropdown
+  // and badge rows in the table. Demos live in the products table with product_type='demo'.
+  useEffect(() => {
+    let cancelled = false
+    const loadDemos = async () => {
+      if (selectedClient === 'all') {
+        const { data } = await supabase
+          .from('products')
+          .select('name, game:games(client_id)')
+          .eq('product_type', 'demo')
+        if (cancelled) return
+        const names = new Set<string>((data || []).map((p: { name: string }) => p.name))
+        setDemoProductNames(names)
+        return
+      }
+      const { data } = await supabase
+        .from('products')
+        .select('name, game:games!inner(client_id)')
+        .eq('product_type', 'demo')
+        .eq('game.client_id', selectedClient)
+      if (cancelled) return
+      const names = new Set<string>((data || []).map((p: { name: string }) => p.name))
+      setDemoProductNames(names)
+    }
+    loadDemos()
+    return () => { cancelled = true }
+  }, [supabase, selectedClient])
 
   // Fetch all clients and build platform connectivity map
   useEffect(() => {
@@ -2772,8 +2803,17 @@ export default function AnalyticsPage() {
             <label className={styles.filterLabel}>Product</label>
             <select className={styles.filterSelect} value={selectedProduct} onChange={(e) => setSelectedProduct(e.target.value)}>
               <option value="all">All Products</option>
-              {products.map(product => (<option key={product} value={product}>{product}</option>))}
+              {products.map(product => (
+                <option key={product} value={product}>
+                  {product}{demoProductNames.has(product) ? ' — Demo' : ''}
+                </option>
+              ))}
             </select>
+            {selectedProduct !== 'all' && demoProductNames.has(selectedProduct) && (
+              <span style={{ display: 'inline-block', marginLeft: '6px', fontSize: '11px', padding: '2px 6px', borderRadius: '4px', backgroundColor: '#ede9fe', color: '#6b21a8', fontWeight: 600 }}>
+                Demo
+              </span>
+            )}
           </div>
 
           <div className={styles.filterGroup}>
