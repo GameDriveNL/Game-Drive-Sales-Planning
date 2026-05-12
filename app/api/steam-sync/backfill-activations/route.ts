@@ -69,11 +69,14 @@ export async function POST(request: Request) {
     }
     const datesJson = (await datesRes.json()) as ChangedDatesResponse
     let allDates = (datesJson.response?.dates || []).map(d => d.replace(/\//g, '-'))
-    allDates.sort() // ascending — backfill oldest first so progress is predictable
+    // Process most-recent dates first so the first click produces immediately useful
+    // numbers (typical demos and recent fests are in the last ~90 days). Resume cursor
+    // moves backwards in time.
+    allDates.sort((a, b) => b.localeCompare(a))
 
-    // Resume from `start_date` if the caller is paginating
+    // Resume from `start_date` (cursor moves into the past)
     if (start_date) {
-      allDates = allDates.filter(d => d >= start_date)
+      allDates = allDates.filter(d => d <= start_date)
     }
 
     const totalRemaining = allDates.length
