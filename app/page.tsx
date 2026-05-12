@@ -114,7 +114,7 @@ export default function GameDriveDashboard() {
       if (clientsError) throw clientsError; setClients(clientsData || [])
       const { data: gamesData, error: gamesError } = await supabase.from('games').select(`*, client:clients(*)`).order('name')
       if (gamesError) throw gamesError; setGames(gamesData || [])
-      const { data: productsData, error: productsError } = await supabase.from('products').select(`*, game:games(*, client:clients(*))`).order('name')
+      const { data: productsData, error: productsError } = await supabase.from('products').select(`*, game:games(*, client:clients(*)), product_platforms(id, product_id, platform_id)`).order('name')
       if (productsError) throw productsError; setProducts(productsData || [])
       await fetchSales()
     } catch (err: unknown) { const errorMessage = err instanceof Error ? err.message : 'Failed to load data'; console.error('Error fetching data:', err); setError(errorMessage) }

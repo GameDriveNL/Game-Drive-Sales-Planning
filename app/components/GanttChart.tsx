@@ -883,19 +883,33 @@ export default function GanttChart(props: GanttChartProps) {
   }, [sales, optimisticUpdates])
   
   const getPlatformsForProduct = useCallback((productId: string) => {
+    const product = products.find(p => p.id === productId)
+    // If the user has explicitly assigned platforms to this product (via
+    // ProductManager), respect that as the source of truth and ignore everything
+    // else — even leftover sales on platforms the product isn't on.
+    const assignedIds = product?.product_platforms?.map(pp => pp.platform_id) || []
+    if (assignedIds.length > 0) {
+      return assignedIds
+        .map(id => platforms.find(p => p.id === id))
+        .filter((p): p is Platform => p !== undefined)
+        .sort((a, b) => a.name.localeCompare(b.name))
+    }
+
+    // Legacy products with no explicit assignments fall back to "show platforms
+    // that have sales or events" so older data still renders.
     const productSales = getSalesForProduct(productId)
     const platformIdsWithSales = productSales.map(s => s.platform_id)
-    
+
     const allPlatformIdsSet = new Set([
       ...platformIdsWithSales,
       ...(showEvents ? platformsWithEventsArray : [])
     ])
-    
+
     return Array.from(allPlatformIdsSet)
       .map(id => platforms.find(p => p.id === id))
       .filter((p): p is Platform => p !== undefined)
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [getSalesForProduct, platforms, platformsWithEventsArray, showEvents])
+  }, [products, getSalesForProduct, platforms, platformsWithEventsArray, showEvents])
   
   const getSalesForProductPlatform = useCallback((productId: string, platformId: string) => {
     return getSalesForProduct(productId).filter(sale => sale.platform_id === platformId)
