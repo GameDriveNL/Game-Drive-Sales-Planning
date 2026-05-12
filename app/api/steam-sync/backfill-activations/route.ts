@@ -126,19 +126,28 @@ export async function POST(request: Request) {
           // UPDATE the existing performance_metrics row — never insert.
           // The original sync code already inserted rows for every Steam result with
           // gross_units_activated=0; we're just filling in the value now.
-          const { data: updated, error: updErr } = await supabase
+          // Upsert: matches the original sync's onConflict key. For clients whose data
+          // lives in steam_sales (legacy CSV imports), no performance_metrics row exists yet,
+          // so we have to INSERT. For clients on the new sync, the row already exists and
+          // we UPDATE just the activation field. Either way the conflict key handles it.
+          const { error: upErr } = await supabase
             .from('performance_metrics')
-            .update({ gross_units_activated: row.gross_units_activated })
-            .eq('client_id', client_id)
-            .eq('date', date)
-            .eq('product_name', productName)
-            .eq('platform', row.platform || 'Steam')
-            .eq('country_code', row.country_code)
-            .select('id')
-          if (updErr) {
-            errors.push(`${date}/${productName}/${row.country_code}: ${updErr.message}`)
+            .upsert({
+              client_id,
+              date,
+              product_name: productName,
+              platform: row.platform || 'Steam',
+              country_code: row.country_code,
+              gross_units_activated: row.gross_units_activated,
+              gross_units_sold: 0,
+              net_units_sold: 0,
+              gross_revenue_usd: 0,
+              net_revenue_usd: 0,
+            }, { onConflict: 'client_id,date,product_name,platform,country_code' })
+          if (upErr) {
+            errors.push(`${date}/${productName}/${row.country_code}: ${upErr.message}`)
           } else {
-            totalRowsUpdated += updated?.length || 0
+            totalRowsUpdated += 1
           }
         }
       } catch (e) {
