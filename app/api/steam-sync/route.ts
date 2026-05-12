@@ -24,6 +24,7 @@ interface SteamDetailedSalesResult {
   gross_sales_usd?: string;
   gross_returns_usd?: string;
   net_tax_usd?: string;
+  gross_units_activated?: number;
   net_units_sold?: number;
   net_sales_usd?: string;
   primary_appid?: number;
@@ -533,6 +534,9 @@ async function storeSalesData(
           country_code: result.country_code,
           region: countryInfo?.region || 'Unknown',
           gross_units_sold: result.gross_units_sold || 0,
+          // Steam reports demo installs + retail-key redemptions here; sales rows leave it at 0.
+          // Without this, demo activations are silently discarded.
+          gross_units_activated: ((result as unknown as { gross_units_activated?: number | string }).gross_units_activated as number) || 0,
           net_units_sold: result.net_units_sold || 0,
           gross_revenue_usd: parseFloat(result.gross_sales_usd || '0'),
           net_revenue_usd: parseFloat(result.net_sales_usd || '0'),

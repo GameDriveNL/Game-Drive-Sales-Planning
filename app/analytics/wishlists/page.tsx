@@ -203,6 +203,7 @@ interface GameMeta {
   name: string
   client_id: string
   steam_app_id: string | null
+  release_date: string | null
   store_page_live_date: string | null
   store_page_live_date_source: 'manual' | 'auto' | null
 }
@@ -243,6 +244,10 @@ export default function WishlistsPage() {
   const [demoSeries, setDemoSeries] = useState<DemoDailyPoint[]>([])
   const [demoLoading, setDemoLoading] = useState(false)
   const [demoCoverageCount, setDemoCoverageCount] = useState<number | null>(null)
+  // Demo window: smart-defaults to [demo.launch_date, MIN(game.release_date, today)] but
+  // users can override either end. Stored as YYYY-MM-DD strings; '' = use default.
+  const [demoWindowStart, setDemoWindowStart] = useState('')
+  const [demoWindowEnd, setDemoWindowEnd] = useState('')
 
   // Wishlist state
   const [wishlistData, setWishlistData] = useState<WishlistRow[]>([])
@@ -291,7 +296,7 @@ export default function WishlistsPage() {
     if (!selectedClient) { setGames([]); return }
     supabase
       .from('games')
-      .select('id, name, client_id, steam_app_id, store_page_live_date, store_page_live_date_source')
+      .select('id, name, client_id, steam_app_id, release_date, store_page_live_date, store_page_live_date_source')
       .eq('client_id', selectedClient)
       .order('name')
       .then(({ data }) => {
@@ -311,7 +316,7 @@ export default function WishlistsPage() {
     if (!selectedGame) return
     const { data } = await supabase
       .from('games')
-      .select('id, name, client_id, steam_app_id, store_page_live_date, store_page_live_date_source')
+      .select('id, name, client_id, steam_app_id, release_date, store_page_live_date, store_page_live_date_source')
       .eq('id', selectedGame)
       .single()
     if (data) {
@@ -424,11 +429,34 @@ export default function WishlistsPage() {
       .catch(err => console.error('Failed to load demo products:', err))
   }, [selectedGame])
 
+  const selectedDemo = demoProducts.find(d => d.id === selectedDemoId) || null
+
+  // Demo window defaults: [demo.launch_date, MIN(game.release_date, today)]. User overrides
+  // win. Both ends are inclusive and clamped to YYYY-MM-DD.
+  const today = new Date().toISOString().split('T')[0]
+  const defaultDemoWindowStart = selectedDemo?.launch_date || ''
+  const defaultDemoWindowEnd = (() => {
+    const release = selectedGameMeta?.release_date
+    // If the game is released and that date is in the past, that's the window end.
+    // Otherwise the demo is still arguably driving wishlists, so use today.
+    if (release && release <= today) return release
+    return today
+  })()
+  const effectiveDemoWindowStart = demoWindowStart || defaultDemoWindowStart
+  const effectiveDemoWindowEnd = demoWindowEnd || defaultDemoWindowEnd
+
+  // Reset window when demo product changes
+  useEffect(() => {
+    setDemoWindowStart('')
+    setDemoWindowEnd('')
+  }, [selectedDemoId])
+
   // Build the Demo widget's data series from existing sources:
-  //   - downloads = sum(gross_units_sold) per day from analytics_data_view filtered to the demo product's name
-  //     (demos are free, so units sold ≈ downloads)
-  //   - wishlist_adds = additions on the parent game during the same period
-  //   - coverage count = coverage_items rows for the game published during the demo's lifetime
+  //   - activations = sum(gross_units_activated) per day from analytics_data_view filtered to
+  //     the demo product's name. Steam reports free-demo installs in this field, not in
+  //     gross_units_sold (which is zero for free products).
+  //   - wishlist_adds = additions on the parent game during the same window
+  //   - coverage count = coverage_items rows for the game published during the same window
   const fetchDemo = useCallback(async () => {
     if (!selectedGame || !selectedDemoId) {
       setDemoSeries([])
@@ -439,31 +467,31 @@ export default function WishlistsPage() {
     if (!demo) return
     setDemoLoading(true)
     try {
-      const startDate = demo.launch_date || null
-
-      // Downloads (units sold on Steam for the demo product name)
-      let downloadsQuery = supabase
+      // Demo activations (Steam reports free-demo installs as gross_units_activated)
+      let actQuery = supabase
         .from('analytics_data_view')
-        .select('date, gross_units_sold')
+        .select('date, gross_units_activated')
         .eq('product_name', demo.name)
         .eq('platform', 'Steam')
-      if (startDate) downloadsQuery = downloadsQuery.gte('date', startDate)
-      const { data: downloadRows } = await downloadsQuery
+      if (effectiveDemoWindowStart) actQuery = actQuery.gte('date', effectiveDemoWindowStart)
+      if (effectiveDemoWindowEnd) actQuery = actQuery.lte('date', effectiveDemoWindowEnd)
+      const { data: actRows } = await actQuery
 
       // Wishlist adds for the PARENT game in the same window
       let wlQuery = supabase
         .from('steam_wishlists')
         .select('date, additions')
         .eq('game_id', selectedGame)
-      if (startDate) wlQuery = wlQuery.gte('date', startDate)
+      if (effectiveDemoWindowStart) wlQuery = wlQuery.gte('date', effectiveDemoWindowStart)
+      if (effectiveDemoWindowEnd) wlQuery = wlQuery.lte('date', effectiveDemoWindowEnd)
       const { data: wlRows } = await wlQuery
 
       // Aggregate by date
       const byDate = new Map<string, DemoDailyPoint>()
-      for (const r of downloadRows || []) {
+      for (const r of actRows || []) {
         const key = String(r.date)
         const pt = byDate.get(key) || { date: key, downloads: 0, wishlist_adds: 0 }
-        pt.downloads += Number(r.gross_units_sold || 0)
+        pt.downloads += Number(r.gross_units_activated || 0)
         byDate.set(key, pt)
       }
       for (const r of wlRows || []) {
@@ -475,19 +503,20 @@ export default function WishlistsPage() {
       const series = Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date))
       setDemoSeries(series)
 
-      // Coverage count for this game during demo lifetime
+      // Coverage count for this game during the same window
       let covQuery = supabase
         .from('coverage_items')
         .select('id', { count: 'exact', head: true })
         .eq('game_id', selectedGame)
-      if (startDate) covQuery = covQuery.gte('publish_date', startDate)
+      if (effectiveDemoWindowStart) covQuery = covQuery.gte('publish_date', effectiveDemoWindowStart)
+      if (effectiveDemoWindowEnd) covQuery = covQuery.lte('publish_date', effectiveDemoWindowEnd)
       const { count } = await covQuery
       setDemoCoverageCount(count || 0)
     } catch (err) {
       console.error('Failed to fetch demo data:', err)
     }
     setDemoLoading(false)
-  }, [selectedGame, selectedDemoId, demoProducts, supabase])
+  }, [selectedGame, selectedDemoId, demoProducts, supabase, effectiveDemoWindowStart, effectiveDemoWindowEnd])
 
   useEffect(() => {
     if (selectedGame && activeTab === 'Demo') fetchDemo()
@@ -843,16 +872,50 @@ export default function WishlistsPage() {
                     </div>
                   ) : (
                     <>
-                      <div style={{ ...cardStyle, display: 'flex', gap: '16px', alignItems: 'flex-end' }}>
-                        <div style={{ flex: 1 }}>
-                          <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#374151', marginBottom: '4px' }}>Demo Product</label>
-                          <select style={selectStyle} value={selectedDemoId} onChange={e => setSelectedDemoId(e.target.value)}>
-                            {demoProducts.map(d => (
-                              <option key={d.id} value={d.id}>
-                                {d.name}{d.launch_date ? ` (live since ${d.launch_date})` : ''}
-                              </option>
-                            ))}
-                          </select>
+                      <div style={{ ...cardStyle }}>
+                        <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-end', marginBottom: '12px' }}>
+                          <div style={{ flex: 1 }}>
+                            <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#374151', marginBottom: '4px' }}>Demo Product</label>
+                            <select style={selectStyle} value={selectedDemoId} onChange={e => setSelectedDemoId(e.target.value)}>
+                              {demoProducts.map(d => (
+                                <option key={d.id} value={d.id}>
+                                  {d.name}{d.launch_date ? ` (live since ${d.launch_date})` : ''}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', paddingTop: '12px', borderTop: '1px solid #f1f5f9' }}>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#374151', marginBottom: '4px' }}>Window start</label>
+                            <input
+                              type="date"
+                              style={{ ...inputStyle, width: 'auto' }}
+                              value={effectiveDemoWindowStart}
+                              onChange={e => setDemoWindowStart(e.target.value)}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#374151', marginBottom: '4px' }}>Window end</label>
+                            <input
+                              type="date"
+                              style={{ ...inputStyle, width: 'auto' }}
+                              value={effectiveDemoWindowEnd}
+                              onChange={e => setDemoWindowEnd(e.target.value)}
+                            />
+                          </div>
+                          {(demoWindowStart || demoWindowEnd) && (
+                            <button
+                              onClick={() => { setDemoWindowStart(''); setDemoWindowEnd('') }}
+                              style={{ fontSize: '12px', padding: '6px 12px', backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', borderRadius: '4px', cursor: 'pointer' }}
+                            >
+                              Reset to default
+                            </button>
+                          )}
+                          <span style={{ fontSize: '11px', color: '#94a3b8', marginLeft: 'auto', maxWidth: '380px', textAlign: 'right' }}>
+                            Default: demo launch → {selectedGameMeta?.release_date && selectedGameMeta.release_date <= today ? `game release (${selectedGameMeta.release_date})` : 'today'}.
+                            Narrow this for event demos (e.g. one Next Fest week).
+                          </span>
                         </div>
                       </div>
 
@@ -860,59 +923,85 @@ export default function WishlistsPage() {
                         <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>Loading…</div>
                       ) : (
                         <>
-                          {/* Summary tiles */}
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '16px' }}>
-                            <div style={statCard}>
-                              <div style={{ fontSize: '22px', fontWeight: 700, color: '#1e293b' }}>
-                                {formatNumber(demoSeries.reduce((s, p) => s + p.downloads, 0))}
-                              </div>
-                              <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Demo downloads (lifetime)</div>
-                            </div>
-                            <div style={statCard}>
-                              <div style={{ fontSize: '22px', fontWeight: 700, color: '#16a34a' }}>
-                                +{formatNumber(demoSeries.reduce((s, p) => s + p.wishlist_adds, 0))}
-                              </div>
-                              <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Parent-game wishlist adds during demo lifetime</div>
-                            </div>
-                            <div style={statCard}>
-                              <div style={{ fontSize: '22px', fontWeight: 700, color: '#7c3aed' }}>
-                                {demoCoverageCount == null ? '—' : formatNumber(demoCoverageCount)}
-                              </div>
-                              <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Press coverage items during demo lifetime</div>
-                            </div>
-                          </div>
+                          {(() => {
+                            const totalDownloads = demoSeries.reduce((s, p) => s + p.downloads, 0)
+                            const totalAdds = demoSeries.reduce((s, p) => s + p.wishlist_adds, 0)
+                            const conversionPct = totalDownloads > 0 ? (totalAdds / totalDownloads) * 100 : null
+                            return (
+                              <>
+                                {/* Conversion-rate hero tile — the metric Stephanie actually asked for */}
+                                <div style={{ ...cardStyle, background: 'linear-gradient(135deg, #ede9fe 0%, #f3e8ff 100%)', border: '1px solid #ddd6fe' }}>
+                                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '16px' }}>
+                                    <div>
+                                      <div style={{ fontSize: '11px', color: '#6b21a8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Demo → Wishlist Conversion</div>
+                                      <div style={{ fontSize: '36px', fontWeight: 700, color: '#5b21b6', lineHeight: 1 }}>
+                                        {conversionPct == null ? '—' : `${conversionPct.toFixed(1)}%`}
+                                      </div>
+                                      <div style={{ fontSize: '12px', color: '#6b21a8', marginTop: '4px' }}>
+                                        {totalDownloads === 0
+                                          ? 'No demo activations recorded in this window yet.'
+                                          : `${formatNumber(totalAdds)} new wishlists ÷ ${formatNumber(totalDownloads)} demo activations`}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
 
-                          {/* Daily breakdown table */}
-                          {demoSeries.length === 0 ? (
-                            <div style={{ ...cardStyle, textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
-                              <p style={{ fontSize: '14px', marginBottom: '8px' }}>No demo data yet.</p>
-                              <p style={{ fontSize: '12px' }}>
-                                Demo downloads come from Steam sales sync (using the demo&apos;s product name). Wishlist adds need a wishlist sync.
-                              </p>
-                            </div>
-                          ) : (
-                            <div style={cardStyle}>
-                              <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#1e293b', margin: '0 0 12px 0' }}>Daily breakdown</h3>
-                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                                <thead>
-                                  <tr>
-                                    <th style={{ textAlign: 'left', padding: '8px', borderBottom: '2px solid #e2e8f0', color: '#475569', fontWeight: 600 }}>Date</th>
-                                    <th style={{ textAlign: 'right', padding: '8px', borderBottom: '2px solid #e2e8f0', color: '#475569', fontWeight: 600 }}>Demo downloads</th>
-                                    <th style={{ textAlign: 'right', padding: '8px', borderBottom: '2px solid #e2e8f0', color: '#475569', fontWeight: 600 }}>Wishlist adds (parent)</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {demoSeries.slice().reverse().map(p => (
-                                    <tr key={p.date} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                      <td style={{ padding: '6px 8px', color: '#475569' }}>{p.date}</td>
-                                      <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600 }}>{formatNumber(p.downloads)}</td>
-                                      <td style={{ padding: '6px 8px', textAlign: 'right', color: '#16a34a', fontWeight: 500 }}>{p.wishlist_adds ? `+${formatNumber(p.wishlist_adds)}` : '—'}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
+                                {/* Three breakdown tiles */}
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '16px' }}>
+                                  <div style={statCard}>
+                                    <div style={{ fontSize: '22px', fontWeight: 700, color: '#1e293b' }}>
+                                      {formatNumber(totalDownloads)}
+                                    </div>
+                                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Demo activations in window</div>
+                                  </div>
+                                  <div style={statCard}>
+                                    <div style={{ fontSize: '22px', fontWeight: 700, color: '#16a34a' }}>
+                                      +{formatNumber(totalAdds)}
+                                    </div>
+                                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Parent-game wishlist adds in window</div>
+                                  </div>
+                                  <div style={statCard}>
+                                    <div style={{ fontSize: '22px', fontWeight: 700, color: '#7c3aed' }}>
+                                      {demoCoverageCount == null ? '—' : formatNumber(demoCoverageCount)}
+                                    </div>
+                                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>Press coverage items in window</div>
+                                  </div>
+                                </div>
+
+                                {/* Daily breakdown table */}
+                                {demoSeries.length === 0 ? (
+                                  <div style={{ ...cardStyle, textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
+                                    <p style={{ fontSize: '14px', marginBottom: '8px' }}>No demo data in this window yet.</p>
+                                    <p style={{ fontSize: '12px' }}>
+                                      Demo activations come from Steam financial sync (uses gross_units_activated, which only populates after a sync runs since 2026-05-12). Wishlist adds need a wishlist sync.
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <div style={cardStyle}>
+                                    <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#1e293b', margin: '0 0 12px 0' }}>Daily breakdown</h3>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                                      <thead>
+                                        <tr>
+                                          <th style={{ textAlign: 'left', padding: '8px', borderBottom: '2px solid #e2e8f0', color: '#475569', fontWeight: 600 }}>Date</th>
+                                          <th style={{ textAlign: 'right', padding: '8px', borderBottom: '2px solid #e2e8f0', color: '#475569', fontWeight: 600 }}>Demo activations</th>
+                                          <th style={{ textAlign: 'right', padding: '8px', borderBottom: '2px solid #e2e8f0', color: '#475569', fontWeight: 600 }}>Wishlist adds (parent)</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {demoSeries.slice().reverse().map(p => (
+                                          <tr key={p.date} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                            <td style={{ padding: '6px 8px', color: '#475569' }}>{p.date}</td>
+                                            <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600 }}>{formatNumber(p.downloads)}</td>
+                                            <td style={{ padding: '6px 8px', textAlign: 'right', color: '#16a34a', fontWeight: 500 }}>{p.wishlist_adds ? `+${formatNumber(p.wishlist_adds)}` : '—'}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </>
+                            )
+                          })()}
                         </>
                       )}
                     </>
