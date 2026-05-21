@@ -246,6 +246,7 @@ export interface Outlet {
   traffic_last_updated?: string | null
   is_active: boolean
   is_blacklisted: boolean
+  is_priority?: boolean // B30: scraper prioritizes priority outlets first
   created_at: string
   updated_at: string
 }

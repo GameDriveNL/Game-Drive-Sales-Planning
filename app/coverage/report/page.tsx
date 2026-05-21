@@ -888,6 +888,51 @@ export default function CoverageReportPage() {
             </div>
           </div>
 
+          {/* B31: Top 10 outlets by UMV widget (always visible above report when loaded) */}
+          {loaded && visibleItems.length > 0 && (
+            <div style={{ backgroundColor: 'white', borderRadius: '10px', padding: '20px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#1e293b', marginBottom: 12 }}>Top 10 Outlets by Monthly Unique Visitors</h3>
+              {(() => {
+                const outletMap = new Map<string, { name: string; umv: number; tier: string; count: number }>()
+                for (const it of visibleItems) {
+                  const id = it.outlet?.id || it.outlet?.name || 'unknown'
+                  const name = it.outlet?.name || '—'
+                  const umv = it.outlet?.monthly_unique_visitors || 0
+                  const tier = (it.outlet?.tier as string) || ''
+                  const existing = outletMap.get(id)
+                  if (existing) existing.count++
+                  else outletMap.set(id, { name, umv, tier, count: 1 })
+                }
+                const top10 = Array.from(outletMap.values()).sort((a, b) => b.umv - a.umv).slice(0, 10)
+                if (top10.length === 0) return <div style={{ color: '#94a3b8', fontSize: 13 }}>No outlets in current report selection</div>
+                return (
+                  <table style={{ width: '100%', fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ textAlign: 'left', color: '#64748b' }}>
+                        <th style={{ padding: '6px 8px' }}>#</th>
+                        <th style={{ padding: '6px 8px' }}>Outlet</th>
+                        <th style={{ padding: '6px 8px' }}>Tier</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'right' }}>UMV</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'right' }}>Items</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {top10.map((o, i) => (
+                        <tr key={i} style={{ borderTop: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '6px 8px', color: '#94a3b8' }}>{i + 1}</td>
+                          <td style={{ padding: '6px 8px', fontWeight: 500 }}>{o.name}</td>
+                          <td style={{ padding: '6px 8px' }}>{o.tier || '—'}</td>
+                          <td style={{ padding: '6px 8px', textAlign: 'right' }}>{o.umv ? o.umv.toLocaleString() : '—'}</td>
+                          <td style={{ padding: '6px 8px', textAlign: 'right' }}>{o.count}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )
+              })()}
+            </div>
+          )}
+
           {/* Report Content — Full Report Mode */}
           {loaded && summary && reportMode === 'full' && (
             <div ref={reportRef}>

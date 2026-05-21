@@ -156,6 +156,30 @@ const SECTIONS: Section[] = [
 
       { kind: 'h3', text: 'Coverage Reports' },
       { kind: 'p', text: 'The PR-side report builder (separate from the main Reports tab). Generates campaign reports for specific game launches or campaigns.' },
+
+      { kind: 'h3', text: 'New-client PR workflow (Q1)' },
+      { kind: 'steps', items: [
+        'Sign the new client → create them in Settings → Clients. PR tracking is OFF by default for clients.',
+        'Add games (Settings → Games). For each game you want covered, toggle "PR tracking enabled" on the game card. The system auto-enrolls the game in every scraper AND fires a 90-day retroactive Tavily backfill so the Feed populates immediately.',
+        'Optional: set a "PR coverage until" date on the game. A daily cron disables PR tracking automatically when that date passes — useful for campaign-bound coverage.',
+        'Open PR Coverage → Keywords. Confirm the auto-created whitelist keyword (the game name). Add common abbreviations and exclude false-positive terms.',
+        'Tavily runs at 06:00 and 18:00 UTC, RSS hourly, YouTube/Twitch/etc daily. Coverage normally appears within the next scan cycle plus enrichment (~15 min after).',
+        'When you want to wind down: either flip PR tracking off on the game (immediate) or rely on the pr_coverage_until end-date.',
+      ]},
+
+      { kind: 'h3', text: 'Reducing scraper cost' },
+      { kind: 'list', items: [
+        'Disable PR tracking on completed campaigns rather than leaving it running forever.',
+        'Add common false-positive words to global blacklist keywords (pirate, torrent, crack — already seeded).',
+        'Pin trusted outlets as Priority (★) so the scraper prioritizes them; block junk outlets.',
+      ]},
+
+      { kind: 'h3', text: 'Frequently asked' },
+      { kind: 'list', items: [
+        '"What are PR Correlations?" Cross-platform duplicate detection — when the same article was syndicated to multiple outlets, the correlation_detect cron clusters them so the report doesn\'t double-count.',
+        '"Are there default blacklisted words?" Yes — pirate, torrent, crack, cracked, keygen, fitgirl, skidrow, codex, cd key, free download, cheats, hack. See PR Coverage → Keywords (filter: blacklist).',
+        '"Why is the AI prediction saying low confidence?" The predictor needs ≥14 days of Steam performance data per product/platform. Without a Steam sync, it can\'t compute statistics. Run a Steam sync first.',
+      ]},
     ],
   },
   {

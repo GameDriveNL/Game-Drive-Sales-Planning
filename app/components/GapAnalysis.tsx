@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { format, startOfQuarter, endOfQuarter, eachQuarterOfInterval, differenceInDays, addDays } from 'date-fns'
 import { SaleWithDetails, Product, Game, Client, Platform } from '@/lib/types'
 import { normalizeToLocalDate } from '@/lib/dateUtils'
@@ -48,6 +48,30 @@ export default function GapAnalysis({ sales, products, platforms, timelineStart,
   const [minGapDays, setMinGapDays] = useState<number>(14)
   const [sortBy, setSortBy] = useState<'gap' | 'percentage' | 'quarter'>('gap')
 
+  // D8 (user override): per-user platform overrides for show_gap_analysis,
+  // stored in localStorage so each user can flip gap analysis back ON for
+  // platforms where it's globally off (or vice versa)
+  const [platformOverrides, setPlatformOverrides] = useState<Record<string, boolean>>({})
+  useEffect(() => {
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem('gap-analysis-overrides') : null
+      if (raw) setPlatformOverrides(JSON.parse(raw))
+    } catch { /* ignore */ }
+  }, [])
+  const setOverride = (platformId: string, on: boolean) => {
+    setPlatformOverrides(prev => {
+      const next = { ...prev, [platformId]: on }
+      try { localStorage.setItem('gap-analysis-overrides', JSON.stringify(next)) } catch { /* ignore */ }
+      return next
+    })
+  }
+  // Resolve effective per-platform visibility: user override wins over DB flag
+  const isGapAnalysisOnForPlatform = (p: { id: string; show_gap_analysis?: boolean }) => {
+    const override = platformOverrides[p.id]
+    if (override !== undefined) return override
+    return p.show_gap_analysis !== false
+  }
+
   const timelineEnd = useMemo(() => {
     const end = new Date(timelineStart)
     end.setMonth(end.getMonth() + monthCount)
@@ -94,9 +118,9 @@ export default function GapAnalysis({ sales, products, platforms, timelineStart,
 
     // Analyze each product-platform combination for each quarter
     productPlatformPairs.forEach(({ product, platform }) => {
-      // Skip gap analysis for platforms flagged as no-gap-analysis (e.g. zero-cooldown distributors
-      // where "gaps" have no semantic meaning). User can override via Settings → Platforms.
-      if (platform.show_gap_analysis === false) return
+      // D8: skip if (a) DB says no gap analysis for this platform AND (b) user
+      // hasn't overridden it back on. User override (localStorage) wins.
+      if (!isGapAnalysisOnForPlatform(platform)) return
 
       // Get cooldown days for this platform
       const cooldownDays = platform.cooldown_days || 28

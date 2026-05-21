@@ -248,6 +248,21 @@ export default function CoveragePage() {
     }
   }
 
+  // B30: priority flag toggle — scraper checks priority outlets first
+  const togglePriority = async (outlet: { id: string; is_priority?: boolean }) => {
+    const newVal = !outlet.is_priority
+    setOutlets(prev => prev.map(o => o.id === outlet.id ? { ...o, is_priority: newVal } : o))
+    try {
+      await fetch('/api/outlets', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: outlet.id, is_priority: newVal })
+      })
+    } catch {
+      setOutlets(prev => prev.map(o => o.id === outlet.id ? { ...o, is_priority: outlet.is_priority } : o))
+    }
+  }
+
   const handleCSVImport = async () => {
     if (!csvText.trim()) return
     setImporting(true)
@@ -744,6 +759,21 @@ export default function CoveragePage() {
                         {canEdit && (
                           <td style={{ padding: '10px 16px', textAlign: 'right' }}>
                             <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                              <button
+                                onClick={() => togglePriority(outlet)}
+                                title={outlet.is_priority ? 'Unpin priority — scraper treats this outlet normally' : 'Pin as priority — scraper will check this outlet first and more often'}
+                                style={{
+                                  padding: '4px 10px',
+                                  backgroundColor: outlet.is_priority ? '#fef3c7' : 'white',
+                                  color: outlet.is_priority ? '#a16207' : '#64748b',
+                                  border: `1px solid ${outlet.is_priority ? '#fde68a' : '#e2e8f0'}`,
+                                  borderRadius: '4px',
+                                  fontSize: '12px',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                {outlet.is_priority ? '★ Priority' : '☆ Pin'}
+                              </button>
                               <button
                                 onClick={() => handleToggleBlacklist(outlet)}
                                 title={outlet.is_blacklisted ? 'Unblock this outlet — scanners will include it again' : 'Block this outlet — scanners will skip it'}
