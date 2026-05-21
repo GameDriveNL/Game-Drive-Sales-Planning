@@ -41,7 +41,8 @@ export async function GET(request: NextRequest) {
     let query = supabase
       .from('coverage_items')
       .select('*, outlet:outlets(id, name, domain, tier, monthly_unique_visitors), game:games(id, name), client:clients(id, name), campaign:coverage_campaigns(id, name)', { count: 'exact' })
-      .order(sortBy, { ascending: sortDir === 'asc' })
+      .order(sortBy, { ascending: sortDir === 'asc', nullsFirst: false })
+      .order('id', { ascending: true }) // stable tiebreaker — prevents shuffling on refresh
       .range(offset, offset + limit - 1)
 
     if (clientId) query = query.eq('client_id', clientId)

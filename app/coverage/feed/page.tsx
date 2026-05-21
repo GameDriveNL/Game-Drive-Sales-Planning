@@ -893,8 +893,10 @@ export default function CoverageFeedPage() {
                                 onChange={() => toggleSelect(item.id)} style={{ width: '16px', height: '16px' }} />
                             </td>
                           )}
-                          <td style={{ padding: '8px 12px', color: '#64748b', whiteSpace: 'nowrap', fontSize: '12px' }}>
-                            {formatDate(item.publish_date) !== '—' ? formatDate(item.publish_date) : ensureDate(item.discovered_at ? new Date(item.discovered_at).toISOString().split('T')[0] : null)}
+                          <td style={{ padding: '8px 12px', color: '#64748b', whiteSpace: 'nowrap', fontSize: '12px' }} title={item.publish_date ? 'Published date' : 'Discovered date (publish date unknown)'}>
+                            {formatDate(item.publish_date) !== '—'
+                              ? formatDate(item.publish_date)
+                              : (item.discovered_at ? `~${formatDate(new Date(item.discovered_at).toISOString().split('T')[0])}` : '—')}
                           </td>
                           <td style={{ padding: '8px 12px' }}>
                             <div style={{ fontWeight: 500, color: '#1e293b', fontSize: '13px' }}>

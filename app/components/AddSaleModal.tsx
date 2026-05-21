@@ -394,7 +394,13 @@ export default function AddSaleModal({
               <input 
                 type="number" 
                 value={discountPercentage}
-                onChange={e => setDiscountPercentage(Math.max(5, Math.min(parseInt(e.target.value) || 5, 95)))}
+                onChange={e => {
+                  const v = parseInt(e.target.value)
+                  setDiscountPercentage(isNaN(v) ? 0 : Math.min(v, 95))
+                }}
+                onBlur={() => {
+                  if (discountPercentage < 5) setDiscountPercentage(5)
+                }}
                 min={5}
                 max={95}
                 required

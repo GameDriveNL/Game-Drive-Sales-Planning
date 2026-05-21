@@ -279,7 +279,8 @@ export default function DashboardPage() {
   const prevCoverage = previousPeriodItems.length
   const prevReach = previousPeriodItems.reduce((sum, i) => sum + (i.monthly_unique_visitors || i.outlet?.monthly_unique_visitors || 0), 0)
   const delta = (current: number, prev: number) => {
-    if (prev === 0) return current > 0 ? '+∞' : '0'
+    if (prev === 0 && current === 0) return '—'
+    if (prev === 0) return 'New'
     const pct = ((current - prev) / prev) * 100
     return `${pct > 0 ? '+' : ''}${pct.toFixed(0)}%`
   }
