@@ -417,6 +417,9 @@ export default function GanttChart(props: GanttChartProps) {
 
     for (const product of products) {
       for (const platform of platforms) {
+        // D8: skip per-row gap indicators for platforms flagged as no-gap-analysis
+        // (zero-cooldown distributors where "gaps" are meaningless)
+        if (platform.show_gap_analysis === false) continue
         const key = `${product.id}-${platform.id}`
         const cooldownDays = platform.cooldown_days || 28
 
