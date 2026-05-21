@@ -15,6 +15,7 @@ export interface Platform {
   max_discount_percent?: number
   notes?: string | null
   is_active?: boolean
+  show_gap_analysis?: boolean // false on no-cooldown platforms (gaps are meaningless); user can override per-session
   created_at?: string
 }
 

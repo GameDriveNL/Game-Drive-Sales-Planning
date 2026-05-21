@@ -94,6 +94,10 @@ export default function GapAnalysis({ sales, products, platforms, timelineStart,
 
     // Analyze each product-platform combination for each quarter
     productPlatformPairs.forEach(({ product, platform }) => {
+      // Skip gap analysis for platforms flagged as no-gap-analysis (e.g. zero-cooldown distributors
+      // where "gaps" have no semantic meaning). User can override via Settings → Platforms.
+      if (platform.show_gap_analysis === false) return
+
       // Get cooldown days for this platform
       const cooldownDays = platform.cooldown_days || 28
       
