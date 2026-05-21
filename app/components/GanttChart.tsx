@@ -1460,8 +1460,37 @@ export default function GanttChart(props: GanttChartProps) {
     
     const currentStart = normalizeToLocalDate(draggedSale.start_date)
     const currentEnd = normalizeToLocalDate(draggedSale.end_date)
-    const newStart = addDays(currentStart, daysMoved)
-    const newEnd = addDays(currentEnd, daysMoved)
+    let newStart = addDays(currentStart, daysMoved)
+    let newEnd = addDays(currentEnd, daysMoved)
+
+    // B13: snap-to-cooldown — if the new start is within ±3 days of a
+    // neighbor sale's cooldown-end (same product + platform), snap exactly
+    // to the day after cooldown. Hold Shift to disable snap.
+    const platformForSnap = platforms.find(p => p.id === draggedSale.platform_id)
+    if (platformForSnap && !(event.activatorEvent instanceof MouseEvent && event.activatorEvent.shiftKey)) {
+      const cooldownDays = platformForSnap.cooldown_days || 0
+      if (cooldownDays > 0) {
+        const SNAP_THRESHOLD_DAYS = 3
+        const duration = Math.round((currentEnd.getTime() - currentStart.getTime()) / 86400000)
+        // Look at every neighbor on same product/platform (excluding the dragged sale)
+        const neighbors = sales.filter(s =>
+          s.id !== draggedSale.id &&
+          s.product_id === draggedSale.product_id &&
+          s.platform_id === draggedSale.platform_id
+        )
+        for (const n of neighbors) {
+          const nEnd = normalizeToLocalDate(n.end_date)
+          const cooldownEndDate = addDays(nEnd, cooldownDays)
+          const snapStart = addDays(cooldownEndDate, 1)
+          const diff = Math.abs(Math.round((newStart.getTime() - snapStart.getTime()) / 86400000))
+          if (diff <= SNAP_THRESHOLD_DAYS) {
+            newStart = snapStart
+            newEnd = addDays(newStart, duration)
+            break
+          }
+        }
+      }
+    }
     const newStartStr = format(newStart, 'yyyy-MM-dd')
     const newEndStr = format(newEnd, 'yyyy-MM-dd')
     
