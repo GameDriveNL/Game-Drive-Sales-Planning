@@ -106,6 +106,11 @@ export default function CoverageReportPage() {
   const [includeAllStatus, setIncludeAllStatus] = useState(false)
   const [reportMode, setReportMode] = useState<'full' | 'simple'>('full')
 
+  // B27/B28: per-source inclusion toggles for the report
+  const [includeYouTube, setIncludeYouTube] = useState(true)
+  const [includeOtherSocials, setIncludeOtherSocials] = useState(true) // twitch, reddit, twitter, tiktok, instagram
+  const [includePress, setIncludePress] = useState(true) // rss, tavily, google-news, manual
+
   // Data state
   const [items, setItems] = useState<CoverageItem[]>([])
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
@@ -221,10 +226,18 @@ export default function CoverageReportPage() {
     setLoading(false)
   }, [selectedClient, selectedGame, dateFrom, dateTo, includeAllStatus])
 
+  // B27/B28: filter items by per-source toggles before grouping
+  const visibleItems = items.filter(item => {
+    const src = (item.source_type || '').toLowerCase()
+    if (src === 'youtube') return includeYouTube
+    if (SOCIAL_SOURCE_TYPES.has(src) && src !== 'youtube') return includeOtherSocials
+    return includePress // rss, tavily, google-news, manual, etc.
+  })
+
   // Group items by campaign section
   const groupedItems = (() => {
     const groups: Record<string, CoverageItem[]> = {}
-    for (const item of items) {
+    for (const item of visibleItems) {
       const section = item.campaign_section || item.campaign?.name || 'General Coverage'
       if (!groups[section]) groups[section] = []
       groups[section].push(item)
@@ -854,6 +867,25 @@ export default function CoverageReportPage() {
                 style={{ width: '16px', height: '16px' }} />
               <span style={{ fontSize: '13px', color: '#64748b' }}>Include non-approved items (pending review, rejected)</span>
             </label>
+
+            {/* B27/B28: per-source inclusion toggles */}
+            <div style={{ marginTop: 12, padding: 12, background: '#f8fafc', borderRadius: 6, border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 8 }}>Include source types in report:</div>
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={includePress} onChange={e => setIncludePress(e.target.checked)} />
+                  <span style={{ fontSize: 13 }}>📰 Press / News</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={includeYouTube} onChange={e => setIncludeYouTube(e.target.checked)} />
+                  <span style={{ fontSize: 13 }}>📺 YouTube</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={includeOtherSocials} onChange={e => setIncludeOtherSocials(e.target.checked)} />
+                  <span style={{ fontSize: 13 }}>💬 Other Socials (Twitch / Reddit / X / TikTok / IG)</span>
+                </label>
+              </div>
+            </div>
           </div>
 
           {/* Report Content — Full Report Mode */}

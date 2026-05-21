@@ -78,7 +78,13 @@ export default function SaleComparison({ sales, platforms }: SaleComparisonProps
 
     salesByProduct.forEach((productSales, productId) => {
       const first = productSales[0]
-      const platform = platforms.find(p => p.id === first.platform_id)
+      // B19: collect ALL unique platforms in this product's sale set — fixes
+      // "no way to compare Steam Custom vs Steam Seasonal" since both are now
+      // surfaced in the platformName label
+      const platformIdsInGroup = new Set(productSales.map(s => s.platform_id))
+      const platformNames = Array.from(platformIdsInGroup)
+        .map(pid => platforms.find(p => p.id === pid)?.name)
+        .filter(Boolean) as string[]
       const rows: SalePerformance[] = []
 
       productSales.forEach((sale, index) => {
@@ -103,7 +109,7 @@ export default function SaleComparison({ sales, platforms }: SaleComparisonProps
         productName: first.product?.name || 'Unknown',
         gameName: first.product?.game?.name || '',
         clientName: first.product?.game?.client?.name || '',
-        platformName: platform?.name || '',
+        platformName: platformNames.length > 1 ? platformNames.join(' + ') : (platformNames[0] || ''),
         rows: rows.reverse(), // newest first
       })
     })
@@ -210,7 +216,12 @@ export default function SaleComparison({ sales, platforms }: SaleComparisonProps
                   <tr key={row.sale.id}>
                     <td className={styles.saleName}>{row.sale.sale_name || 'Custom'}</td>
                     <td className={styles.dates}>
-                      {format(parseISO(row.sale.start_date), 'dd/MM/yy')} — {format(parseISO(row.sale.end_date), 'dd/MM/yy')}
+                      <div>{format(parseISO(row.sale.start_date), 'dd/MM/yy')} — {format(parseISO(row.sale.end_date), 'dd/MM/yy')}</div>
+                      {row.sale.discount_percentage != null && (
+                        <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                          {row.sale.discount_percentage}% off
+                        </div>
+                      )}
                     </td>
                     <td className={styles.discount}>
                       {row.sale.discount_percentage ? `${row.sale.discount_percentage}%` : '-'}

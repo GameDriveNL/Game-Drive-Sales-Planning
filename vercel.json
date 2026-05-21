@@ -63,6 +63,10 @@
     {
       "path": "/api/cron/web-scrape",
       "schedule": "30 7,19 * * *"
+    },
+    {
+      "path": "/api/cron/coverage-auto-disable",
+      "schedule": "0 1 * * *"
     }
   ],
   "buildCommand": "next build"

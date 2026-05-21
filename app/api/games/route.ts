@@ -171,12 +171,30 @@ export async function POST(request: Request) {
     // Auto-enroll game in all scrapers when PR tracking is enabled
     if (data?.id && data?.name && data?.pr_tracking_enabled) {
       await autoEnrollGameInScrapers(supabase, data.id, data.name, data.client_id)
+      // B25: fire retroactive Tavily backfill (~90 days) — fire-and-forget
+      triggerRetroactiveBackfill(data.id).catch(err => console.error('B25 backfill trigger failed:', err))
     }
 
     return NextResponse.json(data)
   } catch (error) {
     console.error('Error creating game:', error)
     return NextResponse.json({ error: 'Failed to create game' }, { status: 500 })
+  }
+}
+
+// B25: trigger a retroactive PR coverage backfill (90-day lookback)
+// when a game is first enabled for PR tracking. Fires the existing
+// /api/coverage-backfill endpoint asynchronously — don't block the caller.
+async function triggerRetroactiveBackfill(gameId: string) {
+  const base = process.env.NEXT_PUBLIC_APP_URL || 'https://platform.game-drive.nl'
+  try {
+    await fetch(`${base}/api/coverage-backfill`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ game_id: gameId, max_queries: 20 })
+    })
+  } catch (e) {
+    console.error('B25 retroactive backfill failed to start:', e)
   }
 }
 
@@ -209,6 +227,9 @@ export async function PUT(request: Request) {
     // Auto-enroll when PR tracking is toggled on
     if (data && updates.pr_tracking_enabled === true) {
       await autoEnrollGameInScrapers(supabase, data.id, data.name, data.client_id)
+      // B25: also trigger retroactive backfill so the user immediately has
+      // ~90 days of historical coverage rather than waiting for daily crons
+      triggerRetroactiveBackfill(data.id).catch(err => console.error('B25 backfill trigger failed:', err))
     }
 
     return NextResponse.json(data)
