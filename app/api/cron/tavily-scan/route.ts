@@ -10,7 +10,7 @@ import { verifyCronAuth } from '@/lib/cron-auth'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
-export const maxDuration = 60
+export const maxDuration = 300 // Recall boost: was 60, now 5min so the more aggressive 4-queries-per-source x 25-results can complete
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -262,14 +262,28 @@ export async function GET(request: Request) {
           const game = games.find(g => g.id === source.game_id)
           if (game) {
             matchedClientId = game.client_id
-            // Build queries: game name + each source keyword
-            if (sourceKeywords.length > 0) {
-              for (const kw of sourceKeywords) {
-                searchQueries.push(`${game.name} ${kw}`)
-              }
-            } else {
-              searchQueries.push(game.name)
+
+            // Recall boost: pull ALL whitelist keyword variants for this game
+            // from coverage_keywords. The seed keyword + studio name + slugs
+            // we just added all become standalone queries — catches translated
+            // or oblique press that doesn't use the exact game name.
+            const { data: whitelistKws } = await supabase
+              .from('coverage_keywords')
+              .select('keyword')
+              .eq('game_id', game.id)
+              .eq('keyword_type', 'whitelist')
+              .eq('is_active', true)
+
+            const queryTerms = new Set<string>([game.name])
+            for (const kw of (whitelistKws || [])) {
+              if (kw.keyword && kw.keyword.length >= 3) queryTerms.add(kw.keyword)
             }
+            // Also include source.config keywords if provided (e.g. operator-curated phrases)
+            for (const kw of sourceKeywords) {
+              if (kw && kw.length >= 3) queryTerms.add(kw)
+            }
+            // Each term as its own search query — Tavily handles synonym/related-term retrieval per query
+            Array.from(queryTerms).forEach(term => searchQueries.push(term))
           }
         } else if (sourceKeywords.length > 0) {
           // No game linked — use keywords directly
@@ -292,19 +306,23 @@ export async function GET(request: Request) {
 
         const newItems: Array<Record<string, unknown>> = []
 
-        // Execute searches (limit 2 queries per source per run)
-        const queriesToRun = searchQueries.slice(0, 2)
+        // Recall boost: was 2 queries / 45s budget. Now 4 queries / 90s and
+        // EVERY query gets `advanced` depth + 25 results. Cost roughly doubles
+        // per run but recall should ~2x toward the 33% → 60-70% range
+        // Stephanie is asking for.
+        const queriesToRun = searchQueries.slice(0, 4)
+        const sourceStart = Date.now()
         for (let qi = 0; qi < queriesToRun.length; qi++) {
           const query = queriesToRun[qi]
-          if (Date.now() - startTime > 45000) break
+          // Per-source time budget: 20s per source so the cron can still cycle
+          // through multiple sources within its overall 300s maxDuration.
+          if (Date.now() - sourceStart > 20000) break
+          if (Date.now() - startTime > 270000) break // leave 30s for cleanup
 
-          // First query gets advanced depth + more results; secondary gets basic
-          const isFirstRun = source.total_items_found === 0 && !source.last_run_at
-          const isPrimaryQuery = qi === 0
           try {
             const searchOptions: Record<string, unknown> = {
-              maxResults: (isPrimaryQuery || isFirstRun) ? 20 : 10,
-              searchDepth: (isPrimaryQuery || isFirstRun) ? 'advanced' : 'basic',
+              maxResults: 25,
+              searchDepth: 'advanced',
               includeAnswer: false
             }
 
@@ -315,7 +333,8 @@ export async function GET(request: Request) {
 
             const response = await tvly.search(query, searchOptions)
             stats.searches_made++
-            stats.estimated_cost += (isPrimaryQuery || isFirstRun) ? 0.02 : 0.01
+            // All queries now run at advanced depth — ~$0.02 each
+            stats.estimated_cost += 0.02
 
             for (const result of (response.results || [])) {
               if (!result.url || !result.title) continue

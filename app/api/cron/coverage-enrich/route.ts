@@ -192,8 +192,12 @@ async function applyScoreResult(
   // Determine approval
   let approvalStatus: string | undefined
   if (!['auto_approved', 'manually_approved', 'rejected'].includes(String(item.approval_status))) {
+    // Recall boost (B29): lowered auto-reject threshold 50 → 30 so borderline
+    // items appear as pending_review for Stephanie to triage instead of being
+    // silently dropped. Auto-approve threshold stays at 80 to avoid false
+    // positives in the curated feed.
     if (score >= 80) approvalStatus = 'auto_approved'
-    else if (score < 50) approvalStatus = 'rejected'
+    else if (score < 30) approvalStatus = 'rejected'
     else approvalStatus = 'pending_review'
   }
 

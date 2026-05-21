@@ -11,6 +11,28 @@ async function autoEnrollGameInScrapers(
 ) {
   const sgSlug = gameName.replace(/\s+/g, '_')
 
+  // B29 / recall boost: build a richer keyword set per game to catch coverage
+  // that uses common name variants. Stephanie reports ~33% recall against
+  // manual finding — much of that gap is keyword variants the scrapers never
+  // try. We auto-generate: game name, no-space form, dash-slug, and (later
+  // in this function) the client/studio name.
+  const baseKeywords = new Set<string>([gameName])
+  const noSpace = gameName.replace(/\s+/g, '')
+  if (noSpace !== gameName) baseKeywords.add(noSpace)
+  const slug = gameName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+  if (slug.length >= 4 && slug !== gameName.toLowerCase()) baseKeywords.add(slug)
+
+  // Fetch client/studio name to add as a co-keyword
+  const { data: clientRow } = await db
+    .from('clients')
+    .select('name')
+    .eq('id', clientId)
+    .single()
+  const studioName = clientRow?.name
+  if (studioName) baseKeywords.add(studioName)
+
+  const searchKeywords = Array.from(baseKeywords)
+
   // Check which sources already exist for this game to avoid duplicates
   const { data: existingSources } = await db
     .from('coverage_sources')
@@ -39,7 +61,7 @@ async function autoEnrollGameInScrapers(
       game_id: gameId,
       scan_frequency: 'daily',
       is_active: true,
-      config: { keywords: [gameName], channel_name: '' },
+      config: { keywords: searchKeywords, channel_name: '' },
     })
   }
 
@@ -50,7 +72,7 @@ async function autoEnrollGameInScrapers(
       game_id: gameId,
       scan_frequency: 'daily',
       is_active: true,
-      config: { subreddits: ['gaming', 'pcgaming', 'indiegaming'], keywords: [gameName], min_upvotes: 5 },
+      config: { subreddits: ['gaming', 'pcgaming', 'indiegaming'], keywords: searchKeywords, min_upvotes: 5 },
     })
   }
 
@@ -61,7 +83,7 @@ async function autoEnrollGameInScrapers(
       game_id: gameId,
       scan_frequency: 'daily',
       is_active: true,
-      config: { keywords: [gameName], handles: [], min_followers: 500 },
+      config: { keywords: searchKeywords, handles: [], min_followers: 500 },
     })
   }
 
@@ -72,7 +94,7 @@ async function autoEnrollGameInScrapers(
       game_id: gameId,
       scan_frequency: 'daily',
       is_active: true,
-      config: { keywords: [gameName], hashtags: [gameName.replace(/\s+/g, '').toLowerCase()], profiles: [], min_followers: 500 },
+      config: { keywords: searchKeywords, hashtags: [gameName.replace(/\s+/g, '').toLowerCase()], profiles: [], min_followers: 500 },
     })
   }
 
@@ -83,7 +105,19 @@ async function autoEnrollGameInScrapers(
       game_id: gameId,
       scan_frequency: 'daily',
       is_active: true,
-      config: { keywords: [gameName], hashtags: [gameName.replace(/\s+/g, '').toLowerCase()], min_followers: 500 },
+      config: { keywords: searchKeywords, hashtags: [gameName.replace(/\s+/g, '').toLowerCase()], min_followers: 500 },
+    })
+  }
+
+  // Recall boost: Tavily source — was previously missing from autoEnroll!
+  if (!existingTypes.has('tavily')) {
+    sourcesToCreate.push({
+      source_type: 'tavily',
+      name: `Tavily – ${gameName}`,
+      game_id: gameId,
+      scan_frequency: 'daily',
+      is_active: true,
+      config: { keywords: searchKeywords, max_queries: 4 },
     })
   }
 
@@ -93,28 +127,29 @@ async function autoEnrollGameInScrapers(
     if (srcErr) console.error('Auto-enroll sources failed:', srcErr.message)
   }
 
-  // Auto-create default whitelist keyword for the game name
-  const { data: existingKw } = await db
-    .from('coverage_keywords')
-    .select('id')
-    .eq('game_id', gameId)
-    .eq('keyword', gameName)
-    .eq('keyword_type', 'whitelist')
-    .limit(1)
-
-  if (!existingKw || existingKw.length === 0) {
-    const { error: kwErr } = await db
+  // Recall boost: write ALL keyword variants (not just the game name) to
+  // coverage_keywords as whitelist entries. This ensures keyword-based
+  // post-filtering across all scrapers accepts items mentioning any variant.
+  for (const kw of searchKeywords) {
+    const { data: existing } = await db
       .from('coverage_keywords')
-      .insert({
+      .select('id')
+      .eq('game_id', gameId)
+      .eq('keyword', kw)
+      .eq('keyword_type', 'whitelist')
+      .limit(1)
+    if (!existing || existing.length === 0) {
+      const { error: kwErr } = await db.from('coverage_keywords').insert({
         client_id: clientId,
         game_id: gameId,
-        keyword: gameName,
+        keyword: kw,
         keyword_type: 'whitelist',
       })
-    if (kwErr) console.error('Auto-create keyword failed:', kwErr.message)
+      if (kwErr) console.error(`Auto-create keyword "${kw}" failed:`, kwErr.message)
+    }
   }
 
-  console.log(`[Auto-enroll] Enrolled "${gameName}" in ${sourcesToCreate.length} scrapers`)
+  console.log(`[Auto-enroll] Enrolled "${gameName}" in ${sourcesToCreate.length} scrapers with ${searchKeywords.length} keyword variants`)
 }
 
 // GET - Fetch all games with client info
