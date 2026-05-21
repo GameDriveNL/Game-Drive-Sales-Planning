@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { format, parseISO, addDays } from 'date-fns'
 import { SaleWithDetails, Platform } from '@/lib/types'
+import { useModalClose } from '@/lib/hooks/useModalClose'
 import styles from './BulkEditSalesModal.module.css'
 
 interface BulkEditSalesModalProps {
@@ -40,6 +41,19 @@ export default function BulkEditSalesModal({
   const [saleNameValue, setSaleNameValue] = useState<string>('')
   const [dateShiftDays, setDateShiftDays] = useState<number>(7)
   const [statusValue, setStatusValue] = useState<string>('planned')
+
+  // B10: per-row discount values (different value per sale)
+  const [perRowMode, setPerRowMode] = useState(false)
+  const [perRowDiscounts, setPerRowDiscounts] = useState<Record<string, number>>({})
+  useEffect(() => {
+    if (perRowMode) {
+      const m: Record<string, number> = {}
+      selectedSales.forEach(s => { m[s.id] = s.discount_percentage || 50 })
+      setPerRowDiscounts(m)
+    }
+  }, [perRowMode, selectedSales])
+
+  const { overlayProps, modalProps, handleClose } = useModalClose(onClose)
   
   // Group sales by game for display
   const salesByGame = useMemo(() => {
@@ -96,6 +110,17 @@ export default function BulkEditSalesModal({
         
         switch (editMode) {
           case 'discount':
+            if (perRowMode) {
+              // B10: apply different discount per sale
+              for (const sale of selectedSales) {
+                const v = perRowDiscounts[sale.id]
+                if (v != null && v !== sale.discount_percentage) {
+                  await onBulkUpdate([sale.id], { discount_percentage: v })
+                }
+              }
+              onClose()
+              return
+            }
             updates.discount_percentage = discountValue
             break
           case 'platform':
@@ -132,11 +157,11 @@ export default function BulkEditSalesModal({
   if (!isOpen) return null
 
   return (
-    <div className={styles.overlay} onClick={onClose}>
-      <div className={styles.modal} onClick={e => e.stopPropagation()}>
+    <div className={styles.overlay} {...overlayProps}>
+      <div className={styles.modal} {...modalProps}>
         <div className={styles.header}>
           <h2>Bulk Edit Sales</h2>
-          <button className={styles.closeBtn} onClick={onClose}>×</button>
+          <button className={styles.closeBtn} onClick={handleClose}>×</button>
         </div>
         
         {error && (
@@ -241,29 +266,67 @@ export default function BulkEditSalesModal({
           <div className={styles.editForm}>
             {editMode === 'discount' && (
               <div className={styles.formField}>
-                <label>New Discount Percentage</label>
-                <div className={styles.discountInput}>
-                  <input
-                    type="range"
-                    min="0"
-                    max="90"
-                    step="5"
-                    value={discountValue}
-                    onChange={e => setDiscountValue(parseInt(e.target.value))}
-                  />
-                  <span className={styles.discountValue}>{discountValue}%</span>
-                </div>
-                <div className={styles.quickValues}>
-                  {[10, 25, 33, 50, 66, 75].map(v => (
-                    <button 
-                      key={v} 
-                      className={discountValue === v ? styles.active : ''}
-                      onClick={() => setDiscountValue(v)}
-                    >
-                      {v}%
-                    </button>
-                  ))}
-                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input type="checkbox" checked={perRowMode} onChange={e => setPerRowMode(e.target.checked)} />
+                  Set different value per sale (B10)
+                </label>
+                {!perRowMode ? (
+                  <>
+                    <label>New Discount Percentage</label>
+                    <div className={styles.discountInput}>
+                      <input
+                        type="range"
+                        min="0"
+                        max="90"
+                        step="5"
+                        value={discountValue}
+                        onChange={e => setDiscountValue(parseInt(e.target.value))}
+                      />
+                      <span className={styles.discountValue}>{discountValue}%</span>
+                    </div>
+                    <div className={styles.quickValues}>
+                      {[10, 25, 33, 50, 66, 75].map(v => (
+                        <button
+                          key={v}
+                          className={discountValue === v ? styles.active : ''}
+                          onClick={() => setDiscountValue(v)}
+                        >
+                          {v}%
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ maxHeight: 280, overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: 6, padding: 8 }}>
+                    <table style={{ width: '100%', fontSize: 13 }}>
+                      <thead>
+                        <tr style={{ textAlign: 'left' }}>
+                          <th style={{ padding: '6px 8px' }}>Sale</th>
+                          <th style={{ padding: '6px 8px' }}>Dates</th>
+                          <th style={{ padding: '6px 8px' }}>Discount %</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedSales.map(s => (
+                          <tr key={s.id}>
+                            <td style={{ padding: '6px 8px' }}>{s.product?.name} <span style={{ color: '#94a3b8' }}>· {s.platform?.name}</span></td>
+                            <td style={{ padding: '6px 8px', color: '#64748b' }}>{format(parseISO(s.start_date), 'MMM d')} → {format(parseISO(s.end_date), 'MMM d')}</td>
+                            <td style={{ padding: '6px 8px' }}>
+                              <input
+                                type="number"
+                                min={5}
+                                max={95}
+                                value={perRowDiscounts[s.id] ?? s.discount_percentage ?? 50}
+                                onChange={e => setPerRowDiscounts(prev => ({ ...prev, [s.id]: parseInt(e.target.value) || 0 }))}
+                                style={{ width: 70, padding: 4 }}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             )}
             

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { format, addDays, parseISO, differenceInDays } from 'date-fns'
 import { Sale, Platform, Product, Game, Client, SaleWithDetails } from '@/lib/types'
 import { validateSale } from '@/lib/validation'
@@ -236,16 +236,31 @@ export default function EditSaleModal({
     acc[gameName].push(product)
     return acc
   }, {} as Record<string, typeof products>)
-  
+
+  // B8/B9: modal close guards
+  const overlayMouseDownRef = useRef(false)
+  const dirtyRef = useRef(false)
+  const handleClose = () => {
+    if (dirtyRef.current && !window.confirm('You have unsaved changes. Close without saving?')) return
+    onClose()
+  }
+
   return (
-    <div className={styles.overlay} onClick={onClose}>
-      <div className={styles.modal} onClick={e => e.stopPropagation()}>
+    <div
+      className={styles.overlay}
+      onMouseDown={e => { overlayMouseDownRef.current = e.target === e.currentTarget }}
+      onMouseUp={e => {
+        if (overlayMouseDownRef.current && e.target === e.currentTarget) handleClose()
+        overlayMouseDownRef.current = false
+      }}
+    >
+      <div className={styles.modal} onMouseDown={e => e.stopPropagation()}>
         <div className={styles.header}>
           <h2>Edit Sale</h2>
-          <button className={styles.closeBtn} onClick={onClose}>×</button>
+          <button className={styles.closeBtn} onClick={handleClose}>×</button>
         </div>
-        
-        <form onSubmit={handleSubmit} className={styles.form}>
+
+        <form onSubmit={handleSubmit} onChange={() => { dirtyRef.current = true }} className={styles.form}>
           {validationError && (
             <div className={styles.error}>
               <span>⚠️ {validationError}</span>
@@ -299,10 +314,12 @@ export default function EditSaleModal({
           <div className={styles.row}>
             <div className={styles.field}>
               <label>Start Date *</label>
-              <input 
-                type="date" 
+              <input
+                type="date"
                 value={startDate}
                 onChange={e => handleStartDateChange(e.target.value)}
+                min="2020-01-01"
+                max="2035-12-31"
                 required
               />
             </div>
@@ -322,11 +339,12 @@ export default function EditSaleModal({
             
             <div className={styles.field}>
               <label>End Date *</label>
-              <input 
-                type="date" 
+              <input
+                type="date"
                 value={endDate}
                 onChange={e => handleEndDateChange(e.target.value)}
                 min={startDate}
+                max="2035-12-31"
                 required
               />
             </div>
@@ -514,7 +532,7 @@ export default function EditSaleModal({
                 Duplicate
               </button>
             )}
-            <button type="button" className={styles.cancelBtn} onClick={onClose}>
+            <button type="button" className={styles.cancelBtn} onClick={handleClose}>
               Cancel
             </button>
             <button 

@@ -432,11 +432,17 @@ export function generateSaleCalendar(params: GenerateCalendarParams): CalendarVa
 
   const variations: CalendarVariation[] = []
 
-  const variationConfigs: { key: 'aggressive' | 'conservative'; name: string; description: string }[] = [
+  const variationConfigs: { key: 'aggressive' | 'conservative'; name: string; description: string; ignoreDayPreference?: boolean }[] = [
     {
       key: 'aggressive',
       name: 'Maximize Sales',
       description: 'Maximize days on sale with full-length sales chained back-to-back after cooldowns'
+    },
+    {
+      key: 'aggressive',
+      name: 'Maximize (Flexible Day)',
+      description: 'Same as Maximize Sales but ignores platform-preferred start day for tighter packing (B11)',
+      ignoreDayPreference: true
     },
     {
       key: 'conservative',
@@ -458,7 +464,7 @@ export function generateSaleCalendar(params: GenerateCalendarParams): CalendarVa
         defaultDiscount,
         config.key,
         [...existingForProduct, ...newSales],
-        preferredStartDay
+        config.ignoreDayPreference ? undefined : preferredStartDay
       )
       newSales.push(...platformSales)
     }

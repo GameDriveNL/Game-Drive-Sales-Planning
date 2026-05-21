@@ -1143,7 +1143,9 @@ export default function AnalyticsPage() {
     if (chartType === 'line') {
       const width = 800
       const height = 300
-      const padding = { top: 20, right: 40, bottom: 60, left: 40 }
+      // B16: bumped right padding from 40→72 to prevent the last data point and
+      // its label from being clipped at the chart's right edge
+      const padding = { top: 20, right: 72, bottom: 60, left: 40 }
       const chartWidth = width - padding.left - padding.right
       const chartHeight = height - padding.top - padding.bottom
 
@@ -2100,7 +2102,8 @@ export default function AnalyticsPage() {
     const maxUnits = Math.max(...periods.map(p => p.units))
     const width = 500
     const height = 180
-    const padding = { top: 20, right: 40, bottom: 30, left: 40 }
+    // B16: extra right padding to prevent clipping of last data point
+    const padding = { top: 20, right: 60, bottom: 30, left: 40 }
     const chartWidth = width - padding.left - padding.right
     const chartHeight = height - padding.top - padding.bottom
 

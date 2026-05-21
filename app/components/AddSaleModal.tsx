@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { format, addDays, parseISO, differenceInDays } from 'date-fns'
 import { Sale, Platform, Product, Game, Client, SaleWithDetails } from '@/lib/types'
 import { validateSale } from '@/lib/validation'
@@ -45,6 +45,14 @@ export default function AddSaleModal({
   const initialDuration = initialDate && initialEndDate
     ? differenceInDays(initialEndDate, initialDate) + 1
     : 7
+
+  // Modal close guards: prevent close-on-mouse-drag (B8) and confirm if dirty (B9)
+  const overlayMouseDownRef = useRef(false)
+  const dirtyRef = useRef(false)
+  const handleClose = () => {
+    if (dirtyRef.current && !window.confirm('You have unsaved changes. Close without saving?')) return
+    onClose()
+  }
 
   const [productId, setProductId] = useState(initialProductId || '')
   const [platformId, setPlatformId] = useState(initialPlatformId || '')
@@ -275,11 +283,19 @@ export default function AddSaleModal({
   }, {} as Record<string, typeof products>)
   
   return (
-    <div className={styles.overlay} onClick={onClose}>
-      <div className={styles.modal} onClick={e => e.stopPropagation()}>
+    <div
+      className={styles.overlay}
+      onMouseDown={e => { overlayMouseDownRef.current = e.target === e.currentTarget }}
+      onMouseUp={e => {
+        // Only close if mousedown ALSO started on the overlay (B8: ignore mouse drags that started inside)
+        if (overlayMouseDownRef.current && e.target === e.currentTarget) handleClose()
+        overlayMouseDownRef.current = false
+      }}
+    >
+      <div className={styles.modal} onMouseDown={e => e.stopPropagation()}>
         <div className={styles.header}>
           <h2>Add New Sale{savedCount > 0 ? ` (${savedCount} added)` : ''}</h2>
-          <button className={styles.closeBtn} onClick={onClose}>×</button>
+          <button className={styles.closeBtn} onClick={handleClose}>×</button>
         </div>
         
         {/* Pre-filled indicator */}
@@ -295,7 +311,7 @@ export default function AddSaleModal({
           </div>
         )}
         
-        <form onSubmit={handleSubmit} className={styles.form}>
+        <form onSubmit={handleSubmit} onChange={() => { dirtyRef.current = true }} className={styles.form}>
           {successMessage && (
             <div className={styles.success}>
               <span>{successMessage}</span>
@@ -355,10 +371,12 @@ export default function AddSaleModal({
           <div className={styles.row}>
             <div className={styles.field}>
               <label>Start Date *</label>
-              <input 
-                type="date" 
+              <input
+                type="date"
                 value={startDate}
                 onChange={e => handleStartDateChange(e.target.value)}
+                min="2020-01-01"
+                max="2035-12-31"
                 required
               />
             </div>
@@ -378,11 +396,12 @@ export default function AddSaleModal({
             
             <div className={styles.field}>
               <label>End Date *</label>
-              <input 
-                type="date" 
+              <input
+                type="date"
                 value={endDate}
                 onChange={e => handleEndDateChange(e.target.value)}
                 min={startDate}
+                max="2035-12-31"
                 required
               />
             </div>
@@ -538,7 +557,7 @@ export default function AddSaleModal({
           </div>
           
           <div className={styles.actions}>
-            <button type="button" className={styles.cancelBtn} onClick={onClose}>
+            <button type="button" className={styles.cancelBtn} onClick={handleClose}>
               {savedCount > 0 ? 'Done' : 'Cancel'}
             </button>
             {onSaveAndContinue && (

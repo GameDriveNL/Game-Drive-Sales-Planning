@@ -778,7 +778,13 @@ export default function SettingsClientsPage() {
                                                   />
                                                 ))}
                                                 {(!product.product_platforms || product.product_platforms.length === 0) && (
-                                                  <span className={styles.noPlatforms}>No platforms</span>
+                                                  <span
+                                                    className={styles.noPlatforms}
+                                                    title="No platforms assigned — this product won't appear on the timeline until at least one is added"
+                                                    style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 12 }}
+                                                  >
+                                                    No platforms assigned
+                                                  </span>
                                                 )}
                                               </div>
                                               {canEdit && (
