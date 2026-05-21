@@ -1,5 +1,6 @@
 import { Sale, Platform, ValidationResult } from './types'
-import { parseISO, addDays, isBefore, isAfter } from 'date-fns'
+import { addDays, isBefore, isAfter } from 'date-fns'
+import { normalizeToLocalDate } from './dateUtils'
 
 export function validateSale(
   newSale: {
@@ -13,8 +14,12 @@ export function validateSale(
   platform: Platform,
   excludeSaleId?: string // For editing existing sales
 ): ValidationResult {
-  const newStart = parseISO(newSale.start_date)
-  const newEnd = parseISO(newSale.end_date)
+  // B3/B4: normalize all dates to local-timezone midnight via normalizeToLocalDate.
+  // Previously used parseISO which returns UTC midnight; mixing with normalizeToLocalDate
+  // elsewhere (timeline display, gap analysis) could produce off-by-one cooldown windows
+  // in non-UTC timezones (e.g. the "7PM CEST" symptom).
+  const newStart = normalizeToLocalDate(newSale.start_date)
+  const newEnd = normalizeToLocalDate(newSale.end_date)
   
   // Filter to same product + platform, excluding the sale being edited
   const relevantSales = existingSales.filter(sale => 
@@ -31,8 +36,8 @@ export function validateSale(
                         platform.special_sales_no_cooldown
   
   for (const existingSale of relevantSales) {
-    const existingStart = parseISO(existingSale.start_date)
-    const existingEnd = parseISO(existingSale.end_date)
+    const existingStart = normalizeToLocalDate(existingSale.start_date)
+    const existingEnd = normalizeToLocalDate(existingSale.end_date)
     
     // Check 1: Direct overlap (sales can't run at the same time)
     if (doPeriodsOverlap(newStart, newEnd, existingStart, existingEnd)) {
@@ -88,12 +93,15 @@ export function calculateCooldownPeriod(
   saleEndDate: string,
   cooldownDays: number
 ): { start: string; end: string } {
-  const endDate = parseISO(saleEndDate)
+  const endDate = normalizeToLocalDate(saleEndDate)
   const cooldownStart = addDays(endDate, 1)
   const cooldownEnd = addDays(endDate, cooldownDays)
-  
+
+  // Use local date format directly — avoids the toISOString().split('T')[0]
+  // pattern which can shift the date by one day in negative-UTC timezones
+  const y = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   return {
-    start: cooldownStart.toISOString().split('T')[0],
-    end: cooldownEnd.toISOString().split('T')[0]
+    start: y(cooldownStart),
+    end: y(cooldownEnd)
   }
 }

@@ -1,9 +1,15 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { format, addDays, parseISO, differenceInDays } from 'date-fns'
+import { format, addDays, differenceInDays } from 'date-fns'
 import { Sale, Platform, Product, Game, Client, SaleWithDetails } from '@/lib/types'
 import { validateSale } from '@/lib/validation'
+import { normalizeToLocalDate } from '@/lib/dateUtils'
+
+// B3/B4: use normalizeToLocalDate everywhere so dates stay in the user's
+// local timezone instead of shifting to UTC midnight (which causes the
+// "7PM CEST off-by-one" symptom)
+const parseISO = normalizeToLocalDate
 import SalePredictionPanel from './SalePredictionPanel'
 import styles from './AddSaleModal.module.css'
 

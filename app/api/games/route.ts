@@ -232,6 +232,16 @@ export async function PUT(request: Request) {
       triggerRetroactiveBackfill(data.id).catch(err => console.error('B25 backfill trigger failed:', err))
     }
 
+    // B22: when PR tracking is toggled OFF for a game, deactivate its
+    // coverage_sources so scrapers stop polling for it — keeps cost and
+    // noise down. Sources are reactivated on re-enable via autoEnroll.
+    if (data && updates.pr_tracking_enabled === false) {
+      await supabase
+        .from('coverage_sources')
+        .update({ is_active: false })
+        .eq('game_id', data.id)
+    }
+
     return NextResponse.json(data)
   } catch (error) {
     console.error('Error updating game:', error)

@@ -1,7 +1,12 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { format, addDays, parseISO, differenceInDays } from 'date-fns'
+import { format, addDays, differenceInDays } from 'date-fns'
+import { normalizeToLocalDate } from '@/lib/dateUtils'
+
+// B3/B4: alias to normalizeToLocalDate so dates parse at local midnight,
+// preventing the "7PM CEST off-by-one" issue when format() reads them back
+const parseISO = normalizeToLocalDate
 import { Sale, Platform, Product, Game, Client, SaleWithDetails } from '@/lib/types'
 import { validateSale } from '@/lib/validation'
 import SalePredictionPanel from './SalePredictionPanel'
