@@ -1426,13 +1426,25 @@ export default function GanttChart(props: GanttChartProps) {
   }, [getDayIndexForDate, days, dayWidth, getLaunchSaleConflicts, launchSaleResize])
   
   const scrollThumbStyle = useMemo(() => {
-    const totalWidth = totalDays * dayWidth
-    const visibleWidth = containerWidth - SIDEBAR_WIDTH
-    const thumbWidthPercent = Math.max(10, Math.min(100, (visibleWidth / totalWidth) * 100))
+    // B14: derive thumb width from the SAME measurements the native scrollbar uses
+    // (scrollContainerRef.scrollWidth / clientWidth) — previously we used
+    // totalDays*dayWidth and containerWidth-SIDEBAR_WIDTH which drifted from the
+    // native scrollbar (rounding + sidebar accounting). Now top thumb tracks
+    // bottom scrollbar exactly.
+    const container = scrollContainerRef.current
+    let thumbWidthPercent: number
+    if (container && container.scrollWidth > 0) {
+      thumbWidthPercent = Math.max(10, Math.min(100, (container.clientWidth / container.scrollWidth) * 100))
+    } else {
+      // First render fallback (container ref not attached yet)
+      const totalWidth = totalDays * dayWidth
+      const visibleWidth = containerWidth - SIDEBAR_WIDTH
+      thumbWidthPercent = Math.max(10, Math.min(100, (visibleWidth / totalWidth) * 100))
+    }
     const maxLeftPercent = 100 - thumbWidthPercent
-    const leftPercent = scrollProgress * maxLeftPercent
-    
-    return { 
+    const leftPercent = Math.max(0, Math.min(maxLeftPercent, scrollProgress * maxLeftPercent))
+
+    return {
       width: `${thumbWidthPercent}%`,
       left: `${leftPercent}%`
     }

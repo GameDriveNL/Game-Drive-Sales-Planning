@@ -148,7 +148,7 @@ export async function GET(request: Request) {
     // 1. Fetch all active RSS sources with their linked outlets
     const { data: sources, error: srcErr } = await supabase
       .from('coverage_sources')
-      .select('*, outlet:outlets(id, tier, monthly_unique_visitors)')
+      .select('*, outlet:outlets(id, tier, monthly_unique_visitors, is_priority)')
       .eq('source_type', 'rss')
       .eq('is_active', true)
 
@@ -161,8 +161,16 @@ export async function GET(request: Request) {
       return NextResponse.json({ message: 'No active RSS sources', stats: { scanned: 0, found: 0, inserted: 0 } })
     }
 
-    // Filter sources that need scanning now
-    const dueForScan = (sources as CoverageSource[]).filter(shouldScanNow)
+    // Filter sources that need scanning now, then put priority outlets first
+    // (B30: priority outlets get scanned first so their fresh items appear in the
+    // feed earlier even when the cron hits its time budget)
+    const dueForScan = (sources as CoverageSource[])
+      .filter(shouldScanNow)
+      .sort((a, b) => {
+        const aPriority = (a as CoverageSource & { outlet?: { is_priority?: boolean } }).outlet?.is_priority ? 1 : 0
+        const bPriority = (b as CoverageSource & { outlet?: { is_priority?: boolean } }).outlet?.is_priority ? 1 : 0
+        return bPriority - aPriority
+      })
 
     if (dueForScan.length === 0) {
       return NextResponse.json({

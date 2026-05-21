@@ -78,7 +78,7 @@ export default function SettingsClientsPage() {
   const [clientForm, setClientForm] = useState({ name: '', email: '', contact_person: '', sales_planning_enabled: true, pr_tracking_enabled: false })
 
   // Game form
-  const [gameForm, setGameForm] = useState({ name: '', steam_app_id: '', client_id: '', sales_planning_enabled: true, pr_tracking_enabled: false, auto_base_product: true, launch_date: format(new Date(), 'yyyy-MM-dd'), auto_calendar: true })
+  const [gameForm, setGameForm] = useState({ name: '', steam_app_id: '', client_id: '', sales_planning_enabled: true, pr_tracking_enabled: false, pr_coverage_until: '', auto_base_product: true, launch_date: format(new Date(), 'yyyy-MM-dd'), auto_calendar: true })
   const [baseProductPlatformIds, setBaseProductPlatformIds] = useState<string[]>([])
 
   // Product form
@@ -224,6 +224,7 @@ export default function SettingsClientsPage() {
       name: '', steam_app_id: '', client_id: clientId,
       sales_planning_enabled: true,
       pr_tracking_enabled: client?.pr_tracking_enabled ?? false,
+      pr_coverage_until: '',
       auto_base_product: true,
       launch_date: format(new Date(), 'yyyy-MM-dd'),
       auto_calendar: true
@@ -232,11 +233,12 @@ export default function SettingsClientsPage() {
     setModalType('addGame')
   }
 
-  const openEditGame = (game: Game) => {
+  const openEditGame = (game: Game & { pr_coverage_until?: string | null }) => {
     setGameForm({
       name: game.name, steam_app_id: game.steam_app_id || '', client_id: game.client_id,
       sales_planning_enabled: game.sales_planning_enabled,
       pr_tracking_enabled: game.pr_tracking_enabled,
+      pr_coverage_until: game.pr_coverage_until || '',
       auto_base_product: false, launch_date: format(new Date(), 'yyyy-MM-dd'), auto_calendar: false
     })
     setModalTarget({ gameId: game.id })
@@ -256,7 +258,8 @@ export default function SettingsClientsPage() {
             client_id: gameForm.client_id,
             steam_app_id: gameForm.steam_app_id.trim() || null,
             sales_planning_enabled: gameForm.sales_planning_enabled,
-            pr_tracking_enabled: gameForm.pr_tracking_enabled
+            pr_tracking_enabled: gameForm.pr_tracking_enabled,
+            pr_coverage_until: gameForm.pr_coverage_until || null
           })
         })
         if (!res.ok) throw new Error('Failed to create game')
@@ -318,7 +321,8 @@ export default function SettingsClientsPage() {
             name: gameForm.name.trim(),
             steam_app_id: gameForm.steam_app_id.trim() || null,
             sales_planning_enabled: gameForm.sales_planning_enabled,
-            pr_tracking_enabled: gameForm.pr_tracking_enabled
+            pr_tracking_enabled: gameForm.pr_tracking_enabled,
+            pr_coverage_until: gameForm.pr_coverage_until || null
           })
         })
         if (!res.ok) throw new Error('Failed to update game')
@@ -1028,6 +1032,20 @@ export default function SettingsClientsPage() {
               </label>
               <p className={styles.checkboxHint}>Adds game name as keyword for coverage discovery</p>
             </div>
+
+            {gameForm.pr_tracking_enabled && (
+              <div className={styles.formField}>
+                <label>PR Coverage Until <span style={{ color: '#94a3b8', fontWeight: 'normal' }}>(optional)</span></label>
+                <input
+                  type="date"
+                  value={gameForm.pr_coverage_until}
+                  onChange={e => setGameForm({ ...gameForm, pr_coverage_until: e.target.value })}
+                  min={format(new Date(), 'yyyy-MM-dd')}
+                  max="2035-12-31"
+                />
+                <p className={styles.checkboxHint}>Auto-disables PR tracking when this date passes. Leave blank to keep tracking indefinitely.</p>
+              </div>
+            )}
 
             {modalType === 'addGame' && (
               <>

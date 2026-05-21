@@ -21,6 +21,8 @@ export default function KeywordsPage() {
   // Filters
   const [selectedClientId, setSelectedClientId] = useState('')
   const [selectedGameId, setSelectedGameId] = useState('')
+  // Q3: toggle to view global blacklist keywords (client_id=null, game_id=null)
+  const [showGlobalBlacklist, setShowGlobalBlacklist] = useState(false)
   const [typeFilter, setTypeFilter] = useState<'' | KeywordType>('')
 
   // Add keyword form
@@ -82,6 +84,19 @@ export default function KeywordsPage() {
 
   // Fetch keywords when filters change
   const fetchKeywords = useCallback(async () => {
+    // Q3: when global blacklist view is on, fetch globally-scoped blacklist keywords
+    if (showGlobalBlacklist) {
+      setIsLoading(true)
+      try {
+        const params = new URLSearchParams({ global: 'true', keyword_type: 'blacklist' })
+        const res = await fetch(`/api/coverage-keywords?${params}`)
+        if (res.ok) setKeywords(await res.json())
+      } catch (err) {
+        console.error('Failed to fetch global blacklist:', err)
+      }
+      setIsLoading(false)
+      return
+    }
     if (!selectedClientId || !selectedGameId) {
       setKeywords([])
       setIsLoading(false)
@@ -104,7 +119,7 @@ export default function KeywordsPage() {
       console.error('Failed to fetch keywords:', err)
     }
     setIsLoading(false)
-  }, [selectedClientId, selectedGameId, typeFilter])
+  }, [selectedClientId, selectedGameId, typeFilter, showGlobalBlacklist])
 
   useEffect(() => {
     if (canView) fetchKeywords()
@@ -358,6 +373,24 @@ export default function KeywordsPage() {
                 <option value="whitelist">Whitelist</option>
                 <option value="blacklist">Blacklist</option>
               </select>
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                View
+              </label>
+              <button
+                onClick={() => setShowGlobalBlacklist(v => !v)}
+                style={{
+                  padding: '8px 14px',
+                  border: `1px solid ${showGlobalBlacklist ? '#b8232f' : '#e2e8f0'}`,
+                  backgroundColor: showGlobalBlacklist ? '#fef2f2' : 'white',
+                  color: showGlobalBlacklist ? '#b8232f' : '#64748b',
+                  borderRadius: 6, fontSize: 13, cursor: 'pointer', fontWeight: 600
+                }}
+                title="Show global blacklist keywords (applied across all clients/games)"
+              >
+                {showGlobalBlacklist ? '✓ Global Blacklist' : 'Global Blacklist'}
+              </button>
             </div>
           </div>
 

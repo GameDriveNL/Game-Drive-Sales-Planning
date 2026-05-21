@@ -21,6 +21,9 @@ export async function GET(request: NextRequest) {
     const clientId = searchParams.get('client_id')
     const gameId = searchParams.get('game_id')
     const keywordType = searchParams.get('keyword_type')
+    // Q3: support fetching globally-scoped keywords (client_id IS NULL, game_id IS NULL)
+    // for surfacing the default blacklist defaults
+    const globalOnly = searchParams.get('global') === 'true'
 
     let query = supabase
       .from('coverage_keywords')
@@ -28,8 +31,12 @@ export async function GET(request: NextRequest) {
       .order('keyword_type', { ascending: true })
       .order('keyword', { ascending: true })
 
-    if (clientId) query = query.eq('client_id', clientId)
-    if (gameId) query = query.eq('game_id', gameId)
+    if (globalOnly) {
+      query = query.is('client_id', null).is('game_id', null)
+    } else {
+      if (clientId) query = query.eq('client_id', clientId)
+      if (gameId) query = query.eq('game_id', gameId)
+    }
     if (keywordType) query = query.eq('keyword_type', keywordType)
 
     const { data, error } = await query

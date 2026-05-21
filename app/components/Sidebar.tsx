@@ -66,7 +66,8 @@ export function Sidebar() {
     },
     {
       name: 'PR Coverage',
-      href: '/coverage/feed',
+      // B31: default opening tab = Dashboard (per Stephanie's request)
+      href: '/coverage/dashboard',
       feature: 'pr_coverage',
       icon: (
         <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -138,8 +139,8 @@ export function Sidebar() {
         {/* Main navigation */}
         <nav className={collapsed ? styles.navCollapsed : styles.nav}>
           {visibleNavItems.map((item) => {
-            // For coverage, match all /coverage/* routes
-            const matchPath = item.href === '/coverage/feed' ? '/coverage' : item.href
+            // For coverage, match all /coverage/* routes (any subroute keeps the nav highlighted)
+            const matchPath = item.href.startsWith('/coverage') ? '/coverage' : item.href
             const isActive = matchPath === '/'
               ? pathname === '/'
               : pathname.startsWith(matchPath)

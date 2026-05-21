@@ -315,9 +315,37 @@ export default function GapAnalysis({ sales, products, platforms, timelineStart,
       {isExpanded && (
         <div className={styles.content}>
           <p className={styles.description}>
-            Shows periods where you <strong>could</strong> run a sale but aren&apos;t. 
+            Shows periods where you <strong>could</strong> run a sale but aren&apos;t.
             Excludes cooldown periods where sales aren&apos;t possible.
           </p>
+
+          {/* D8 follow-up: per-user platform overrides for gap analysis */}
+          <details style={{ marginBottom: 12 }}>
+            <summary style={{ cursor: 'pointer', fontSize: 12, color: '#64748b', fontWeight: 500 }}>
+              ⚙️ Show gap analysis for these platforms
+            </summary>
+            <div style={{ marginTop: 8, padding: 12, background: '#f8fafc', borderRadius: 6, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 6 }}>
+              {platforms.map(p => {
+                const effective = isGapAnalysisOnForPlatform(p)
+                const dbDefault = p.show_gap_analysis !== false
+                const hasUserOverride = platformOverrides[p.id] !== undefined
+                return (
+                  <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={effective}
+                      onChange={e => setOverride(p.id, e.target.checked)}
+                    />
+                    <span style={{ color: effective ? '#0f172a' : '#94a3b8' }}>
+                      {p.name}
+                      {hasUserOverride && <span style={{ color: '#b8232f', marginLeft: 4 }} title="Override active">★</span>}
+                      {!dbDefault && !hasUserOverride && <span style={{ color: '#94a3b8', marginLeft: 4, fontSize: 10 }}>(default off)</span>}
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+          </details>
           
           <div className={styles.filters}>
             <div className={styles.filterGroup}>

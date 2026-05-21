@@ -146,7 +146,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { name, client_id, steam_app_id, pr_tracking_enabled } = body
+    const { name, client_id, steam_app_id, pr_tracking_enabled, pr_coverage_until } = body
 
     if (!name || !client_id) {
       return NextResponse.json(
@@ -161,7 +161,8 @@ export async function POST(request: Request) {
         name,
         client_id,
         steam_app_id: steam_app_id || null,
-        pr_tracking_enabled: pr_tracking_enabled ?? false
+        pr_tracking_enabled: pr_tracking_enabled ?? false,
+        pr_coverage_until: pr_coverage_until || null
       })
       .select('*, client:clients(id, name)')
       .single()

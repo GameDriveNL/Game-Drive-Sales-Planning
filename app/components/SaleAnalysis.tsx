@@ -97,9 +97,26 @@ export default function SaleAnalysis({ sales, platforms }: SaleAnalysisProps) {
   }, [sales, platforms])
 
   if (!stats) {
+    // B18: more helpful empty state — surface the actual filter context so user
+    // can see WHY it's empty (likely a too-narrow client/game filter) rather
+    // than a generic "no data" message
     return (
       <div className={styles.container}>
-        <div className={styles.empty}>No sales data to analyze. Add sales to see analysis.</div>
+        <div className={styles.empty} style={{ padding: 24 }}>
+          <p style={{ marginBottom: 12, color: '#1e293b', fontWeight: 600 }}>No sales match the current filter</p>
+          <p style={{ marginBottom: 8, fontSize: 13, color: '#64748b' }}>
+            The Sales Analysis is empty because no sales were passed to the view. Common reasons:
+          </p>
+          <ul style={{ marginLeft: 20, fontSize: 13, color: '#64748b', lineHeight: 1.7 }}>
+            <li>Client / Game / Product filter is set too narrowly — clear it at the top of the page</li>
+            <li>Platform filter excludes all platforms — check the Platforms expander</li>
+            <li>You&apos;re viewing a Saved Version with no sales — exit version view via &quot;Versions&quot;</li>
+            <li>The product has no sales recorded yet — add one via &quot;+ Add Sale&quot;</li>
+          </ul>
+          <p style={{ marginTop: 12, fontSize: 11, color: '#94a3b8' }}>
+            (For debug: <code>{platforms.length}</code> platforms, <code>{sales.length}</code> sales received)
+          </p>
+        </div>
       </div>
     )
   }
