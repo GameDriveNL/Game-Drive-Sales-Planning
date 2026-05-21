@@ -271,14 +271,49 @@ For non-sale periods comparison and bulk "choose periods to compare" UI, the exi
 
 ### Scraping picks up only 30% of manually-found coverage
 
-**Status:** ✅ Documented — see `docs/PR_SCRAPING_RECALL_GAP.md`
-**Finding:** A 100% match isn't achievable via title-keyword scraping. Documented bucket breakdown:
-1. **YouTube videos without game name in title** — fundamentally unfixable via title match; requires channel monitoring (the Apify YouTube Channel Scraper actor supports this)
-2. **Translated / oblique press** — fixable by expanding the per-game whitelist with translated forms + studio-level queries
-3. **Long-tail outlets we don't know about** — fixable by Stephanie adding outlets to the registry (CSV import already exists) every time she finds one manually
-4. **Social posts without external URLs** — already partially handled by Apify; tuning via per-source-type relevance thresholds
+**Status:** ✅ Aggressive recall fixes shipped (was: documented-only)
 
-Stephanie referenced "Pixel Maniacs" — if that tool exposes a list of creator-game associations, **importing that list and running channel monitoring against it** is the most efficient path forward. Documented as the recommended next step.
+**Root cause diagnosis:**
+- **Most games had only 1 whitelist keyword** (game name) — studio names, slugs, and alt-names weren't being tracked, so press that mentioned the studio without the game (or vice versa) was invisible
+- **Tavily was rate-limited** to 2 queries/source, only 1 at advanced depth
+- **Auto-reject threshold** (relevance score <50) was silently dropping borderline items before they reached the review queue
+- **Tavily source missing from autoEnroll** — only created via manual setup
+
+**Fixes shipped (commit `543f9fe`):**
+
+1. **Auto-keyword expansion** — `autoEnrollGameInScrapers` now generates per game:
+   - game name, no-space form, slug-form (`shapez 2` → `shapez 2`, `shapez2`, `shapez-2`)
+   - **studio (client) name** — catches studio-level press
+   All variants get inserted into `coverage_keywords` AND into every scanner's `config.keywords`. Tavily source is now created automatically.
+
+2. **Tavily query expansion** — `tavily-scan` now pulls ALL whitelist variants from `coverage_keywords` and runs each as a standalone search query (instead of concatenating). Each variant gets its own Tavily call → significantly more coverage angles.
+
+3. **Tavily aggressive config:**
+   - Queries per source: 2 → **4**
+   - Search depth: only-primary-advanced → **all queries advanced**
+   - Results per query: 20→**25**
+   - Per-source budget: 20s with 270s overall (was 45s overall)
+   - `maxDuration`: 60s → 300s
+
+4. **Auto-reject threshold lowered:** `coverage-enrich` was rejecting items with score < 50. Now rejects only < 30 — items 30-79 go to `pending_review` for Stephanie to triage. Auto-approve stays at ≥80 to keep the curated feed clean.
+
+5. **Backfill on existing games (5 PR-tracked games):**
+   - Added studio names: Skunx Entertainment, BlackMill Games, tobspr Games, Total Mayhem Games, Leyline
+   - Added slug variants: `rift-reborn`, `wwh-tomorrow`, `dark-pals-the-1st-floor`, `shapez-2`
+   - Verified post-backfill keyword counts: was 1-2 per game → now 2-5 per game
+
+**Cost impact:**
+- Tavily: ~2-3x per run (4 advanced queries vs 1 advanced + 1 basic). Estimated $40-80/mo vs prior $20-40
+- Gemini: more pending-review items = more classify calls, but free tier covers 15K/mo
+- Visible in the new `/settings/api-usage` page
+
+**Expected recall lift:** 33% → 60-70% based on the variant coverage gain. The remaining gap is structural (YouTube videos without game name in title — see follow-up below).
+
+**Still requires follow-up for full closure:**
+- **YouTube channel monitoring** — for known creators (the "Pixel Maniacs" angle), scrape their uploads regardless of video title. Schema would need a `trusted_creators` table linked to clients; Apify YouTube Channel Scraper actor handles the scrape. Not yet built.
+- **Translated keyword variants** — if a game is covered in Japanese/Chinese/Russian gaming press that doesn't translate the game name, those would still be missed unless the user manually adds translations to the keyword set.
+
+See `docs/PR_SCRAPING_RECALL_GAP.md` for full root-cause analysis.
 
 ---
 
