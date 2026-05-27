@@ -72,13 +72,20 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ message: 'No keywords configured' })
     }
 
-    // Group keywords by client+game — combine into single search query
-    const searchTerms: Map<string, { query: string; clientId: string; gameId: string | null }> = new Map()
+    // Group ALL keyword variants per client+game. The Apify YouTube actor accepts
+    // searchQueries as an array — passing multiple variants in one run is roughly
+    // the same Apify cost as one run with maxResults×N but yields much higher
+    // recall because creator vids title in many ways (full title, short form,
+    // genre tag, creator handle). The first-keyword-wins logic that was here
+    // previously is the single biggest reason YouTube recall lags Reddit/Twitter
+    // (which already iterate `keywordGroups.keywords.slice(0, 5)`).
+    const searchTerms: Map<string, { queries: string[]; clientId: string; gameId: string | null }> = new Map()
     for (const kw of keywords) {
       const key = `${kw.client_id}|${kw.game_id || ''}`
       if (!searchTerms.has(key)) {
-        searchTerms.set(key, { query: kw.keyword, clientId: kw.client_id, gameId: kw.game_id })
+        searchTerms.set(key, { queries: [], clientId: kw.client_id, gameId: kw.game_id })
       }
+      searchTerms.get(key)!.queries.push(kw.keyword)
     }
 
     let totalFound = 0
@@ -94,9 +101,12 @@ export async function GET(request: NextRequest) {
         }
 
         // Run Apify YouTube scraper actor synchronously
-        // Uses verified input schema from streamers~youtube-scraper
+        // Uses verified input schema from streamers~youtube-scraper.
+        // Cap variants at 4 — past that the marginal recall is low and Apify
+        // call cost scales linearly per searchQueries entry.
+        const queries = term.queries.slice(0, 4)
         const input = {
-          searchQueries: [term.query],
+          searchQueries: queries,
           maxResults: 10,
           maxResultStreams: 0,
           maxResultsShorts: 0,
@@ -116,7 +126,7 @@ export async function GET(request: NextRequest) {
         )
 
         if (!actorRes.ok) {
-          console.error(`Apify YouTube actor error for "${term.query}": ${actorRes.status}`)
+          console.error(`Apify YouTube actor error for [${queries.join(', ')}]: ${actorRes.status}`)
           await logApifyRun(supabase, {
             scanner: 'youtube-scan', actor_id: APIFY_YOUTUBE_ACTOR, input,
             results_count: null, http_status: actorRes.status, ok: false, error: `HTTP ${actorRes.status}`,
@@ -240,7 +250,7 @@ export async function GET(request: NextRequest) {
           }
         }
       } catch (err) {
-        console.error(`YouTube Apify scan error for "${term.query}":`, err)
+        console.error(`YouTube Apify scan error for game ${term.gameId}:`, err)
         // Update matching coverage_source with failure status
         if (ytSources) {
           const matchingSrc = ytSources.find(s => s.game_id === term.gameId)

@@ -174,7 +174,18 @@ export async function GET(request: Request) {
       return NextResponse.json({ message: 'No active Tavily sources', stats: { scanned: 0, auto_provisioned: autoProvisioned } })
     }
 
-    const dueForScan = (sources as CoverageSource[]).filter(shouldScanNow)
+    // Sort least-recently-scanned first (NULL last_run_at = never scanned, highest priority).
+    // Without this, slice(0, 8) below deterministically picked the same 8 oldest sources every
+    // run, starving newer ones — 11 of 26 active Tavily sources had last_run_at: null because
+    // they always lost the batch race to longer-tenured rows.
+    const dueForScan = (sources as CoverageSource[])
+      .filter(shouldScanNow)
+      .sort((a, b) => {
+        if (!a.last_run_at && !b.last_run_at) return 0
+        if (!a.last_run_at) return -1
+        if (!b.last_run_at) return 1
+        return new Date(a.last_run_at).getTime() - new Date(b.last_run_at).getTime()
+      })
 
     if (dueForScan.length === 0) {
       return NextResponse.json({
