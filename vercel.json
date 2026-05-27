@@ -67,6 +67,10 @@
     {
       "path": "/api/cron/coverage-auto-disable",
       "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/apify-deep-scan-orchestrator",
+      "schedule": "0 5 * * *"
     }
   ],
   "buildCommand": "next build"

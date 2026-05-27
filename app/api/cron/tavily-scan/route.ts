@@ -8,6 +8,7 @@ import { matchGameFromContent, classifyCoverageType } from '@/lib/coverage-utils
 import { autoDiscoverAndCreateRssSource } from '@/lib/rss-discovery'
 import { verifyCronAuth } from '@/lib/cron-auth'
 import { generateLanguageQueries } from '@/lib/keyword-variants'
+import { seedOutletAcrossGames } from '@/lib/cross-game-outlet-seed'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -247,8 +248,10 @@ export async function GET(request: Request) {
       errors: [] as string[]
     }
 
-    // Track newly created outlets for RSS discovery at the end
-    const newOutlets: Array<{ id: string; domain: string; name: string }> = []
+    // Track newly created outlets for RSS discovery + cross-game seeding at the end.
+    // originatingGameId tells the cross-seeder which game already covered this outlet
+    // so it doesn't waste a query re-finding it.
+    const newOutlets: Array<{ id: string; domain: string; name: string; originatingGameId: string | null }> = []
 
     // Process up to 8 sources per cron run
     const batch = dueForScan.slice(0, 8)
@@ -439,9 +442,14 @@ export async function GET(request: Request) {
                       .single()
                     if (newOutlet) {
                       outletId = newOutlet.id
-                      // Track for RSS auto-discovery at end of scan
+                      // Track for RSS auto-discovery + cross-game seeding at end of scan
                       if (!newOutlets.some(o => o.domain === resultDomain)) {
-                        newOutlets.push({ id: newOutlet.id, domain: resultDomain, name: outletName })
+                        newOutlets.push({
+                          id: newOutlet.id,
+                          domain: resultDomain,
+                          name: outletName,
+                          originatingGameId: source.game_id,
+                        })
                       }
                     }
                   }
@@ -547,6 +555,7 @@ export async function GET(request: Request) {
 
     // 8. Auto-discover RSS feeds for newly created outlets (non-blocking)
     // Run in background — don't hold up the response
+    let crossSeedNewItems = 0
     if (newOutlets.length > 0) {
       const rssPromises = newOutlets.slice(0, 5).map(async (outlet) => {
         try {
@@ -566,7 +575,32 @@ export async function GET(request: Request) {
       if (stats.rss_discovered > 0) {
         console.log(`[Tavily Scan] Auto-discovered ${stats.rss_discovered} RSS feeds from ${newOutlets.length} new outlets`)
       }
+
+      // 9. Cross-game outlet seeding: each newly-discovered outlet might cover
+      // other PR-tracked games too. Run one targeted Tavily site: query per
+      // (outlet × other_game) pair so a single discovery multiplies across
+      // the portfolio. Cap to top 3 outlets per scan to bound cost.
+      if (keyData?.api_key && (Date.now() - startTime) < 240000) {
+        const seedPromises = newOutlets.slice(0, 3).map(o =>
+          seedOutletAcrossGames(supabase, o.id, o.domain, o.originatingGameId, keyData.api_key)
+            .catch(err => {
+              console.warn(`[Tavily Scan] Cross-game seed failed for ${o.domain}:`, err)
+              return { total_new_items: 0 }
+            })
+        )
+        const seedResults = await Promise.race([
+          Promise.all(seedPromises),
+          new Promise<Array<{ total_new_items: number }>>(resolve => setTimeout(() => resolve([]), 60000))
+        ])
+        for (const r of (seedResults as Array<{ total_new_items: number }>)) {
+          crossSeedNewItems += r.total_new_items || 0
+        }
+        if (crossSeedNewItems > 0) {
+          console.log(`[Tavily Scan] Cross-game seeding: +${crossSeedNewItems} items across other PR-tracked games`)
+        }
+      }
     }
+    stats.items_inserted += crossSeedNewItems
 
     const duration = Date.now() - startTime
     return NextResponse.json({

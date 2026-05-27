@@ -11,6 +11,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { generateVariants, defaultSubredditsForGame } from './keyword-variants'
+import { detectGenres, outletsForGenres } from './genre-outlet-bank'
 
 export interface AutoEnrollResult {
   game_id: string
@@ -21,7 +22,89 @@ export interface AutoEnrollResult {
   inserted_types: string[]
   refreshed_types: string[]
   new_keywords: number
+  genres: string[]
+  genre_outlets_subscribed: string[]
   trace: Array<{ value: string; kind: 'deterministic' | 'tavily' }>
+}
+
+/**
+ * Upsert outlet + ensure RSS coverage_source for each entry in the genre bank.
+ * Returns the domains we actually subscribed to (skipping any where the outlet
+ * already had an RSS source).
+ */
+async function subscribeGenreOutlets(
+  db: SupabaseClient,
+  gameName: string,
+  contextText: string | null
+): Promise<{ genres: string[]; subscribed: string[] }> {
+  const genres = detectGenres(`${gameName} ${contextText || ''}`)
+  if (genres.length === 0) return { genres, subscribed: [] }
+
+  const subscribed: string[] = []
+  const outlets = outletsForGenres(genres)
+
+  for (const entry of outlets) {
+    // Upsert outlet by domain
+    const { data: existing } = await db
+      .from('outlets')
+      .select('id, rss_feed_url')
+      .eq('domain', entry.domain)
+      .maybeSingle()
+
+    let outletId: string | undefined = existing?.id
+    if (!outletId) {
+      const { data: inserted, error: insErr } = await db
+        .from('outlets')
+        .insert({
+          name: entry.name,
+          domain: entry.domain,
+          country: entry.country,
+          monthly_unique_visitors: entry.monthly_unique_visitors,
+          tier: entry.tier,
+          rss_feed_url: entry.rss_feed_url,
+          is_active: true,
+        })
+        .select('id')
+        .single()
+      if (insErr) {
+        console.error(`[genre-bank] Outlet upsert failed for ${entry.domain}:`, insErr.message)
+        continue
+      }
+      outletId = inserted.id
+    } else if (entry.rss_feed_url && !existing?.rss_feed_url) {
+      // Backfill rss_feed_url if the outlet exists but is missing it.
+      await db.from('outlets').update({ rss_feed_url: entry.rss_feed_url, updated_at: new Date().toISOString() }).eq('id', outletId)
+    }
+
+    if (!outletId || !entry.rss_feed_url) continue
+
+    // Subscribe RSS coverage_source if not already present.
+    const { data: existingSrc } = await db
+      .from('coverage_sources')
+      .select('id')
+      .eq('outlet_id', outletId)
+      .eq('source_type', 'rss')
+      .maybeSingle()
+    if (existingSrc) continue
+
+    const { error: srcErr } = await db
+      .from('coverage_sources')
+      .insert({
+        source_type: 'rss',
+        name: `${entry.name} RSS`,
+        config: { url: entry.rss_feed_url },
+        outlet_id: outletId,
+        scan_frequency: 'daily',
+        is_active: true,
+      })
+    if (!srcErr) subscribed.push(entry.domain)
+    else console.error(`[genre-bank] RSS source insert failed for ${entry.domain}:`, srcErr.message)
+  }
+
+  if (subscribed.length > 0) {
+    console.log(`[genre-bank] Subscribed ${subscribed.length} genre outlets (${genres.join(',')}): ${subscribed.join(', ')}`)
+  }
+  return { genres, subscribed }
 }
 
 interface SourceSpec {
@@ -193,10 +276,17 @@ export async function autoEnrollGameInScrapers(
     }
   }
 
+  // Subscribe to genre-relevant outlets (e.g. Bloody Disgusting, Rely on
+  // Horror for horror games). This pre-seeds outlets we know cover the
+  // genre so we don't wait for organic discovery via Tavily — a major
+  // shortcut to "what would a human do" thinking.
+  const genreSub = await subscribeGenreOutlets(db, gameName, /* contextText */ null)
+
   console.log(
     `[auto-enroll] ${mode === 'refresh' ? 'Refreshed' : 'Enrolled'} "${gameName}": ` +
     `inserted ${insertedTypes.length}, refreshed ${refreshedTypes.length}, ` +
-    `+${newKeywords} keywords from ${searchKeywords.length} variants`
+    `+${newKeywords} keywords from ${searchKeywords.length} variants, ` +
+    `genre outlets +${genreSub.subscribed.length} (genres: ${genreSub.genres.join(',') || 'none'})`
   )
 
   return {
@@ -208,6 +298,8 @@ export async function autoEnrollGameInScrapers(
     inserted_types: insertedTypes,
     refreshed_types: refreshedTypes,
     new_keywords: newKeywords,
+    genres: genreSub.genres,
+    genre_outlets_subscribed: genreSub.subscribed,
     trace: variantResult.trace,
   }
 }
