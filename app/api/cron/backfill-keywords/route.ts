@@ -1,13 +1,14 @@
 /**
- * POST /api/admin/backfill-keywords
+ * POST /api/cron/backfill-keywords
  *
  * Re-runs autoEnrollGameInScrapers in 'refresh' mode against every PR-tracked
  * game. Used to retrofit games created before the Tavily-driven variant
  * generator existed (e.g. Dark Pals, Verdun, Tannenberg) so their source
  * configs and coverage_keywords get the richer variant set.
  *
- * Auth: same Bearer CRON_SECRET as the cron endpoints. This is a manual admin
- * operation, not a scheduled cron, but the auth model matches.
+ * Lives under /api/cron because that prefix is whitelisted by the Supabase
+ * auth middleware and uses Bearer CRON_SECRET — same auth model as scheduled
+ * crons. Not actually on a schedule in vercel.json — it's a manual trigger.
  *
  * Body (optional JSON):
  *   { game_id?: string }   — backfill a single game instead of all PR-tracked

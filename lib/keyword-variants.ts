@@ -253,7 +253,7 @@ export async function generateVariants(
       const studioTokens = new Set(
         (input.studioName || '').toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length >= 4 && !STOP_WORDS.has(t))
       )
-      const allTokens = new Set([...gameTokens, ...studioTokens])
+      const allTokens = new Set([...Array.from(gameTokens), ...Array.from(studioTokens)])
       const sharesToken = (phrase: string) =>
         phrase.toLowerCase().split(/[^a-z0-9]+/).some(t => allTokens.has(t))
 
