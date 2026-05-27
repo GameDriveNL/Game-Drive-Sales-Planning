@@ -37,45 +37,48 @@ function determineApprovalStatus(score: number): string {
   return 'rejected'
 }
 
-// Generate comprehensive search queries for historical backfill
+// Generate comprehensive search queries for historical backfill.
+//
+// Ordering matters because max_queries caps at 30. High-value queries (the
+// game name, all variants, language-aware TLD filters) go first; the
+// hand-rolled platform/event hints that mostly return duplicates of what
+// the base queries already found go last.
 function generateBackfillQueries(gameName: string, extraKeywords: string[]): string[] {
   const queries: string[] = []
 
-  // Core game name queries
+  // 1. Core identifier — always
   queries.push(gameName)
   queries.push(`"${gameName}"`) // exact match
+
+  // 2. Keyword variants (each variant gets one query — the quoted form rarely
+  // adds new results once Tavily has the unquoted one).
+  for (const kw of extraKeywords) {
+    if (kw.toLowerCase() !== gameName.toLowerCase()) {
+      queries.push(kw)
+    }
+  }
+
+  // 3. Language-aware queries — empirically these unlocked +52 new items for
+  // Dark Pals in one production run (.nl=14, .jp=19, .de=19). Run BEFORE the
+  // hand-rolled augments below because their delta-per-query is much higher.
+  for (const lq of generateLanguageQueries(gameName)) queries.push(lq)
+
+  // 4. Editorial-style augments — useful but high overlap with #1, so they
+  // come last and absorb whatever query budget remains.
+  queries.push(`${gameName} review`)
+  queries.push(`${gameName} demo`)
   queries.push(`${gameName} announcement`)
   queries.push(`${gameName} reveal`)
   queries.push(`${gameName} trailer`)
   queries.push(`${gameName} release date`)
   queries.push(`${gameName} preview`)
-  queries.push(`${gameName} review`)
   queries.push(`${gameName} news`)
-  queries.push(`${gameName} game`)
-
-  // Platform-specific queries
+  queries.push(`${gameName} gameplay`)
+  queries.push(`${gameName} showcase`)
   queries.push(`${gameName} Steam`)
   queries.push(`${gameName} PlayStation`)
   queries.push(`${gameName} Xbox`)
   queries.push(`${gameName} Nintendo Switch`)
-
-  // Event-specific queries
-  queries.push(`${gameName} showcase`)
-  queries.push(`${gameName} demo`)
-  queries.push(`${gameName} gameplay`)
-
-  // Extra keywords from source config or game aliases
-  for (const kw of extraKeywords) {
-    if (kw.toLowerCase() !== gameName.toLowerCase()) {
-      queries.push(kw)
-      queries.push(`"${kw}"`)
-    }
-  }
-
-  // Language-aware queries: unlocks localized editorial (NL/JP/DE/BR/FR/AR/ES/UK)
-  // that English-only queries miss. Empirically critical — Dark Pals' missing
-  // editorial misses dropped from 14 → 6 once these were included.
-  for (const lq of generateLanguageQueries(gameName)) queries.push(lq)
 
   // Deduplicate
   const seen = new Set<string>()
