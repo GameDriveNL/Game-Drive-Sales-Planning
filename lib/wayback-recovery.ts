@@ -51,13 +51,16 @@ function toCdxDate(input: string | undefined, fallbackDaysAgo: number): string {
  */
 export async function cdxSearch(opts: CdxQueryOpts): Promise<WaybackHit[]> {
   const url = new URL('https://web.archive.org/cdx/search/cdx')
-  url.searchParams.set('url', `*.${opts.domain}/*`)
+  // matchType=domain with a bare domain (no /*) covers any path under it.
+  // searchParams.append used for `filter` because CDX accepts multiple filter
+  // params and Node's URL.set would overwrite.
+  url.searchParams.set('url', opts.domain)
   url.searchParams.set('matchType', 'domain')
   url.searchParams.set('output', 'json')
   url.searchParams.set('fl', 'original,timestamp,statuscode')
   url.searchParams.set('collapse', 'urlkey')
-  url.searchParams.set('filter', `statuscode:200`)
-  url.searchParams.set('filter', `urlkey:.*${opts.urlFilter.toLowerCase()}.*`)
+  url.searchParams.append('filter', 'statuscode:200')
+  url.searchParams.append('filter', `urlkey:.*${opts.urlFilter.toLowerCase()}.*`)
   url.searchParams.set('from', toCdxDate(opts.from, 90))
   url.searchParams.set('to', toCdxDate(opts.to, 0))
   url.searchParams.set('limit', String(opts.limit ?? 50))
@@ -116,16 +119,19 @@ function normalizeUrl(url: string): string {
 }
 
 /**
- * Build a URL-substring filter from the game name. Lowercase, replace
- * spaces and punctuation with '.' (CDX URL keys are alpha-numeric with
- * separators). e.g. "Dark Pals: The 1st Floor" → "dark.pals"
+ * Build a URL-substring filter from the game name. CDX urlkeys are the
+ * reversed-host plus path, preserving the hyphens that outlet SEO slugs
+ * use. So we want a slug-style filter ("dark-pals") that matches the
+ * outlets' typical /year/month/dark-pals-the-1st-floor URL structure.
+ *
+ * Strip stop words and join the two longest tokens with '-'.
  */
 function gameNameToCdxFilter(gameName: string): string {
   return gameName.toLowerCase()
-    .split(/\s+|:/)
-    .filter(t => t.length >= 4 && !/^(the|and|of|in|on|for)$/.test(t))
+    .split(/[^a-z0-9]+/)
+    .filter(t => t.length >= 4 && !/^(the|and|for|with|game|review)$/.test(t))
     .slice(0, 2)
-    .join('.')
+    .join('-')
 }
 
 export async function recoverGameFromWayback(
