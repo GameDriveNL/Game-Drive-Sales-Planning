@@ -61,19 +61,19 @@ function buildSourceSpecs(
       source_type: 'twitter',
       name: `Twitter – ${gameName}`,
       scan_frequency: 'daily',
-      config: { keywords: searchKeywords, handles: [], min_followers: 500 },
+      config: { keywords: searchKeywords, handles: [], min_followers: 100 },
     },
     {
       source_type: 'tiktok',
       name: `TikTok – ${gameName}`,
       scan_frequency: 'daily',
-      config: { keywords: searchKeywords, hashtags, profiles: [], min_followers: 500 },
+      config: { keywords: searchKeywords, hashtags, profiles: [], min_followers: 100 },
     },
     {
       source_type: 'instagram',
       name: `Instagram – ${gameName}`,
       scan_frequency: 'daily',
-      config: { keywords: searchKeywords, hashtags, min_followers: 500 },
+      config: { keywords: searchKeywords, hashtags, min_followers: 100 },
     },
     {
       source_type: 'tavily',

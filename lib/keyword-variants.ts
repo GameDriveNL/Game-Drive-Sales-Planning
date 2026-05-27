@@ -292,6 +292,39 @@ export async function generateVariants(
 }
 
 /**
+ * Generate language-aware Tavily query candidates for a game.
+ *
+ * Empirical finding: Tavily returns mostly English-language results for plain
+ * English queries. Adding TLD filters or localized noun hints unlocks editorial
+ * coverage on NL/JP/DE/BR/FR/AR/UK outlets that the system otherwise misses.
+ *
+ * For Dark Pals specifically, probing surfaced 6 of 14 missed localized
+ * editorial URLs through these queries that were unreachable through any
+ * variant-only query.
+ *
+ * Returns a small ordered list — caller should rotate or sample so the cost
+ * stays bounded while coverage rotates across territories over time.
+ */
+export function generateLanguageQueries(gameName: string): string[] {
+  const exact = `"${gameName}"`
+  return [
+    `${exact} site:.nl`,
+    `${exact} site:.jp`,
+    `${exact} site:.de`,
+    `${exact} site:.fr`,
+    `${exact} site:.br`,
+    `${exact} site:.es`,
+    `${exact} site:.uk`,
+    `${gameName} jeu horror`,           // FR
+    `${gameName} Spiel horror`,         // DE
+    `${gameName} jogo horror`,          // PT-BR
+    `${gameName} juego horror`,         // ES
+    `${gameName} ホラー`,                // JP (horror)
+    `${gameName} Nederlandse`,          // NL ("Dutch" — picks up local press)
+  ]
+}
+
+/**
  * Subreddit defaults by inferred genre. Used when no organically-discovered
  * subreddits are available. The base list (gaming/pcgaming/indiegaming) is
  * always included; genre additions stack on top.

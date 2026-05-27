@@ -3,6 +3,7 @@ import { getServerSupabase } from '@/lib/supabase'
 import { tavily } from '@tavily/core'
 import { inferTerritory } from '@/lib/territory'
 import { classifyCoverageType } from '@/lib/coverage-utils'
+import { generateLanguageQueries } from '@/lib/keyword-variants'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -70,6 +71,11 @@ function generateBackfillQueries(gameName: string, extraKeywords: string[]): str
       queries.push(`"${kw}"`)
     }
   }
+
+  // Language-aware queries: unlocks localized editorial (NL/JP/DE/BR/FR/AR/ES/UK)
+  // that English-only queries miss. Empirically critical — Dark Pals' missing
+  // editorial misses dropped from 14 → 6 once these were included.
+  for (const lq of generateLanguageQueries(gameName)) queries.push(lq)
 
   // Deduplicate
   const seen = new Set<string>()

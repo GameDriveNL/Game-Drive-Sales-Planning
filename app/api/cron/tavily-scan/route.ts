@@ -7,6 +7,7 @@ import { detectOutletCountry } from '@/lib/outlet-country'
 import { matchGameFromContent, classifyCoverageType } from '@/lib/coverage-utils'
 import { autoDiscoverAndCreateRssSource } from '@/lib/rss-discovery'
 import { verifyCronAuth } from '@/lib/cron-auth'
+import { generateLanguageQueries } from '@/lib/keyword-variants'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -295,6 +296,19 @@ export async function GET(request: Request) {
             }
             // Each term as its own search query — Tavily handles synonym/related-term retrieval per query
             Array.from(queryTerms).forEach(term => searchQueries.push(term))
+
+            // Recall boost: add one language-aware query per run, rotating
+            // across TLD/language candidates by day-of-year so editorial
+            // coverage on non-English outlets (NL/JP/DE/BR/FR/AR) gets
+            // surfaced over the course of ~2 weeks without busting the
+            // 4-queries-per-source budget. Empirically these queries
+            // unlocked 6/14 missed editorial URLs for Dark Pals.
+            const langQueries = generateLanguageQueries(game.name)
+            const dayOfYear = Math.floor(
+              (Date.now() - new Date(new Date().getUTCFullYear(), 0, 0).getTime()) / 86400000
+            )
+            const rotatedLangQuery = langQueries[dayOfYear % langQueries.length]
+            searchQueries.push(rotatedLangQuery)
           }
         } else if (sourceKeywords.length > 0) {
           // No game linked — use keywords directly
