@@ -38,6 +38,39 @@ const STOP_WORDS = new Set([
   'release', 'announcement', 'announces', 'reveals', 'reveal', 'launch', 'launches',
 ])
 
+/**
+ * Phrases that recur on storefront/aggregator pages but have zero discriminating
+ * power. Without this filter, Steam's "All Reviews / Very Positive" UI strings
+ * and IGN's "Official Trailer" boilerplate get scored as high-frequency n-grams
+ * and added as keyword variants — they'd match every Steam page on the web.
+ */
+const NOISE_PHRASES = new Set([
+  'all reviews',
+  'very positive',
+  'mostly positive',
+  'mostly negative',
+  'mixed reviews',
+  'overwhelmingly positive',
+  'official trailer',
+  'official gameplay',
+  'official reveal',
+  'release date',
+  'steam store',
+  'steam community',
+  'steam news',
+  'steam next fest',
+  'add to wishlist',
+  'add to cart',
+  'youtube channel',
+  'video games',
+  'pc gaming',
+  'play online',
+  'free demo',
+  'coming soon',
+  'available now',
+  'early access',
+])
+
 const GENERIC_TITLE_FRAGMENTS = [
   /– IGN.*$/i,
   /- IGN.*$/i,
@@ -131,6 +164,8 @@ function extractNgrams(texts: string[], gameName: string): Map<string, number> {
       if (lower.length < 6) continue
       // Skip pure generic descriptors
       if (/^(official|new|the|a|an)\s/.test(lower)) continue
+      // Skip storefront/aggregator boilerplate that's common but useless.
+      if (NOISE_PHRASES.has(lower)) continue
       ngrams.set(phrase, (ngrams.get(phrase) || 0) + 1)
     }
   }
@@ -206,9 +241,25 @@ export async function generateVariants(
       if (input.contextText) titles.push(input.contextText)
 
       const ngrams = extractNgrams(titles, input.gameName)
-      // Take ngrams seen ≥2 times — single occurrences are noise.
+
+      // Only keep ngrams that share a meaningful token with the game name or
+      // studio name. Without this, frequent co-occurring genre terms ("Mascot
+      // Horror Game", "Psychological Horror Game") and competing games ("Poppy
+      // Playtime") get promoted to search queries — wasting Apify/Tavily budget
+      // on broad searches that return unrelated coverage.
+      const gameTokens = new Set(
+        input.gameName.toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length >= 4 && !STOP_WORDS.has(t))
+      )
+      const studioTokens = new Set(
+        (input.studioName || '').toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length >= 4 && !STOP_WORDS.has(t))
+      )
+      const allTokens = new Set([...gameTokens, ...studioTokens])
+      const sharesToken = (phrase: string) =>
+        phrase.toLowerCase().split(/[^a-z0-9]+/).some(t => allTokens.has(t))
+
+      // Take ngrams seen ≥2 times AND sharing a token with the game/studio.
       const repeated = Array.from(ngrams.entries())
-        .filter(([, count]) => count >= 2)
+        .filter(([phrase, count]) => count >= 2 && sharesToken(phrase))
         .sort(([, a], [, b]) => b - a)
         .slice(0, 5)
         .map(([phrase]) => phrase)
