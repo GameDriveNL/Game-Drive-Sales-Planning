@@ -71,6 +71,14 @@
     {
       "path": "/api/cron/apify-deep-scan-orchestrator",
       "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/cron/youtube-data-api-scan",
+      "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/cron/twitch-gql-scan",
+      "schedule": "0 14 * * *"
     }
   ],
   "buildCommand": "next build"
