@@ -79,6 +79,10 @@
     {
       "path": "/api/cron/twitch-gql-scan",
       "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/cron/reddit-public-scan",
+      "schedule": "0 15 * * *"
     }
   ],
   "buildCommand": "next build"

@@ -25,6 +25,34 @@ const DEFAULT_DAILY_CALL_LIMIT = 200
  *
  * Threshold: $2.00 remaining — if below, skip the scan.
  */
+/**
+ * Master switch: is Apify enabled at all?
+ *
+ * Read from service_settings.apify_enabled (default false). When disabled,
+ * every Apify-dependent cron returns an early skip without touching Apify.
+ * This is the operational "work around Apify entirely" path — flip the
+ * setting to true when/if the client tops up the monthly cap.
+ *
+ * Fails OPEN — if the setting can't be read, defaults to false (skip) so we
+ * never accidentally burn quota during a Supabase outage.
+ */
+export async function isApifyEnabled(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any
+): Promise<boolean> {
+  try {
+    const { data } = await supabase
+      .from('service_settings')
+      .select('value')
+      .eq('key', 'apify_enabled')
+      .maybeSingle()
+    if (data?.value === true || data?.value === 'true') return true
+    return false
+  } catch {
+    return false
+  }
+}
+
 export async function checkApifyCredits(apiKey: string, threshold = 2.0): Promise<ApifyUsageInfo> {
   try {
     const res = await fetch(`https://api.apify.com/v2/users/me?token=${apiKey}`)
@@ -73,6 +101,21 @@ export async function checkApifyDailyBudget(
   supabase: SupabaseClient
 ): Promise<DailyBudgetInfo> {
   try {
+    // Master kill-switch. When Game Drive has chosen to work around Apify
+    // entirely, every Apify-dependent cron should skip without paying
+    // anything. Surfacing it through the existing budget check means we
+    // don't need to touch each cron's handler individually — they all
+    // already short-circuit on a non-ok budget.
+    const { data: enabledRow } = await supabase
+      .from('service_settings')
+      .select('value')
+      .eq('key', 'apify_enabled')
+      .maybeSingle()
+    const enabled = enabledRow?.value === true || enabledRow?.value === 'true'
+    if (!enabled) {
+      return { ok: false, callsToday: 0, limit: 0, error: 'apify_enabled=false in service_settings — Apify scanners gated off' }
+    }
+
     // Read configured limit (defaults to DEFAULT_DAILY_CALL_LIMIT if missing).
     const { data: setting } = await supabase
       .from('service_settings')
