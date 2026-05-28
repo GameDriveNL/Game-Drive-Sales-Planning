@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { inferTerritory } from '@/lib/territory'
 import { detectOutletCountry } from '@/lib/outlet-country'
-import { checkApifyCredits, notifyLowCredits, checkApifyDailyBudget, logApifyRun } from '@/lib/apify-utils'
+import { checkApifyCredits, notifyLowCredits, checkApifyDailyBudget, logApifyRun, apifyCronGate } from '@/lib/apify-utils'
 import { verifyCronAuth } from '@/lib/cron-auth'
 
 function getSupabase() {
@@ -20,6 +20,12 @@ export async function GET(request: NextRequest) {
   const supabase = getSupabase()
 
   try {
+    // Per-platform gate. Apify Twitch is OFF by default — the free
+    // /api/cron/twitch-gql-scan covers this channel comprehensively.
+    const gate = await apifyCronGate(supabase, 'twitch')
+    if (gate.skip) return NextResponse.json(gate.data)
+    const targetGameId = gate.targetGameId
+
     // Get Apify API key
     const { data: keyData } = await supabase
       .from('service_api_keys')
@@ -55,23 +61,8 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // Only scan games that have an active Twitch coverage_source. Was previously
-    // looping over EVERY game regardless of whether Twitch was enabled for it.
-    const { data: twitchSources } = await supabase
-      .from('coverage_sources')
-      .select('game_id')
-      .eq('source_type', 'twitch')
-      .eq('is_active', true)
-
-    if (!twitchSources || twitchSources.length === 0) {
-      return NextResponse.json({ message: 'No active Twitch sources configured, skipping' })
-    }
-
-    const enabledGameIds = new Set(twitchSources.map(s => s.game_id).filter(Boolean) as string[])
-    if (enabledGameIds.size === 0) {
-      return NextResponse.json({ message: 'No active Twitch sources have a game_id, skipping' })
-    }
-
+    // Rotation: only process the target game this run
+    const enabledGameIds = new Set<string>([targetGameId])
     const { data: games } = await supabase
       .from('games')
       .select('id, name, client_id')

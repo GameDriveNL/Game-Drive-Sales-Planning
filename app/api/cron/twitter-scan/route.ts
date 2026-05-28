@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { inferTerritory } from '@/lib/territory'
 import { detectOutletCountry } from '@/lib/outlet-country'
-import { checkApifyCredits, notifyLowCredits, checkApifyDailyBudget, logApifyRun } from '@/lib/apify-utils'
+import { checkApifyCredits, notifyLowCredits, checkApifyDailyBudget, logApifyRun, apifyCronGate } from '@/lib/apify-utils'
 import { verifyCronAuth } from '@/lib/cron-auth'
 
 function getSupabase() {
@@ -23,6 +23,12 @@ export async function GET(request: NextRequest) {
   const supabase = getSupabase()
 
   try {
+    // Per-platform gate + rotation pick. Returns one game per run so the
+    // $30/mo Apify budget covers ~5 calls/day across all platforms.
+    const gate = await apifyCronGate(supabase, 'twitter')
+    if (gate.skip) return NextResponse.json(gate.data)
+    const targetGameId = gate.targetGameId
+
     // Get Apify API key
     const { data: keyData } = await supabase
       .from('service_api_keys')
@@ -68,9 +74,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ message: 'No keywords configured' })
     }
 
-    // Group keywords by client+game
+    // Group keywords by client+game — but only for the rotation target
     const keywordGroups: Map<string, { keywords: string[]; clientId: string; gameId: string | null }> = new Map()
     for (const kw of keywords) {
+      if (kw.game_id !== targetGameId) continue  // rotation: scan only one game per run
       const key = `${kw.client_id}|${kw.game_id || ''}`
       if (!keywordGroups.has(key)) {
         keywordGroups.set(key, { keywords: [], clientId: kw.client_id, gameId: kw.game_id })
@@ -78,11 +85,12 @@ export async function GET(request: NextRequest) {
       keywordGroups.get(key)!.keywords.push(kw.keyword)
     }
 
-    // Get Twitter sources (each scoped to one game)
+    // Twitter sources for the rotation target only
     const { data: twitterSources } = await supabase
       .from('coverage_sources')
       .select('id, config, game_id')
       .eq('source_type', 'twitter')
+      .eq('game_id', targetGameId)
       .eq('is_active', true)
 
     let totalFound = 0

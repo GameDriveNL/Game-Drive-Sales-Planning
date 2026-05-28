@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { inferTerritory } from '@/lib/territory'
 import { detectOutletCountry } from '@/lib/outlet-country'
-import { checkApifyCredits, notifyLowCredits, checkApifyDailyBudget, logApifyRun } from '@/lib/apify-utils'
+import { checkApifyCredits, notifyLowCredits, checkApifyDailyBudget, logApifyRun, apifyCronGate } from '@/lib/apify-utils'
 import { verifyCronAuth } from '@/lib/cron-auth'
 
 function getSupabase() {
@@ -20,6 +20,13 @@ export async function GET(request: NextRequest) {
   const supabase = getSupabase()
 
   try {
+    // Per-platform gate + rotation. Apify YouTube is OFF by default —
+    // the free YouTube Data API scanner covers this channel. The gate
+    // here means this cron is a clean no-op until flipped on.
+    const gate = await apifyCronGate(supabase, 'youtube')
+    if (gate.skip) return NextResponse.json(gate.data)
+    const targetGameId = gate.targetGameId
+
     // Get Apify API key
     const { data: keyData } = await supabase
       .from('service_api_keys')
@@ -81,6 +88,7 @@ export async function GET(request: NextRequest) {
     // (which already iterate `keywordGroups.keywords.slice(0, 5)`).
     const searchTerms: Map<string, { queries: string[]; clientId: string; gameId: string | null }> = new Map()
     for (const kw of keywords) {
+      if (kw.game_id !== targetGameId) continue  // rotation: this run targets one game
       const key = `${kw.client_id}|${kw.game_id || ''}`
       if (!searchTerms.has(key)) {
         searchTerms.set(key, { queries: [], clientId: kw.client_id, gameId: kw.game_id })

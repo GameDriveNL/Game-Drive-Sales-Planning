@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { buildSullyGnomeUrl } from '@/lib/sullygnome'
-import { checkApifyCredits, notifyLowCredits, checkApifyDailyBudget, logApifyRun } from '@/lib/apify-utils'
+import { checkApifyCredits, notifyLowCredits, checkApifyDailyBudget, logApifyRun, isApifyPlatformEnabled } from '@/lib/apify-utils'
 import { verifyCronAuth } from '@/lib/cron-auth'
 
 export const dynamic = 'force-dynamic'
@@ -117,6 +117,16 @@ async function handleScan(request: NextRequest) {
   const supabase = getServerSupabase()
 
   try {
+    // Per-platform gate. SullyGnome is OFF by default — the free Twitch
+    // GQL scanner gives comprehensive VOD + clip data without Apify cost.
+    // SullyGnome's only edge is leaderboards (avg viewer rank etc.), which
+    // we don't currently surface in the UI.
+    if (!(await isApifyPlatformEnabled(supabase, 'sullygnome'))) {
+      return NextResponse.json({
+        message: 'Apify SullyGnome disabled — Twitch GQL scanner covers VOD discovery',
+      })
+    }
+
     // 1. Get Apify API key
     const { data: keyData } = await supabase
       .from('service_api_keys')

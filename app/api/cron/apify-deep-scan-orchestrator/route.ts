@@ -25,7 +25,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { verifyCronAuth } from '@/lib/cron-auth'
-import { checkApifyCredits, checkApifyDailyBudget } from '@/lib/apify-utils'
+import { checkApifyCredits, checkApifyDailyBudget, isApifyPlatformEnabled, type ApifyPlatform } from '@/lib/apify-utils'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -122,6 +122,21 @@ export async function GET(request: NextRequest) {
   const isFirstTime = target.age_days === Infinity
   const lookback = isFirstTime ? FIRST_TIME_LOOKBACK : REFRESH_LOOKBACK
 
+  // Respect per-platform Apify flags. The free scanners (YouTube Data API,
+  // Twitch GQL, Reddit JSON) cover their channels — for those platforms,
+  // skipping deep-scan saves Apify spend with no recall loss. Only run
+  // deep-scan on platforms where Apify is the only path.
+  const allPlatforms: ApifyPlatform[] = ['youtube', 'reddit', 'twitter', 'tiktok', 'instagram']
+  const enabledPlatforms: string[] = []
+  for (const p of allPlatforms) {
+    if (await isApifyPlatformEnabled(supabase, p)) enabledPlatforms.push(p)
+  }
+  if (enabledPlatforms.length === 0) {
+    return NextResponse.json({
+      message: 'No Apify platforms enabled for deep-scan; free scanners cover all channels',
+    })
+  }
+
   // 4. Call the deep-scan handler. We can't import its module here because
   // route handlers in app router aren't directly importable, so issue an
   // internal HTTP fetch back to ourselves. CRON_SECRET is the same for
@@ -140,6 +155,7 @@ export async function GET(request: NextRequest) {
       game_id: target.id,
       lookback,
       max_results: isFirstTime ? 50 : 30,
+      platforms: enabledPlatforms,  // only the platforms still gated to Apify
     }),
   })
 

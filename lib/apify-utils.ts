@@ -26,15 +26,27 @@ const DEFAULT_DAILY_CALL_LIMIT = 200
  * Threshold: $2.00 remaining — if below, skip the scan.
  */
 /**
- * Master switch: is Apify enabled at all?
+ * Apify platforms we route through. Each can be independently enabled or
+ * disabled in service_settings.apify_<platform>_enabled.
  *
- * Read from service_settings.apify_enabled (default false). When disabled,
- * every Apify-dependent cron returns an early skip without touching Apify.
- * This is the operational "work around Apify entirely" path — flip the
- * setting to true when/if the client tops up the monthly cap.
+ * Strategy: Game Drive has a $30/month Apify budget. To stretch that we
+ * disable Apify for the platforms where we have free direct-API scrapers
+ * (YouTube Data API, Twitch GQL, Reddit JSON) and use Apify only for the
+ * channels with no free alternative (TikTok, Instagram, Twitter).
  *
- * Fails OPEN — if the setting can't be read, defaults to false (skip) so we
- * never accidentally burn quota during a Supabase outage.
+ * SullyGnome is also off by default — Twitch GQL surfaces VODs + clips
+ * more comprehensively than SullyGnome's leaderboard scrape.
+ */
+export type ApifyPlatform =
+  | 'youtube' | 'twitch' | 'reddit' | 'sullygnome'
+  | 'tiktok' | 'instagram' | 'twitter' | 'deep_scan'
+
+/**
+ * Master switch: is Apify enabled at all? When false, ALL platforms are
+ * gated off regardless of their individual setting. Acts as a panic button.
+ *
+ * Fails CLOSED — Supabase outage defaults to "off" so we never burn quota
+ * during an incident.
  */
 export async function isApifyEnabled(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -48,6 +60,96 @@ export async function isApifyEnabled(
       .maybeSingle()
     if (data?.value === true || data?.value === 'true') return true
     return false
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Pick the one most-overdue game for a platform — the game whose Apify
+ * source row hasn't been touched in the longest time. Used for rotation:
+ * each daily cron processes exactly one game so $30/mo Apify budget covers
+ * ~5 calls/day total (rotation gets every game scanned every ~7 days per
+ * platform).
+ *
+ * Returns null if no active per-game source exists for this platform.
+ */
+export async function pickMostOverdueGameForPlatform(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  platform: ApifyPlatform
+): Promise<{ game_id: string; last_run_at: string | null } | null> {
+  try {
+    const { data } = await supabase
+      .from('coverage_sources')
+      .select('game_id, last_run_at')
+      .eq('source_type', platform === 'deep_scan' ? 'tiktok' : platform)
+      .eq('is_active', true)
+      .not('game_id', 'is', null)
+      .order('last_run_at', { ascending: true, nullsFirst: true })
+      .limit(1)
+    if (!data || data.length === 0) return null
+    return { game_id: data[0].game_id, last_run_at: data[0].last_run_at }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Single-call gate helper for use at the top of each Apify cron handler.
+ * Returns either { skip: true, response } that the handler can return
+ * directly, or { skip: false, targetGameId } telling the handler which
+ * single game to scan this run.
+ */
+export async function apifyCronGate(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  platform: ApifyPlatform
+): Promise<
+  | { skip: true; reason: string; data: Record<string, unknown> }
+  | { skip: false; targetGameId: string }
+> {
+  const platformOn = await isApifyPlatformEnabled(supabase, platform)
+  if (!platformOn) {
+    return {
+      skip: true,
+      reason: `apify_${platform}_enabled=false`,
+      data: { message: `Apify ${platform} disabled — free scanner covers this channel or platform is gated off` },
+    }
+  }
+  const rotation = await pickMostOverdueGameForPlatform(supabase, platform)
+  if (!rotation) {
+    return {
+      skip: true,
+      reason: 'no_eligible_game',
+      data: { message: `No active per-game ${platform} sources to rotate through` },
+    }
+  }
+  return { skip: false, targetGameId: rotation.game_id }
+}
+
+/**
+ * Per-platform check. Returns true only when BOTH the master switch and
+ * the platform-specific flag are on.
+ *
+ * Setting key shape: apify_<platform>_enabled (e.g. apify_tiktok_enabled).
+ * Missing setting defaults to false (gated off) — same fail-closed model
+ * as the master switch.
+ */
+export async function isApifyPlatformEnabled(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  platform: ApifyPlatform
+): Promise<boolean> {
+  try {
+    const master = await isApifyEnabled(supabase)
+    if (!master) return false
+    const { data } = await supabase
+      .from('service_settings')
+      .select('value')
+      .eq('key', `apify_${platform}_enabled`)
+      .maybeSingle()
+    return data?.value === true || data?.value === 'true'
   } catch {
     return false
   }
@@ -101,11 +203,10 @@ export async function checkApifyDailyBudget(
   supabase: SupabaseClient
 ): Promise<DailyBudgetInfo> {
   try {
-    // Master kill-switch. When Game Drive has chosen to work around Apify
-    // entirely, every Apify-dependent cron should skip without paying
-    // anything. Surfacing it through the existing budget check means we
-    // don't need to touch each cron's handler individually — they all
-    // already short-circuit on a non-ok budget.
+    // Master kill-switch. When apify_enabled=false, ALL platforms are gated
+    // regardless of per-platform flags. Per-platform crons should also call
+    // isApifyPlatformEnabled() for fine-grained control before reaching this
+    // budget check.
     const { data: enabledRow } = await supabase
       .from('service_settings')
       .select('value')
@@ -113,7 +214,7 @@ export async function checkApifyDailyBudget(
       .maybeSingle()
     const enabled = enabledRow?.value === true || enabledRow?.value === 'true'
     if (!enabled) {
-      return { ok: false, callsToday: 0, limit: 0, error: 'apify_enabled=false in service_settings — Apify scanners gated off' }
+      return { ok: false, callsToday: 0, limit: 0, error: 'apify_enabled=false in service_settings — Apify gated off' }
     }
 
     // Read configured limit (defaults to DEFAULT_DAILY_CALL_LIMIT if missing).
