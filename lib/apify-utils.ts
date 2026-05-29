@@ -157,31 +157,53 @@ export async function isApifyPlatformEnabled(
 
 export async function checkApifyCredits(apiKey: string, threshold = 2.0): Promise<ApifyUsageInfo> {
   try {
-    const res = await fetch(`https://api.apify.com/v2/users/me?token=${apiKey}`)
-    if (!res.ok) {
-      return { hasCredits: false, remainingUsd: null, error: `Apify API returned ${res.status}` }
+    // Two-call pattern matches the current Apify v2 API shape (as of May 2026):
+    //   /users/me                  → plan.maxMonthlyUsageUsd (the monthly cap)
+    //   /users/me/usage/monthly    → totalUsageCreditsUsdAfterVolumeDiscount
+    //                                (current cycle's spend)
+    // The previous shape (`plan.monthlyUsageLimitUsd` + `usage.monthlyUsageUsd`
+    // on /users/me) silently went away — Apify migrated to the split endpoints
+    // without notice. Empirically discovered May 29, 2026 via diagnostic when
+    // every Apify scanner was returning "credits low" despite ~$0 deficit.
+    const [meRes, usageRes] = await Promise.all([
+      fetch(`https://api.apify.com/v2/users/me?token=${apiKey}`),
+      fetch(`https://api.apify.com/v2/users/me/usage/monthly?token=${apiKey}`),
+    ])
+    if (!meRes.ok) {
+      return { hasCredits: false, remainingUsd: null, error: `Apify /users/me ${meRes.status}` }
     }
-    const data = await res.json()
-    // Apify wraps the user payload in `data` — handle both shapes.
-    const user = data?.data ?? data
-    const plan = user?.plan
-    const usage = user?.usage
+    if (!usageRes.ok) {
+      return { hasCredits: false, remainingUsd: null, error: `Apify /usage/monthly ${usageRes.status}` }
+    }
+    const meData = await meRes.json()
+    const usageData = await usageRes.json()
+    const user = meData?.data ?? meData
+    const usage = usageData?.data ?? usageData
 
-    // Try to determine remaining credits
-    // Apify's /users/me response includes plan limits and current usage
-    if (plan?.monthlyUsageLimitUsd && usage?.monthlyUsageUsd !== undefined) {
-      const remaining = plan.monthlyUsageLimitUsd - usage.monthlyUsageUsd
-      return {
-        hasCredits: remaining > threshold,
-        remainingUsd: Math.round(remaining * 100) / 100,
-        error: null
-      }
+    // Limit: prefer the new field; fall back to the legacy one if Apify ever
+    // restores it. STARTER/CREATOR/SCALE plans all expose maxMonthlyUsageUsd.
+    const limitUsd = Number(user?.plan?.maxMonthlyUsageUsd
+      ?? user?.plan?.monthlyUsageLimitUsd
+      ?? user?.plan?.monthlyUsageCreditsUsd
+      ?? 0)
+
+    // Spend: post-discount total from /usage/monthly is the canonical "$ used
+    // this cycle" number. Pre-discount or summing per-day are also options if
+    // Apify changes shape again.
+    const spentUsd = Number(usage?.totalUsageCreditsUsdAfterVolumeDiscount
+      ?? usage?.totalUsageCreditsUsdBeforeVolumeDiscount
+      ?? 0)
+
+    if (!limitUsd) {
+      return { hasCredits: false, remainingUsd: null, error: 'Apify plan limit unavailable (unexpected shape)' }
     }
 
-    // FAIL CLOSED. Previously returned hasCredits: true here, which let the
-    // scanners run unchecked when the API response shape changed — that bypassed
-    // the budget gate and was a contributor to the May 2026 cost overrun.
-    return { hasCredits: false, remainingUsd: null, error: 'Could not determine Apify usage from /users/me response' }
+    const remaining = limitUsd - spentUsd
+    return {
+      hasCredits: remaining > threshold,
+      remainingUsd: Math.round(remaining * 100) / 100,
+      error: null
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     // FAIL CLOSED on network errors too.
