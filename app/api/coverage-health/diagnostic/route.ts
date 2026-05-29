@@ -52,9 +52,9 @@ export async function GET() {
         maxResults: 5,
       })
       youtubeLive = {
-        works: sample.length > 0,
-        sample_videos_found: sample.length,
-        error: sample.length === 0 ? 'Key call returned 0 results — could be a quota/perms issue' : null,
+        works: sample.items.length > 0,
+        sample_videos_found: sample.items.length,
+        error: sample.items.length === 0 ? 'Key call returned 0 results — could be a quota/perms issue' : null,
       }
     } catch (err) {
       youtubeLive = {

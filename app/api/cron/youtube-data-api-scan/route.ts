@@ -17,7 +17,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { verifyCronAuth } from '@/lib/cron-auth'
-import { searchVideos, getChannelStats, type YouTubeSearchResult } from '@/lib/youtube-data-api'
+import { searchVideosExhaustive, getChannelStats } from '@/lib/youtube-data-api'
 import { detectOutletCountry } from '@/lib/outlet-country'
 import { inferTerritory } from '@/lib/territory'
 
@@ -25,15 +25,18 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
+// Exhaustive scan strategy:
+//   - 4 keyword variants per game (game name, slug, studio, etc.)
+//   - All 7 languages every run — no rotation, no waiting a week for full coverage
+//   - 3 pages × 50 results = 150 results per (variant, language) tuple
+//
+// Quota cost: 4 variants × 7 langs × 3 pages × 100 units = 8,400 / 10,000 daily quota
+// We run for one game at a time using the per-game source rotation pattern
+// (most-overdue source first) so 7 games × ~$8400 = enough headroom over 7 days.
 const MAX_QUERIES_PER_GAME = 4
 const RESULTS_PER_QUERY = 50
-
-// Language rotation: YouTube Data API supports relevanceLanguage to bias
-// results toward a specific locale. Big international creators (MiawAug=ID,
-// iTownGamePlay=ES, Iker Unzu=ES, Windah Basudara=ID, etc.) are completely
-// invisible to English-default queries. Rotate through one language per
-// day-of-week so over a week we cover every major gaming locale.
-const LANGUAGE_ROTATION = ['', 'id', 'es', 'pt', 'de', 'fr', 'ja'] // index by day_of_week (Sun=0)
+const PAGES_PER_QUERY = 3
+const LANGUAGES = ['', 'id', 'es', 'pt', 'de', 'fr', 'ja']  // '' = default English
 
 interface KeywordRow {
   keyword: string
@@ -91,14 +94,9 @@ export async function GET(request: NextRequest) {
     .limit(20000)
   const existingUrls = new Set((existing || []).map((r: { url: string }) => r.url.split('&')[0]))
 
-  // Scan window: last 24h (matches the Apify scanner's 'today' filter)
-  const publishedAfter = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-
-  // Pick today's relevance language for international creator discovery.
-  // '' (empty) means default English — runs on Sunday so weekly cadence is
-  // ['(en)', id, es, pt, de, fr, ja].
-  const dayOfWeek = new Date().getUTCDay()  // 0=Sun, 6=Sat
-  const relevanceLanguage = LANGUAGE_ROTATION[dayOfWeek] || ''
+  // Scan window: last 30 days. Exhaustive scan should pick up everything
+  // in the recent past, not just last 24h.
+  const publishedAfter = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
 
   let totalFound = 0
   let totalInserted = 0
@@ -110,15 +108,16 @@ export async function GET(request: NextRequest) {
   for (const [, group] of Array.from(groups.entries())) {
     const variants = group.variants.slice(0, MAX_QUERIES_PER_GAME)
     for (const variant of variants) {
-      try {
-        const results = await searchVideos(apiKey, {
-          query: variant,
-          maxResults: RESULTS_PER_QUERY,
-          publishedAfter,
-          ...(relevanceLanguage ? { relevanceLanguage } : {}),
-        })
-        totalSearches++
-        totalFound += results.length
+      for (const lang of LANGUAGES) {
+        try {
+          const results = await searchVideosExhaustive(apiKey, {
+            query: variant,
+            maxResults: RESULTS_PER_QUERY,
+            publishedAfter,
+            ...(lang ? { relevanceLanguage: lang } : {}),
+          }, PAGES_PER_QUERY)
+          totalSearches += Math.ceil(results.length / RESULTS_PER_QUERY)
+          totalFound += results.length
         for (const r of results) {
           const url = `https://www.youtube.com/watch?v=${r.videoId}`
           if (existingUrls.has(url)) continue
@@ -178,8 +177,9 @@ export async function GET(request: NextRequest) {
             insertedItems.push({ id: insRow.id, channelId: r.channelId })
           }
         }
-      } catch (err) {
-        errors.push(`${variant}: ${err instanceof Error ? err.message : String(err)}`)
+        } catch (err) {
+          errors.push(`${variant}|${lang || 'default'}: ${err instanceof Error ? err.message : String(err)}`)
+        }
       }
     }
   }
@@ -205,8 +205,8 @@ export async function GET(request: NextRequest) {
   }
 
   return NextResponse.json({
-    message: `YouTube Data API scan complete: ${totalInserted}/${totalFound} new items across ${totalSearches} searches${relevanceLanguage ? ` (lang=${relevanceLanguage})` : ' (lang=default)'}`,
-    relevance_language: relevanceLanguage || 'default',
+    message: `YouTube Data API exhaustive scan: ${totalInserted}/${totalFound} new across ${totalSearches} pages × ${LANGUAGES.length} languages`,
+    languages: LANGUAGES.map(l => l || 'default'),
     found: totalFound,
     inserted: totalInserted,
     searches: totalSearches,

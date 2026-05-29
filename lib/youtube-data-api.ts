@@ -34,6 +34,7 @@ export interface YouTubeSearchOpts {
   publishedBefore?: string // ISO 8601
   relevanceLanguage?: string  // ISO 639-1 (e.g. 'fr', 'de', 'ja')
   regionCode?: string         // ISO 3166-1 alpha-2 (e.g. 'NL', 'JP')
+  pageToken?: string          // for pagination
 }
 
 const ENDPOINT = 'https://www.googleapis.com/youtube/v3/search'
@@ -45,7 +46,7 @@ const ENDPOINT = 'https://www.googleapis.com/youtube/v3/search'
 export async function searchVideos(
   apiKey: string,
   opts: YouTubeSearchOpts
-): Promise<YouTubeSearchResult[]> {
+): Promise<{ items: YouTubeSearchResult[]; nextPageToken: string | null }> {
   const params = new URLSearchParams({
     part: 'snippet',
     type: 'video',
@@ -58,6 +59,7 @@ export async function searchVideos(
   if (opts.publishedBefore) params.set('publishedBefore', opts.publishedBefore)
   if (opts.relevanceLanguage) params.set('relevanceLanguage', opts.relevanceLanguage)
   if (opts.regionCode) params.set('regionCode', opts.regionCode)
+  if (opts.pageToken) params.set('pageToken', opts.pageToken)
 
   try {
     const controller = new AbortController()
@@ -70,7 +72,7 @@ export async function searchVideos(
     if (!res.ok) {
       const txt = await res.text()
       console.warn(`[yt-data-api] HTTP ${res.status} for "${opts.query}":`, txt.substring(0, 200))
-      return []
+      return { items: [], nextPageToken: null }
     }
     const data = await res.json() as {
       items?: Array<{
@@ -84,9 +86,9 @@ export async function searchVideos(
           thumbnails?: { high?: { url?: string }; default?: { url?: string } }
         }
       }>
+      nextPageToken?: string
     }
-    if (!Array.isArray(data.items)) return []
-    return data.items
+    const items = Array.isArray(data.items) ? data.items
       .filter(it => it.id?.videoId && it.snippet)
       .map(it => ({
         videoId: it.id!.videoId!,
@@ -96,12 +98,33 @@ export async function searchVideos(
         channelId: it.snippet!.channelId || '',
         publishedAt: it.snippet!.publishedAt || '',
         thumbnail: it.snippet!.thumbnails?.high?.url || it.snippet!.thumbnails?.default?.url || null,
-      }))
+      })) : []
+    return { items, nextPageToken: data.nextPageToken ?? null }
   } catch (err) {
     console.warn(`[yt-data-api] search failed for "${opts.query}":`,
       err instanceof Error ? err.message : String(err))
-    return []
+    return { items: [], nextPageToken: null }
   }
+}
+
+/**
+ * Paginated exhaustive search. Keeps following nextPageToken until exhausted
+ * or until maxPages reached. Each page = 100 units of quota.
+ */
+export async function searchVideosExhaustive(
+  apiKey: string,
+  opts: YouTubeSearchOpts,
+  maxPages = 5  // 5 × 50 = 250 results per query, 5 × 100 = 500 units
+): Promise<YouTubeSearchResult[]> {
+  const all: YouTubeSearchResult[] = []
+  let pageToken: string | undefined = undefined
+  for (let p = 0; p < maxPages; p++) {
+    const { items, nextPageToken } = await searchVideos(apiKey, { ...opts, pageToken })
+    all.push(...items)
+    if (!nextPageToken || items.length === 0) break
+    pageToken = nextPageToken
+  }
+  return all
 }
 
 /**
