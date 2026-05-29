@@ -18,6 +18,7 @@ import { NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { checkApifyCredits } from '@/lib/apify-utils'
 import { searchVideos } from '@/lib/youtube-data-api'
+import { getGameByName, getAllVideos } from '@/lib/twitch-helix'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -28,6 +29,8 @@ export async function GET() {
   // 1. Env presence (boolean only)
   const env = {
     YOUTUBE_DATA_API_KEY: !!process.env.YOUTUBE_DATA_API_KEY,
+    TWITCH_CLIENT_ID: !!process.env.TWITCH_CLIENT_ID,
+    TWITCH_CLIENT_SECRET: !!process.env.TWITCH_CLIENT_SECRET,
     TAVILY_API_KEY: !!process.env.TAVILY_API_KEY,
     GOOGLE_AI_API_KEY: !!process.env.GOOGLE_AI_API_KEY,
     CRON_SECRET: !!process.env.CRON_SECRET,
@@ -65,6 +68,50 @@ export async function GET() {
     }
   } else {
     youtubeLive = { works: false, sample_videos_found: null, error: 'YOUTUBE_DATA_API_KEY not in env' }
+  }
+
+  // 2c. Twitch Helix live test — proves Client ID + Secret are valid,
+  // OAuth client_credentials grant works, and a paginated query succeeds.
+  let twitchLive: {
+    works: boolean;
+    sample_streamers_found: number | null;
+    twitch_game_id_for_dark_pals: string | null;
+    error: string | null
+  } | null = null
+  if (process.env.TWITCH_CLIENT_ID && process.env.TWITCH_CLIENT_SECRET) {
+    try {
+      const game = await getGameByName(
+        process.env.TWITCH_CLIENT_ID,
+        process.env.TWITCH_CLIENT_SECRET,
+        'Dark Pals: The 1st Floor'
+      )
+      if (game) {
+        const sample = await getAllVideos(
+          process.env.TWITCH_CLIENT_ID,
+          process.env.TWITCH_CLIENT_SECRET,
+          game.id,
+          { sort: 'views', period: 'month', maxPages: 1 }
+        )
+        const uniqueStreamers = new Set(sample.map(v => v.user_login)).size
+        twitchLive = {
+          works: sample.length > 0,
+          sample_streamers_found: uniqueStreamers,
+          twitch_game_id_for_dark_pals: game.id,
+          error: sample.length === 0 ? 'Game found but no VODs returned' : null,
+        }
+      } else {
+        twitchLive = { works: false, sample_streamers_found: null, twitch_game_id_for_dark_pals: null, error: 'Twitch game lookup returned null' }
+      }
+    } catch (err) {
+      twitchLive = {
+        works: false,
+        sample_streamers_found: null,
+        twitch_game_id_for_dark_pals: null,
+        error: err instanceof Error ? err.message : String(err),
+      }
+    }
+  } else {
+    twitchLive = { works: false, sample_streamers_found: null, twitch_game_id_for_dark_pals: null, error: 'TWITCH_CLIENT_ID or TWITCH_CLIENT_SECRET not in env' }
   }
 
   // 3. Apify live credit check
@@ -141,6 +188,7 @@ export async function GET() {
     apify_settings: apify,
     apify_live: apifyLive,
     youtube_live: youtubeLive,
+    twitch_live: twitchLive,
     ingest_last_24h: ingest24h,
     source_health: sourcesByType,
   })
