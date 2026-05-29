@@ -16,7 +16,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { verifyCronAuth } from '@/lib/cron-auth'
-import { resolveGameId, getVODs, getTopClips } from '@/lib/twitch-gql'
+import { resolveGameId, getVODs, getTopClips, getLiveStreams } from '@/lib/twitch-gql'
 import { detectOutletCountry } from '@/lib/outlet-country'
 
 export const dynamic = 'force-dynamic'
@@ -66,6 +66,7 @@ export async function GET(request: NextRequest) {
     game: string; twitch_game_id: string | null;
     vods_found: number; vods_inserted: number;
     clips_found: number; clips_inserted: number;
+    live_found: number; live_inserted: number;
     errors: string[];
   }> = []
 
@@ -74,6 +75,7 @@ export async function GET(request: NextRequest) {
       game: game.name, twitch_game_id: null,
       vods_found: 0, vods_inserted: 0,
       clips_found: 0, clips_inserted: 0,
+      live_found: 0, live_inserted: 0,
       errors: [],
     }
 
@@ -168,6 +170,45 @@ export async function GET(request: NextRequest) {
       r.errors.push(`vods: ${err instanceof Error ? err.message : String(err)}`)
     }
 
+    // Live streams — catches big streamers as they're broadcasting NOW.
+    // Without this we miss any streamer whose VOD is deleted or whose
+    // game-page view count doesn't make the VIEWS-sorted top-100 cut.
+    // Same captures as snapshot: the channel as a coverage_item.
+    try {
+      const live = await getLiveStreams(twitchGameId, 100)
+      r.live_found = live.length
+      for (const s of live) {
+        const channelUrl = `https://www.twitch.tv/${s.channelLogin}`
+        if (existingUrls.has(channelUrl)) continue
+        existingUrls.add(channelUrl)
+        const outletId = await findOrCreateChannelOutlet(s.channelLogin, s.channelDisplayName, null)
+        const { error } = await supabase.from('coverage_items').insert({
+          client_id: game.client_id,
+          game_id: game.id,
+          outlet_id: outletId,
+          title: s.title || `${s.channelDisplayName} streaming ${game.name}`,
+          url: channelUrl,
+          publish_date: s.startedAt ? s.startedAt.split('T')[0] : null,
+          coverage_type: 'stream',
+          source_type: 'twitch',
+          source_metadata: {
+            channel_login: s.channelLogin,
+            channel_display_name: s.channelDisplayName,
+            channel_id: s.channelId,
+            viewers: s.viewers,
+            started_at: s.startedAt,
+            twitch_gql: true,
+            twitch_gql_kind: 'live',
+          },
+          approval_status: 'pending_review',
+          discovered_at: new Date().toISOString(),
+        })
+        if (!error) r.live_inserted++
+      }
+    } catch (err) {
+      r.errors.push(`live: ${err instanceof Error ? err.message : String(err)}`)
+    }
+
     // Clips
     try {
       const clips = await getTopClips(twitchGameId, 7, CLIPS_PER_GAME)
@@ -206,7 +247,7 @@ export async function GET(request: NextRequest) {
     results.push(r)
   }
 
-  const totalInserted = results.reduce((s, r) => s + r.vods_inserted + r.clips_inserted, 0)
+  const totalInserted = results.reduce((s, r) => s + r.vods_inserted + r.clips_inserted + r.live_inserted, 0)
   return NextResponse.json({
     message: `Twitch GQL scan complete: +${totalInserted} new items across ${results.length} games`,
     games_scanned: results.length,
