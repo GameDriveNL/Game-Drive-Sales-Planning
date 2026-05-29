@@ -17,6 +17,7 @@
 import { NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { checkApifyCredits } from '@/lib/apify-utils'
+import { searchVideos } from '@/lib/youtube-data-api'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -40,6 +41,31 @@ export async function GET() {
     .like('key', 'apify%')
   const apify: Record<string, unknown> = {}
   for (const row of apifySettings || []) apify[row.key] = row.value
+
+  // 2b. YouTube Data API live test — proves the key works without waiting
+  // for the daily cron. One search.list call costs 100 units out of 10K/day.
+  let youtubeLive: { works: boolean; sample_videos_found: number | null; error: string | null } | null = null
+  if (process.env.YOUTUBE_DATA_API_KEY) {
+    try {
+      const sample = await searchVideos(process.env.YOUTUBE_DATA_API_KEY, {
+        query: 'Dark Pals',
+        maxResults: 5,
+      })
+      youtubeLive = {
+        works: sample.length > 0,
+        sample_videos_found: sample.length,
+        error: sample.length === 0 ? 'Key call returned 0 results — could be a quota/perms issue' : null,
+      }
+    } catch (err) {
+      youtubeLive = {
+        works: false,
+        sample_videos_found: null,
+        error: err instanceof Error ? err.message : String(err),
+      }
+    }
+  } else {
+    youtubeLive = { works: false, sample_videos_found: null, error: 'YOUTUBE_DATA_API_KEY not in env' }
+  }
 
   // 3. Apify live credit check
   let apifyLive: { remaining_usd: number | null; has_credits: boolean; error: string | null } | null = null
@@ -114,6 +140,7 @@ export async function GET() {
     env,
     apify_settings: apify,
     apify_live: apifyLive,
+    youtube_live: youtubeLive,
     ingest_last_24h: ingest24h,
     source_health: sourcesByType,
   })
