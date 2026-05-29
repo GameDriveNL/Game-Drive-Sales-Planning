@@ -118,17 +118,29 @@ export async function resolveGameId(gameName: string): Promise<string | null> {
 }
 
 /**
- * List recently-broadcasted VODs (past streams) for a game. Twitch retains
- * VODs for 14-60 days depending on tier, so this is your window for
- * recently-active streamers.
+ * List VODs (past streams) for a game. Twitch retains VODs for 14-60 days
+ * depending on tier, so this is your window for recently-active streamers.
+ *
+ * Sort options:
+ *   'TIME'  — newest first. Catches the long-tail of small streamers who
+ *             streamed today. Big streamers' older VODs age out fast.
+ *   'VIEWS' — most-viewed first. Catches the headline big streamers
+ *             (ironmouse, Shoto, LolloLacustre) whose VODs we want to
+ *             ensure are surfaced regardless of recency.
+ *
+ * Daily scan should call BOTH for full coverage.
  */
-export async function getRecentVODs(gameId: string, first = 50): Promise<TwitchVOD[]> {
+export async function getVODs(
+  gameId: string,
+  first = 100,
+  sort: 'TIME' | 'VIEWS' = 'TIME'
+): Promise<TwitchVOD[]> {
   // Note: Twitch removed the `options` argument from Game.videos sometime in
   // 2024; the current schema accepts sort/type at the top level.
   const query = `
-    query DirectoryVideos_Game($id: ID!, $first: Int!) {
+    query DirectoryVideos_Game($id: ID!, $first: Int!, $sort: VideoSort!) {
       game(id: $id) {
-        videos(first: $first, sort: TIME) {
+        videos(first: $first, sort: $sort) {
           edges {
             node {
               id
@@ -155,7 +167,7 @@ export async function getRecentVODs(gameId: string, first = 50): Promise<TwitchV
       lengthSeconds: number; viewCount: number;
       owner: { id: string; login: string; displayName: string; followers?: { totalCount?: number } | null }
     } }> } }
-  }>('DirectoryVideos_Game', query, { id: gameId, first })
+  }>('DirectoryVideos_Game', query, { id: gameId, first, sort })
 
   const edges = data?.game?.videos?.edges || []
   return edges.map(e => ({
@@ -173,6 +185,14 @@ export async function getRecentVODs(gameId: string, first = 50): Promise<TwitchV
       followers: e.node.owner.followers?.totalCount ?? null,
     },
   }))
+}
+
+/**
+ * Backwards-compat shim — getRecentVODs always pulled by TIME. Existing
+ * callers keep working; new code should call getVODs() directly.
+ */
+export async function getRecentVODs(gameId: string, first = 50): Promise<TwitchVOD[]> {
+  return getVODs(gameId, first, 'TIME')
 }
 
 /**

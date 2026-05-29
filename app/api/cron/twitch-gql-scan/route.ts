@@ -16,14 +16,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { verifyCronAuth } from '@/lib/cron-auth'
-import { resolveGameId, getRecentVODs, getTopClips } from '@/lib/twitch-gql'
+import { resolveGameId, getVODs, getTopClips } from '@/lib/twitch-gql'
 import { detectOutletCountry } from '@/lib/outlet-country'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
-const VODS_PER_GAME = 50
+// Two passes per game per run:
+//   - TIME pass catches the long-tail of small streamers (their VODs are
+//     pushed off Twitch's TIME-sorted list within hours by newer streamers)
+//   - VIEWS pass catches the headline streamers (ironmouse, Shoto, etc.)
+//     whose VODs would never make the TIME cut today but are still relevant
+// Empirically: TIME alone hit only 3/31 of Bram's ≥100K-follower streamers.
+const VODS_BY_TIME_PER_GAME = 100
+const VODS_BY_VIEWS_PER_GAME = 100
 const CLIPS_PER_GAME = 50
 
 interface GameRow {
@@ -118,9 +125,15 @@ export async function GET(request: NextRequest) {
       return newO?.id ?? null
     }
 
-    // VODs
+    // VODs — two passes: newest by TIME (long-tail) + most-viewed by VIEWS (top streamers)
     try {
-      const vods = await getRecentVODs(twitchGameId, VODS_PER_GAME)
+      const [byTime, byViews] = await Promise.all([
+        getVODs(twitchGameId, VODS_BY_TIME_PER_GAME, 'TIME'),
+        getVODs(twitchGameId, VODS_BY_VIEWS_PER_GAME, 'VIEWS'),
+      ])
+      const byId = new Map<string, typeof byTime[number]>()
+      for (const v of [...byTime, ...byViews]) byId.set(v.id, v)
+      const vods = Array.from(byId.values())
       r.vods_found = vods.length
       for (const v of vods) {
         if (existingUrls.has(v.url)) continue

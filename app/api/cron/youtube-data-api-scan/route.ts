@@ -28,6 +28,13 @@ export const maxDuration = 300
 const MAX_QUERIES_PER_GAME = 4
 const RESULTS_PER_QUERY = 50
 
+// Language rotation: YouTube Data API supports relevanceLanguage to bias
+// results toward a specific locale. Big international creators (MiawAug=ID,
+// iTownGamePlay=ES, Iker Unzu=ES, Windah Basudara=ID, etc.) are completely
+// invisible to English-default queries. Rotate through one language per
+// day-of-week so over a week we cover every major gaming locale.
+const LANGUAGE_ROTATION = ['', 'id', 'es', 'pt', 'de', 'fr', 'ja'] // index by day_of_week (Sun=0)
+
 interface KeywordRow {
   keyword: string
   client_id: string
@@ -87,6 +94,12 @@ export async function GET(request: NextRequest) {
   // Scan window: last 24h (matches the Apify scanner's 'today' filter)
   const publishedAfter = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
 
+  // Pick today's relevance language for international creator discovery.
+  // '' (empty) means default English — runs on Sunday so weekly cadence is
+  // ['(en)', id, es, pt, de, fr, ja].
+  const dayOfWeek = new Date().getUTCDay()  // 0=Sun, 6=Sat
+  const relevanceLanguage = LANGUAGE_ROTATION[dayOfWeek] || ''
+
   let totalFound = 0
   let totalInserted = 0
   let totalSearches = 0
@@ -102,6 +115,7 @@ export async function GET(request: NextRequest) {
           query: variant,
           maxResults: RESULTS_PER_QUERY,
           publishedAfter,
+          ...(relevanceLanguage ? { relevanceLanguage } : {}),
         })
         totalSearches++
         totalFound += results.length
@@ -191,7 +205,8 @@ export async function GET(request: NextRequest) {
   }
 
   return NextResponse.json({
-    message: `YouTube Data API scan complete: ${totalInserted}/${totalFound} new items across ${totalSearches} searches`,
+    message: `YouTube Data API scan complete: ${totalInserted}/${totalFound} new items across ${totalSearches} searches${relevanceLanguage ? ` (lang=${relevanceLanguage})` : ' (lang=default)'}`,
+    relevance_language: relevanceLanguage || 'default',
     found: totalFound,
     inserted: totalInserted,
     searches: totalSearches,
