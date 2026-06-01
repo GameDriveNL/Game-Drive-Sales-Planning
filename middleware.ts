@@ -48,6 +48,13 @@ export async function middleware(req: NextRequest) {
     return res
   }
 
+  // Allow one-shot Dark Pals backfill — self-locks after first run via
+  // service_settings.oneshot_darkpals_backfill_done. Will be removed after
+  // we verify parity.
+  if (pathname === '/api/coverage-health/oneshot-darkpals') {
+    return res
+  }
+
   // Allow SullyGnome collect webhook (called by Apify, no auth)
   if (pathname.startsWith('/api/sullygnome-collect')) {
     return res
