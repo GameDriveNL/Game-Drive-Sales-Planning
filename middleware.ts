@@ -71,6 +71,11 @@ export async function middleware(req: NextRequest) {
     return res
   }
 
+  // Apify-based YouTube backfill since YT Data API quota is dead.
+  if (pathname === '/api/coverage-health/oneshot-darkpals-apify-yt') {
+    return res
+  }
+
   // Allow SullyGnome collect webhook (called by Apify, no auth)
   if (pathname.startsWith('/api/sullygnome-collect')) {
     return res
