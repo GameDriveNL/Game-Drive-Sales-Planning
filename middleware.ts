@@ -67,6 +67,13 @@ export async function middleware(req: NextRequest) {
   if (pathname === '/api/coverage-health/oneshot-darkpals-sullygnome') {
     return res
   }
+  // Forced historical onboarding scanner — public, self-locks per-game.
+  // Used both at game-add time (auto-trigger) and as a manual "re-baseline"
+  // tool. Whitelisted because the work is gated by service_settings lock,
+  // not auth.
+  if (pathname === '/api/coverage-health/forced-historical-scan') {
+    return res
+  }
   if (pathname === '/api/coverage-health/oneshot-darkpals-import') {
     return res
   }

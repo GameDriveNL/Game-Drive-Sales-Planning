@@ -136,9 +136,13 @@ export async function GET(request: NextRequest) {
           if (!hashtags.includes(h)) hashtags.push(h)
         }
 
+        // resultsPerPage bumped 10 → 20 to deepen long-tail TikTok creator
+        // recovery without doubling Apify spend (verified $21.39 of $29
+        // remaining on 2026-06-01). Forced-historical scan handles initial
+        // backfill at 30; this is steady-state daily depth.
         const hashtagResults = await callTikTokActor(supabase, apifyKey, {
           hashtags: hashtags.slice(0, 5),
-          resultsPerPage: 10,
+          resultsPerPage: 20,
         })
         if (hashtagResults) {
           const result = await processTikTokPosts(supabase, hashtagResults, group.clientId, group.gameId, minFollowers)

@@ -71,17 +71,25 @@ export async function POST(request: Request) {
 // B25: trigger a retroactive PR coverage backfill (90-day lookback)
 // when a game is first enabled for PR tracking. Fires the existing
 // /api/coverage-backfill endpoint asynchronously — don't block the caller.
+// 2026-06-01: ALSO fires the new forced-historical-scan which runs the
+// deep multi-pass (Twitch GQL fanout + Helix + Piped YouTube + Tavily +
+// Apify TikTok). Together these give the new game its day-1 baseline
+// without any client CSV upload.
 async function triggerRetroactiveBackfill(gameId: string) {
   const base = process.env.NEXT_PUBLIC_APP_URL || 'https://platform.game-drive.nl'
-  try {
-    await fetch(`${base}/api/coverage-backfill`, {
+  // Fire-and-forget both endpoints in parallel
+  await Promise.allSettled([
+    fetch(`${base}/api/coverage-backfill`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ game_id: gameId, max_queries: 20 })
-    })
-  } catch (e) {
-    console.error('B25 retroactive backfill failed to start:', e)
-  }
+      body: JSON.stringify({ game_id: gameId, max_queries: 20 }),
+    }),
+    fetch(`${base}/api/coverage-health/forced-historical-scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ game_id: gameId }),
+    }),
+  ])
 }
 
 // PUT - Update a game

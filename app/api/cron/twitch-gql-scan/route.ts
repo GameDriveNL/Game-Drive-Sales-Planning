@@ -17,6 +17,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { verifyCronAuth } from '@/lib/cron-auth'
 import { resolveGameId, getVODs, getTopClips, getLiveStreams } from '@/lib/twitch-gql'
+import { fanoutBroadcasters } from '@/lib/twitch-gql-fanout'
 import { detectOutletCountry } from '@/lib/outlet-country'
 
 export const dynamic = 'force-dynamic'
@@ -209,7 +210,58 @@ export async function GET(request: NextRequest) {
       r.errors.push(`live: ${err instanceof Error ? err.message : String(err)}`)
     }
 
-    // Clips
+    // Fanout — language × period × sort enumeration via gql-fanout lib.
+    // The integrity check only fires on page 2+; by enumerating distinct
+    // page-1s across ~150 combos we surface long-tail broadcasters the
+    // TIME/VIEWS sort misses. Runs ~3s, free. New 2026-06-01.
+    try {
+      const fan = await fanoutBroadcasters(twitchGameId, game.name, { maxConcurrency: 30 })
+      for (const b of Array.from(fan.values())) {
+        const channelUrl = `https://www.twitch.tv/${b.login}`
+        if (existingUrls.has(channelUrl)) continue
+        existingUrls.add(channelUrl)
+        const outletId = await findOrCreateChannelOutlet(b.login, b.displayName || b.login, null)
+        const itemUrl = b.videoOrClipId
+          ? (b.source === 'clip'
+              ? `https://www.twitch.tv/${b.login}/clip/${b.videoOrClipId}`
+              : `https://www.twitch.tv/videos/${b.videoOrClipId}`)
+          : channelUrl
+        if (existingUrls.has(itemUrl)) continue
+        existingUrls.add(itemUrl)
+        const { error } = await supabase.from('coverage_items').insert({
+          client_id: game.client_id,
+          game_id: game.id,
+          outlet_id: outletId,
+          title: b.title || `${b.displayName || b.login} streamed ${game.name}`,
+          url: itemUrl,
+          publish_date: b.createdAt ? b.createdAt.split('T')[0] : null,
+          coverage_type: 'stream',
+          monthly_unique_visitors: typeof b.viewCount === 'number' ? b.viewCount : null,
+          source_type: 'twitch',
+          source_metadata: {
+            twitch_gql: true,
+            twitch_gql_kind: 'fanout',
+            channel_login: b.login,
+            channel_display_name: b.displayName,
+            fanout_source: b.source,
+            fanout_signal: b.signal,
+            view_count: b.viewCount,
+          },
+          approval_status: 'pending_review',
+          discovered_at: new Date().toISOString(),
+        })
+        if (!error) {
+          // Count as a clip insert for reporting purposes — keeps the existing
+          // schema unchanged. They're functionally similar (channel-level).
+          r.clips_inserted++
+          r.clips_found++
+        }
+      }
+    } catch (err) {
+      r.errors.push(`fanout: ${err instanceof Error ? err.message : String(err)}`)
+    }
+
+    // Clips (existing TopClips query — kept as the curated "popular this week" pass)
     try {
       const clips = await getTopClips(twitchGameId, 7, CLIPS_PER_GAME)
       r.clips_found = clips.length
