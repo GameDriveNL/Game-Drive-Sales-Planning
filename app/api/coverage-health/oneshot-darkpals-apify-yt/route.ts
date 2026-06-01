@@ -111,27 +111,38 @@ export async function POST() {
     return newO?.id ?? null
   }
 
-  // Single deep-scan call: 4 queries × maxResults 25 each (~100 items).
-  // Previously at 100 results/query the actor TIMED-OUT inside Apify's own
-  // run-timeout (240s default). 25 is enough to surface popular Dark Pals
-  // videos per variant without blowing the budget.
-  const input = {
-    searchQueries: variants.slice(0, 4),
-    maxResults: 25,
-    maxResultStreams: 0,
-    maxResultsShorts: 0,
-    sortVideosBy: 'POPULAR',
-    dateFilter: 'month',
-    downloadSubtitles: false,
-  }
-  const res = await runActor(apifyKey, input)
-  await logApifyRun(supabase, {
-    scanner: 'oneshot-darkpals-apify-yt', actor_id: YT_ACTOR,
-    input, results_count: res.data.length, http_status: res.status, ok: res.ok, error: res.error,
-  })
-
+  // Apify's streamers/youtube-scraper enriches every result page-by-page,
+  // so cost is ~3s/video. Multi-query runs (4 queries × N results) blow past
+  // both Vercel's 300s budget and Apify's 240s actor timeout. We split into
+  // sequential per-query calls: 4 queries × 10 results each ≈ 30s/call.
   let inserted = 0
-  if (res.ok) {
+  let totalFound = 0
+  const callErrors: string[] = []
+  const t0 = Date.now()
+  for (const q of variants.slice(0, 4)) {
+    if (Date.now() - t0 > 260_000) {
+      callErrors.push(`time-budget-exhausted before "${q}"`)
+      break
+    }
+    const input = {
+      searchQueries: [q],
+      maxResults: 10,
+      maxResultStreams: 0,
+      maxResultsShorts: 0,
+      sortVideosBy: 'POPULAR',
+      dateFilter: 'month',
+      downloadSubtitles: false,
+    }
+    const res = await runActor(apifyKey, input)
+    await logApifyRun(supabase, {
+      scanner: `oneshot-darkpals-apify-yt/${q.substring(0,20)}`, actor_id: YT_ACTOR,
+      input, results_count: res.data.length, http_status: res.status, ok: res.ok, error: res.error,
+    })
+    if (!res.ok) {
+      callErrors.push(`${q}: ${res.error?.substring(0, 80) || 'no-error'}`)
+      continue
+    }
+    totalFound += res.data.length
     for (const v of res.data) {
       const url = (v.url as string) || (v.id ? `https://www.youtube.com/watch?v=${v.id}` : '')
       if (!url) continue
@@ -172,13 +183,13 @@ export async function POST() {
   }, { onConflict: 'key' })
 
   return NextResponse.json({
-    message: `One-shot Dark Pals Apify YT: +${inserted} new of ${res.data.length} found`,
+    message: `One-shot Dark Pals Apify YT: +${inserted} new of ${totalFound} found`,
     game: game.name,
-    items_found: res.data.length,
+    items_found: totalFound,
     items_inserted: inserted,
     apify_remaining_usd: credits.remainingUsd,
-    http_status: res.status,
-    error: res.error,
+    call_errors: callErrors,
     variants_used: variants.slice(0, 4).length,
+    elapsed_ms: Date.now() - t0,
   })
 }
