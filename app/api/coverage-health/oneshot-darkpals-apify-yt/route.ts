@@ -111,11 +111,13 @@ export async function POST() {
     return newO?.id ?? null
   }
 
-  // Single deep-scan call: 4 queries × maxResults 100 each (~400 items)
-  // Most channels won't be unique, but it covers global discovery cheaply.
+  // Single deep-scan call: 4 queries × maxResults 25 each (~100 items).
+  // Previously at 100 results/query the actor TIMED-OUT inside Apify's own
+  // run-timeout (240s default). 25 is enough to surface popular Dark Pals
+  // videos per variant without blowing the budget.
   const input = {
     searchQueries: variants.slice(0, 4),
-    maxResults: 100,
+    maxResults: 25,
     maxResultStreams: 0,
     maxResultsShorts: 0,
     sortVideosBy: 'POPULAR',
