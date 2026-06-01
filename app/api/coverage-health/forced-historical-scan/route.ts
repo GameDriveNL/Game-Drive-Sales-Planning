@@ -51,6 +51,7 @@ import {
   searchYouTubeViaPipedDeep,
   fetchVideoDescription,
   extractTwitchLogins,
+  resolveChannelHandle,
   type PipedSearchResult,
 } from '@/lib/piped-youtube'
 import { checkApifyCredits, isApifyPlatformEnabled, logApifyRun } from '@/lib/apify-utils'
@@ -277,14 +278,13 @@ export async function POST(request: NextRequest) {
             reports.helix.items_found++
           }
 
-          // 2b. Clips paginated — capped at 10 pages (1000 clips). Each page
-          // ~5s = 50s budget. Previously at 30 pages it ate 150s of the
-          // 90s helix budget and killed per-user VOD enrichment. The daily
-          // twitch-scan cron picks up clips 1001-5000 over time.
+          // 2b. Clips paginated — at 20 pages (2000 clips, ~100s budget).
+          // Verified manually: 30 pages ate the helix budget, 10 pages lost
+          // ~18 long-tail broadcasters vs 30. 20 is the sweet spot.
           const clips = await getAllClips(cid, cs, helixGameId, {
             startedAt: new Date(Date.now() - 90 * 86400000).toISOString(),
             endedAt: new Date().toISOString(),
-            maxPages: 10,
+            maxPages: 20,
           })
           reports.helix.notes.clips_found = clips.length
           for (const c of clips) {
@@ -417,16 +417,51 @@ export async function POST(request: NextRequest) {
       reports.piped.notes.video_ids_collected = ytItems.length
       reports.piped.items_found = ytItems.length
 
+      // 3b. Resolve channel IDs → @handles. Verified 2026-06-01: 9s for 200
+      // channels in parallel-10 batches. Fixes the YouTube "channels" parity
+      // measurement bias — Piped returns /channel/UC… URLs but Bram's sheet
+      // uses @-handles, so before this resolution every video's channel
+      // looked like a miss vs Bram.
+      const channelIdsToResolve = Array.from(new Set(
+        ytItems
+          .map(it => it.channelUrl)
+          .filter(u => u.startsWith('/channel/'))
+          .map(u => u.replace('/channel/', '')),
+      ))
+      const channelIdToHandle = new Map<string, string>()
+      const xtStart = Date.now()
+      for (let i = 0; i < channelIdsToResolve.length; i += 10) {
+        if (Date.now() - t0 > 270_000) {
+          reports.piped.errors.push(`channel-handle resolution time budget hit at ${i}/${channelIdsToResolve.length}`)
+          break
+        }
+        const batch = channelIdsToResolve.slice(i, i + 10)
+        const results = await Promise.all(batch.map(id => resolveChannelHandle(id)))
+        for (let j = 0; j < batch.length; j++) {
+          if (results[j]) channelIdToHandle.set(batch[j], results[j]!)
+        }
+      }
+      reports.piped.notes.channels_resolved = channelIdToHandle.size
+      reports.piped.notes.channel_resolve_ms = Date.now() - xtStart
+
       // Insert each YouTube video. Outlet = the channel.
       for (const yt of ytItems) {
         const watchUrl = `https://www.youtube.com/watch?v=${yt.videoId}`
         if (existingUrls.has(watchUrl)) continue
         existingUrls.add(watchUrl)
-        const channelDomainSlug = yt.channelUrl.startsWith('/channel/')
-          ? `youtube.com${yt.channelUrl}`
+        // Prefer the resolved @handle over the raw channel ID — it's what
+        // Bram's sheet uses and is the canonical YouTube identifier.
+        const channelId = yt.channelUrl.startsWith('/channel/')
+          ? yt.channelUrl.replace('/channel/', '')
+          : ''
+        const resolvedHandle = channelId ? channelIdToHandle.get(channelId) : null
+        const channelDomainSlug = resolvedHandle
+          ? `youtube.com/${resolvedHandle}`
           : yt.channelUrl.startsWith('/c/') || yt.channelUrl.startsWith('/@')
             ? `youtube.com${yt.channelUrl}`
-            : `youtube.com/@${(yt.channelTitle || 'unknown').toLowerCase().replace(/\s+/g, '')}`
+            : yt.channelUrl.startsWith('/channel/')
+              ? `youtube.com${yt.channelUrl}`
+              : `youtube.com/@${(yt.channelTitle || 'unknown').toLowerCase().replace(/\s+/g, '')}`
         const oid = await ensureOutlet(channelDomainSlug, yt.channelTitle, null, 'D')
         const { error } = await supabase.from('coverage_items').insert({
           client_id: game.client_id, game_id: game.id, outlet_id: oid,

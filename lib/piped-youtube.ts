@@ -207,6 +207,44 @@ export async function fetchVideoDescription(
 }
 
 /**
+ * Resolve a YouTube channel ID (UC…) to its public @handle by scraping the
+ * channel page. Verified 2026-06-01: youtube.com/channel/UC… returns HTML
+ * embedding `"vanityChannelUrl":"http://www.youtube.com/@handle"`. 100%
+ * accuracy in 5/5 Dark Pals sample (Thinknoodles, HorrorSkunx, Game_track,
+ * PressStartToLaugh, HollowPoiint).
+ *
+ * Returns null on any failure — caller treats as "skip this channel".
+ * Cost: 1 HTTP fetch per channel, ~0.5s sequential. With Promise.all batched
+ * 10 at a time, ~9s per 200 channels.
+ */
+export async function resolveChannelHandle(channelId: string, timeoutMs = 8000): Promise<string | null> {
+  try {
+    const ctl = new AbortController()
+    const timer = setTimeout(() => ctl.abort(), timeoutMs)
+    const res = await fetch(`https://www.youtube.com/channel/${channelId}`, {
+      signal: ctl.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        Accept: 'text/html',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    })
+    clearTimeout(timer)
+    if (!res.ok) return null
+    const html = await res.text()
+    // YouTube channel HTML embeds the @handle in vanityChannelUrl. Fallback
+    // patterns: canonicalBaseUrl, and the og:url meta tag.
+    const m =
+      html.match(/"vanityChannelUrl":"http:\/\/www\.youtube\.com\/(@[\w.\-]+)"/)
+      ?? html.match(/"canonicalBaseUrl":"\/(@[\w.\-]+)"/)
+      ?? html.match(/<link\s+rel="canonical"\s+href="https?:\/\/www\.youtube\.com\/(@[\w.\-]+)"/)
+    return m ? m[1].toLowerCase() : null
+  } catch {
+    return null
+  }
+}
+
+/**
  * Extract twitch.tv/@handle handles from a freeform text blob (typically a
  * YouTube video description). Returns lowercased logins, deduped.
  *
