@@ -216,6 +216,33 @@ export async function getAllVideos(
 }
 
 /**
+ * Fetch a user's recent videos. Unlike /videos?game_id (which is broken for
+ * most games), /videos?user_id WORKS and paginates properly. Use it once we've
+ * harvested user IDs from /clips or /streams.
+ */
+export async function getVideosByUser(
+  clientId: string,
+  clientSecret: string,
+  userId: string,
+  maxPages = 5
+): Promise<HelixVideo[]> {
+  const out: HelixVideo[] = []
+  let cursor: string | undefined = undefined
+  let pages = 0
+  do {
+    const page: HelixPage<HelixVideo> = await helixGet<HelixVideo>(
+      clientId, clientSecret, '/videos',
+      { user_id: userId, type: 'archive', first: 100, after: cursor }
+    )
+    out.push(...page.data)
+    cursor = page.pagination?.cursor
+    pages++
+    if (!cursor || page.data.length === 0) break
+  } while (pages < maxPages)
+  return out
+}
+
+/**
  * Fetch all currently-live streams for a game (paginated).
  */
 export async function getAllStreams(

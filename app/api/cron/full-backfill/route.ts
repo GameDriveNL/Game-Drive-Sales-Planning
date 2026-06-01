@@ -32,9 +32,9 @@ import { searchVideosExhaustive } from '@/lib/youtube-data-api'
 import { searchSubreddit, searchReddit, type RedditPost } from '@/lib/reddit-public-api'
 import {
   getGameByName,
-  getAllVideos,
   getAllStreams,
   getAllClips,
+  getVideosByUser,
 } from '@/lib/twitch-helix'
 
 export const dynamic = 'force-dynamic'
@@ -107,10 +107,10 @@ export async function POST(request: NextRequest) {
     try {
       const twitchGame = await getGameByName(helixClientId, helixSecret, game.name)
       if (twitchGame) {
-        // VODs by both sorts then dedupe
-        const [byTime, byViews, liveStreams, clips] = await Promise.all([
-          getAllVideos(helixClientId, helixSecret, twitchGame.id, { sort: 'time', period: 'month', maxPages: 50 }),
-          getAllVideos(helixClientId, helixSecret, twitchGame.id, { sort: 'views', period: 'month', maxPages: 50 }),
+        // Helix /videos?game_id is broken (returns 0 even for popular games).
+        // Instead: harvest streamers from /clips + /streams, then call
+        // /videos?user_id for each (which DOES work) to get their VOD history.
+        const [liveStreams, clips] = await Promise.all([
           getAllStreams(helixClientId, helixSecret, twitchGame.id, 20),
           getAllClips(helixClientId, helixSecret, twitchGame.id, {
             startedAt: new Date(Date.now() - 30 * 86400000).toISOString(),
@@ -118,11 +118,29 @@ export async function POST(request: NextRequest) {
             maxPages: 50,
           }),
         ])
-        const videos = new Map<string, typeof byTime[number]>()
-        for (const v of [...byTime, ...byViews]) videos.set(v.id, v)
 
-        // Insert VODs
-        for (const v of Array.from(videos.values())) {
+        // Collect unique user_ids from clips + live streams
+        const userIds = new Set<string>()
+        for (const s of liveStreams) userIds.add(s.user_id)
+        for (const c of clips) userIds.add(c.broadcaster_id)
+
+        // Per-user VOD pagination — bounded to keep request count reasonable
+        const userVods: Awaited<ReturnType<typeof getVideosByUser>> = []
+        const userIdList = Array.from(userIds).slice(0, 200)  // cap at 200 streamers
+        // Run in batches of 10 to avoid blowing the helix rate limit
+        for (let i = 0; i < userIdList.length; i += 10) {
+          const batch = userIdList.slice(i, i + 10)
+          const batchResults = await Promise.all(
+            batch.map(uid => getVideosByUser(helixClientId, helixSecret, uid, 2).catch(() => []))
+          )
+          for (const vs of batchResults) userVods.push(...vs)
+        }
+
+        // Insert VODs (deduped by id)
+        const seenVodIds = new Set<string>()
+        for (const v of userVods) {
+          if (seenVodIds.has(v.id)) continue
+          seenVodIds.add(v.id)
           if (existingUrls.has(v.url)) continue
           existingUrls.add(v.url)
           results.twitch_helix.items_found++
