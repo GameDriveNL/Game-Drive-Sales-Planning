@@ -118,7 +118,7 @@ export async function POST() {
     maxResults: 100,
     maxResultStreams: 0,
     maxResultsShorts: 0,
-    sortVideosBy: 'RELEVANCE',
+    sortVideosBy: 'POPULAR',
     dateFilter: 'month',
     downloadSubtitles: false,
   }
