@@ -64,6 +64,9 @@ export async function middleware(req: NextRequest) {
   if (pathname === '/api/coverage-health/oneshot-darkpals-tiktok') {
     return res
   }
+  if (pathname === '/api/coverage-health/oneshot-darkpals-import') {
+    return res
+  }
 
   // Raw YouTube Data API debug — returns Google's verbatim error response
   // so we can see why the key returns 0 items even for popular queries.
