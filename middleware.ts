@@ -64,6 +64,9 @@ export async function middleware(req: NextRequest) {
   if (pathname === '/api/coverage-health/oneshot-darkpals-tiktok') {
     return res
   }
+  if (pathname === '/api/coverage-health/oneshot-darkpals-sullygnome') {
+    return res
+  }
   if (pathname === '/api/coverage-health/oneshot-darkpals-import') {
     return res
   }
