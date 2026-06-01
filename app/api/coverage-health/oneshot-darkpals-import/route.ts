@@ -42,7 +42,15 @@ interface ImportRow {
 function normalizeUrl(url: string): string {
   try {
     const u = new URL(url)
-    return (u.origin + u.pathname).replace(/\/$/, '')
+    let base = (u.origin + u.pathname).replace(/\/$/, '')
+    // YouTube watch URLs MUST retain v= or every video collapses to
+    // /watch. Same for tiktok video URLs (already in path) and twitch
+    // (path-based).
+    if (u.hostname.includes('youtube.com') && u.pathname === '/watch') {
+      const v = u.searchParams.get('v')
+      if (v) base += `?v=${v}`
+    }
+    return base
   } catch { return url }
 }
 
