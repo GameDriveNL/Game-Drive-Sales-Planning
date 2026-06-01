@@ -226,7 +226,7 @@ async function scanReddit(ctx: DeepScanContext): Promise<ApifyCallResult> {
       title: (p.title as string) || 'Reddit post',
       url,
       publish_date: p.createdAt ? new Date(p.createdAt as string).toISOString().split('T')[0] : null,
-      coverage_type: 'social',
+      coverage_type: 'mention',
       source_type: 'reddit',
       source_metadata: { subreddit: p.subreddit, ups: p.upVotes, comments: p.numberOfComments, deep_scan: true },
       approval_status: 'pending_review',
@@ -359,19 +359,25 @@ export async function POST(request: NextRequest) {
       if (platform === 'youtube') results.push(await scanYouTube(ctx))
       else if (platform === 'reddit') results.push(await scanReddit(ctx))
       else if (platform === 'twitter') {
+        // 'mention' — coverage_items CHECK only allows news/review/preview/
+        // interview/trailer/trailer_repost/stream/video/guide/roundup/mention/
+        // feature/informational. Twitter posts are short mentions.
         results.push(await scanGenericApify(ctx, 'twitter',
           (v) => ({ searchTerms: v, maxItems: ctx.maxResults, sort: 'Latest' }),
-          'social'))
+          'mention'))
       }
       else if (platform === 'tiktok') {
+        // TikToks are short-form videos.
         results.push(await scanGenericApify(ctx, 'tiktok',
           (v, h) => ({ hashtags: h, searchQueries: v, resultsPerPage: ctx.maxResults, shouldDownloadVideos: false }),
-          'social'))
+          'video'))
       }
       else if (platform === 'instagram') {
+        // Instagram Reels are videos; carousels/photos still fit 'video' best
+        // among the allowed enum values.
         results.push(await scanGenericApify(ctx, 'instagram',
           (v, h) => ({ hashtags: h, search: v[0], resultsLimit: ctx.maxResults, addParentData: false }),
-          'social'))
+          'video'))
       }
     } catch (err) {
       results.push({ platform, items_found: 0, items_inserted: 0, http_status: null, error: err instanceof Error ? err.message : String(err) })

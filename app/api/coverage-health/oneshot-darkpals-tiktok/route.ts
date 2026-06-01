@@ -156,7 +156,7 @@ export async function POST() {
           publish_date: item.createTimeISO
             ? (item.createTimeISO as string).split('T')[0]
             : (item.createTime ? new Date(Number(item.createTime) * 1000).toISOString().split('T')[0] : null),
-          coverage_type: 'social', source_type: 'tiktok',
+          coverage_type: 'video', source_type: 'tiktok',
           territory: inferTerritory(null, null, null),
           source_metadata: {
             oneshot: true, deep_scan: true,
@@ -211,7 +211,7 @@ export async function POST() {
           publish_date: item.createTimeISO
             ? (item.createTimeISO as string).split('T')[0]
             : (item.createTime ? new Date(Number(item.createTime) * 1000).toISOString().split('T')[0] : null),
-          coverage_type: 'social', source_type: 'tiktok',
+          coverage_type: 'video', source_type: 'tiktok',
           territory: inferTerritory(null, null, null),
           source_metadata: {
             oneshot: true, deep_scan: true,
