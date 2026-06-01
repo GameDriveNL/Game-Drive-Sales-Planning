@@ -55,6 +55,16 @@ export async function middleware(req: NextRequest) {
     return res
   }
 
+  // Sibling oneshots for the YouTube/Reddit and TikTok phases that didn't
+  // complete inside the original 300s Vercel timeout. Each self-locks via
+  // its own service_settings flag.
+  if (pathname === '/api/coverage-health/oneshot-darkpals-yt') {
+    return res
+  }
+  if (pathname === '/api/coverage-health/oneshot-darkpals-tiktok') {
+    return res
+  }
+
   // Allow SullyGnome collect webhook (called by Apify, no auth)
   if (pathname.startsWith('/api/sullygnome-collect')) {
     return res
