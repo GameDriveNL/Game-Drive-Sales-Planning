@@ -120,11 +120,13 @@ export async function POST() {
   }> = []
   let totalInserted = 0
 
-  // Pass 1: top 4 variants combined as searchQueries (one call, large result set)
+  // Pass 1: top 4 variants combined as searchQueries.
+  // Capped at resultsPerPage 30 — the previous run at 200 hit Apify's actor
+  // timeout (TIMED-OUT at 240s). 4 queries × 30 results ≈ 60-90s per call.
   if (variants.length > 0) {
     const input = {
       searchQueries: variants.slice(0, 4),
-      resultsPerPage: 200,
+      resultsPerPage: 30,
       shouldDownloadVideos: false,
       shouldDownloadCovers: false,
       shouldDownloadSubtitles: false,
@@ -175,11 +177,11 @@ export async function POST() {
     })
   }
 
-  // Pass 2: hashtags (one call) — TikTok hashtag scraping is the canonical way
+  // Pass 2: hashtags — same scope reduction as Pass 1.
   if (hashtags.length > 0) {
     const input = {
-      hashtags: hashtags.slice(0, 8),
-      resultsPerPage: 200,
+      hashtags: hashtags.slice(0, 6),
+      resultsPerPage: 30,
       shouldDownloadVideos: false,
       shouldDownloadCovers: false,
       shouldDownloadSubtitles: false,
