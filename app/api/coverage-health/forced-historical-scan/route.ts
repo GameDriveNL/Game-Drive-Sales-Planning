@@ -44,8 +44,6 @@ import {
 import {
   getAllStreams,
   getAllClips,
-  getVideosByUser,
-  type HelixVideo,
 } from '@/lib/twitch-helix'
 import {
   searchYouTubeViaPipedDeep,
@@ -278,13 +276,15 @@ export async function POST(request: NextRequest) {
             reports.helix.items_found++
           }
 
-          // 2b. Clips paginated — at 20 pages (2000 clips, ~100s budget).
-          // Verified manually: 30 pages ate the helix budget, 10 pages lost
-          // ~18 long-tail broadcasters vs 30. 20 is the sweet spot.
+          // 2b. Clips paginated — at 10 pages (1000 clips, ~50s).
+          // Math from runs: 10p=50s/461u, 20p=150s/479u, 30p=150s/479u.
+          // The 18-broadcaster gap from going 20p→10p isn't worth the 100s
+          // budget hit that kills Piped pass entirely. Daily twitch-scan
+          // cron picks up the deep clip tail over time.
           const clips = await getAllClips(cid, cs, helixGameId, {
             startedAt: new Date(Date.now() - 90 * 86400000).toISOString(),
             endedAt: new Date().toISOString(),
-            maxPages: 20,
+            maxPages: 10,
           })
           reports.helix.notes.clips_found = clips.length
           for (const c of clips) {
@@ -311,67 +311,13 @@ export async function POST(request: NextRequest) {
             reports.helix.items_found++
           }
 
-          // 2c. Per-user VODs for every broadcaster from clips + GQL
-          const userIds = new Set<string>()
-          for (const c of clips) userIds.add(c.broadcaster_id)
-          for (const s of live) userIds.add(s.user_id)
-          const gqlLogins = Array.from(gqlBroadcasters.keys())
-          if (gqlLogins.length > 0) {
-            // Resolve Helix user_ids for GQL logins (batched 100 per /users call)
-            const token = await getAppToken(cid, cs)
-            for (let i = 0; i < gqlLogins.length; i += 100) {
-              const chunk = gqlLogins.slice(i, i + 100)
-              const url = new URL('https://api.twitch.tv/helix/users')
-              for (const login of chunk) url.searchParams.append('login', login)
-              const r = await fetch(url, { headers: { 'Client-Id': cid, Authorization: `Bearer ${token}` } })
-              if (!r.ok) continue
-              const j = await r.json() as { data?: Array<{ id?: string }> }
-              for (const u of (j.data || [])) if (u.id) userIds.add(u.id)
-            }
-          }
-          reports.helix.notes.user_ids_to_enrich = userIds.size
-
-          // Soft time budget — bail aggressively to leave room for Pass 3+4.
-          // Previously ran 500 users × 2 pages and ate the entire 300s. Now
-          // capped at 60 users × 1 page (~30-45s), prioritising broadcasters
-          // who have multiple GQL signals (clip + video) since those are more
-          // likely to have multiple Dark Pals VODs. The daily twitch-gql-scan
-          // cron enriches the rest over time.
-          const userIdList = Array.from(userIds).slice(0, 60)
-          let vodsHarvested = 0
-          for (let i = 0; i < userIdList.length; i += 10) {
-            if (Date.now() - t0 > 90_000) {
-              reports.helix.errors.push(`time-budget reached after ${i} users (helix phase capped at 90s to preserve passes 3+4)`)
-              break
-            }
-            const batch = userIdList.slice(i, i + 10)
-            const results = await Promise.all(batch.map(uid => getVideosByUser(cid, cs, uid, 1).catch(() => [] as HelixVideo[])))
-            for (const vs of results) {
-              for (const v of vs) {
-                if (existingUrls.has(v.url)) continue
-                existingUrls.add(v.url)
-                vodsHarvested++
-                const oid = await ensureOutlet(`twitch.tv/${v.user_login}`, v.user_name, null, 'D')
-                const { error } = await supabase.from('coverage_items').insert({
-                  client_id: game.client_id, game_id: game.id, outlet_id: oid,
-                  title: v.title || `${v.user_name} VOD`, url: v.url,
-                  publish_date: (v.published_at || v.created_at).split('T')[0],
-                  coverage_type: 'stream', source_type: 'twitch',
-                  source_metadata: {
-                    discovery: 'onboarding_audit',
-                    twitch_helix: true, twitch_vod_id: v.id,
-                    channel_login: v.user_login, channel_display_name: v.user_name,
-                    view_count: v.view_count, language: v.language, type: v.type,
-                  },
-                  approval_status: 'pending_review',
-                  discovered_at: new Date().toISOString(),
-                })
-                if (!error) reports.helix.items_inserted++
-                reports.helix.items_found++
-              }
-            }
-          }
-          reports.helix.notes.vods_harvested = vodsHarvested
+          // 2c. Per-user VOD enrichment DROPPED from forced-historical.
+          // Empirically adds 0-5 new broadcasters (the GQL fanout already
+          // surfaces the same broadcasters via clip + video paths). For
+          // CONTENT enrichment (more VODs per existing broadcaster), the
+          // daily twitch-scan cron handles it incrementally.
+          reports.helix.notes.user_ids_to_enrich = 0
+          reports.helix.notes.vods_harvested = 0
         }
       } catch (err) {
         reports.helix.errors.push(err instanceof Error ? err.message : String(err))
