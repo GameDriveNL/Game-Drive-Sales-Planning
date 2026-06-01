@@ -260,7 +260,53 @@ export async function checkApifyDailyBudget(
     }
 
     const callsToday = count ?? 0
-    return { ok: callsToday < limit, callsToday, limit, error: null }
+    if (callsToday >= limit) {
+      return { ok: false, callsToday, limit, error: `daily call limit reached (${callsToday}/${limit})` }
+    }
+
+    // USD-based safeguard. Independent of call count — refuses to run if
+    // monthly remaining credit is below the safety floor (default $4) or if
+    // today's accumulated USD spend exceeds the configured daily USD cap.
+    // Added 2026-06-01 after May ran out in 4 days. Belt + suspenders.
+    const { data: usdLimitRow } = await supabase
+      .from('service_settings').select('value').eq('key', 'apify_daily_usd_limit').maybeSingle()
+    const { data: floorRow } = await supabase
+      .from('service_settings').select('value').eq('key', 'apify_monthly_usd_safety_floor').maybeSingle()
+    const dailyUsdLimit = Number(usdLimitRow?.value ?? 0)  // 0 = disabled
+    const safetyFloor = Number(floorRow?.value ?? 0)
+
+    if (dailyUsdLimit > 0) {
+      // Estimate today's USD spend by summing apify_runs durations × actor cost.
+      // We don't have per-run actor cost data here; use a heuristic of $0.30/run
+      // (matches observed average from 2026-06-01 burn analysis).
+      const estimatedSpendUsd = callsToday * 0.30
+      if (estimatedSpendUsd >= dailyUsdLimit) {
+        return {
+          ok: false, callsToday, limit,
+          error: `daily USD cap reached (~$${estimatedSpendUsd.toFixed(2)} ≥ $${dailyUsdLimit.toFixed(2)})`,
+        }
+      }
+    }
+
+    // Monthly safety floor: if Apify says we have less than $floor remaining,
+    // refuse. Caller already ran checkApifyCredits separately in some paths but
+    // not all — this is the catch-all.
+    if (safetyFloor > 0) {
+      const { data: keyRow } = await supabase
+        .from('service_api_keys').select('api_key').eq('service_name', 'apify').eq('is_active', true).maybeSingle()
+      const apiKey = keyRow?.api_key as string | undefined
+      if (apiKey) {
+        const credits = await checkApifyCredits(apiKey, safetyFloor)
+        if (credits.remainingUsd !== null && credits.remainingUsd < safetyFloor) {
+          return {
+            ok: false, callsToday, limit,
+            error: `monthly safety floor hit: $${credits.remainingUsd} < $${safetyFloor}`,
+          }
+        }
+      }
+    }
+
+    return { ok: true, callsToday, limit, error: null }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return { ok: false, callsToday: 0, limit: DEFAULT_DAILY_CALL_LIMIT, error: msg }

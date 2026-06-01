@@ -63,6 +63,12 @@ const TIKTOK_ACTOR = 'clockworks~free-tiktok-scraper'
 const PASSES = ['gql', 'helix', 'piped', 'tavily', 'tiktok'] as const
 type PassName = (typeof PASSES)[number]
 
+// Default passes EXCLUDE 'tiktok' — that pass costs ~$3-4 of Apify budget per
+// game. Caller must opt in explicitly by passing passes:['gql','helix','piped',
+// 'tavily','tiktok']. The auto-trigger on game create only fires the free
+// passes; an operator decides separately whether to run TikTok per game.
+const DEFAULT_PASSES: readonly PassName[] = ['gql', 'helix', 'piped', 'tavily']
+
 interface PassReport {
   attempted: boolean
   items_found: number
@@ -102,7 +108,7 @@ export async function POST(request: NextRequest) {
   }
   const force = body.force === true
   const requestedPasses = new Set<PassName>(
-    (body.passes ?? PASSES as unknown as string[]).filter(
+    (body.passes ?? DEFAULT_PASSES as unknown as string[]).filter(
       (p): p is PassName => (PASSES as unknown as string[]).includes(p),
     ),
   )
