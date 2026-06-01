@@ -277,11 +277,13 @@ export async function POST(request: NextRequest) {
             reports.helix.items_found++
           }
 
-          // 2b. Clips paginated to exhaustion
+          // 2b. Clips paginated — capped at 30 pages (3000 clips) to keep
+          // helix phase under 60s. 30 pages of Dark Pals clips covers the
+          // viral long tail; clip 3001+ has <10 views typically.
           const clips = await getAllClips(cid, cs, helixGameId, {
             startedAt: new Date(Date.now() - 90 * 86400000).toISOString(),
             endedAt: new Date().toISOString(),
-            maxPages: 100,
+            maxPages: 30,
           })
           reports.helix.notes.clips_found = clips.length
           for (const c of clips) {
@@ -328,16 +330,21 @@ export async function POST(request: NextRequest) {
           }
           reports.helix.notes.user_ids_to_enrich = userIds.size
 
-          // Soft time budget — bail if we approach Vercel maxDuration
-          const userIdList = Array.from(userIds).slice(0, 500)
+          // Soft time budget — bail aggressively to leave room for Pass 3+4.
+          // Previously ran 500 users × 2 pages and ate the entire 300s. Now
+          // capped at 60 users × 1 page (~30-45s), prioritising broadcasters
+          // who have multiple GQL signals (clip + video) since those are more
+          // likely to have multiple Dark Pals VODs. The daily twitch-gql-scan
+          // cron enriches the rest over time.
+          const userIdList = Array.from(userIds).slice(0, 60)
           let vodsHarvested = 0
           for (let i = 0; i < userIdList.length; i += 10) {
-            if (Date.now() - t0 > 240_000) {
-              reports.helix.errors.push(`time-budget reached after ${i} users`)
+            if (Date.now() - t0 > 90_000) {
+              reports.helix.errors.push(`time-budget reached after ${i} users (helix phase capped at 90s to preserve passes 3+4)`)
               break
             }
             const batch = userIdList.slice(i, i + 10)
-            const results = await Promise.all(batch.map(uid => getVideosByUser(cid, cs, uid, 2).catch(() => [] as HelixVideo[])))
+            const results = await Promise.all(batch.map(uid => getVideosByUser(cid, cs, uid, 1).catch(() => [] as HelixVideo[])))
             for (const vs of results) {
               for (const v of vs) {
                 if (existingUrls.has(v.url)) continue
