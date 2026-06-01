@@ -63,13 +63,16 @@ async function searchOnInstance(
   base: string,
   query: string,
   signal: AbortSignal,
-): Promise<PipedSearchResult[] | null> {
+  nextpage?: string,
+): Promise<{ hits: PipedSearchResult[]; nextpage: string | null } | null> {
   try {
-    const url = `${base}/search?q=${encodeURIComponent(query)}&filter=videos`
+    const url = nextpage
+      ? `${base}/nextpage/search?q=${encodeURIComponent(query)}&filter=videos&nextpage=${encodeURIComponent(nextpage)}`
+      : `${base}/search?q=${encodeURIComponent(query)}&filter=videos`
     const res = await fetch(url, { signal, headers: { Accept: 'application/json' } })
     if (!res.ok) return null
-    const data = await res.json() as { items?: PipedRawHit[] }
-    return (data.items || [])
+    const data = await res.json() as { items?: PipedRawHit[]; nextpage?: string }
+    const hits = (data.items || [])
       .filter(it => it.type === 'stream' || !it.type)
       .filter(it => it.url && pickVideoId(it.url))
       .map(it => ({
@@ -83,15 +86,18 @@ async function searchOnInstance(
         thumbnail: it.thumbnail || null,
         description: it.shortDescription || '',
       }))
+    return { hits, nextpage: data.nextpage ?? null }
   } catch {
     return null
   }
 }
 
 /**
- * Search YouTube via Piped, rotating instances on failure.
- * Returns first successful response. Never throws; returns empty on full
- * exhaustion.
+ * Search YouTube via Piped, rotating instances on failure. Single page only —
+ * returns first successful response.
+ *
+ * Prefer `searchYouTubeViaPipedDeep` for any real recall work — single page
+ * only returns 20 items (verified 2026-06-01).
  */
 export async function searchYouTubeViaPiped(
   query: string,
@@ -103,14 +109,70 @@ export async function searchYouTubeViaPiped(
     const ctl = new AbortController()
     const timer = setTimeout(() => ctl.abort(), timeout)
     try {
-      const hits = await searchOnInstance(inst, query, ctl.signal)
+      const page = await searchOnInstance(inst, query, ctl.signal)
       clearTimeout(timer)
-      if (hits && hits.length > 0) return hits
+      if (page && page.hits.length > 0) return page.hits
     } catch {
       clearTimeout(timer)
     }
   }
   return []
+}
+
+/**
+ * Paginated search across nextpage cursors. Returns deduped results.
+ *
+ * Verified 2026-06-01: api.piped.private.coffee paginates to ~190 unique
+ * results per query in ~12 seconds across 11 pages before nextpage starts
+ * returning 0 items. Stays on a single instance for cursor consistency
+ * (cursors are instance-specific), only rotates on hard failure.
+ *
+ * 12 pages × ~17 unique-per-page = ~200 video ceiling per query. With 4
+ * queries that's ~750 unique videos — vs 80 with single-page.
+ */
+export async function searchYouTubeViaPipedDeep(
+  query: string,
+  opts: {
+    maxPages?: number
+    timeoutMsPerPage?: number
+    overallTimeoutMs?: number
+    instances?: string[]
+  } = {},
+): Promise<PipedSearchResult[]> {
+  const maxPages = opts.maxPages ?? 12
+  const pageTimeout = opts.timeoutMsPerPage ?? 12_000
+  const overallBudget = opts.overallTimeoutMs ?? 60_000
+  const instances = opts.instances ?? PIPED_INSTANCES
+  const seen = new Set<string>()
+  const all: PipedSearchResult[] = []
+  const start = Date.now()
+
+  for (const inst of instances) {
+    let cursor: string | null = null
+    let pagesOnThisInstance = 0
+    while (pagesOnThisInstance < maxPages && Date.now() - start < overallBudget) {
+      const ctl = new AbortController()
+      const timer = setTimeout(() => ctl.abort(), pageTimeout)
+      let page: { hits: PipedSearchResult[]; nextpage: string | null } | null = null
+      try {
+        page = await searchOnInstance(inst, query, ctl.signal, cursor ?? undefined)
+      } catch { /* fall through */ }
+      clearTimeout(timer)
+      if (!page) break  // try next instance
+      let newAdds = 0
+      for (const h of page.hits) {
+        if (seen.has(h.videoId)) continue
+        seen.add(h.videoId)
+        all.push(h)
+        newAdds++
+      }
+      pagesOnThisInstance++
+      if (!page.nextpage || newAdds === 0) return all  // exhausted
+      cursor = page.nextpage
+    }
+    if (all.length > 0) return all  // we got some — don't try the next instance
+  }
+  return all
 }
 
 /**

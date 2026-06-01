@@ -48,7 +48,7 @@ import {
   type HelixVideo,
 } from '@/lib/twitch-helix'
 import {
-  searchYouTubeViaPiped,
+  searchYouTubeViaPipedDeep,
   fetchVideoDescription,
   extractTwitchLogins,
   type PipedSearchResult,
@@ -277,13 +277,14 @@ export async function POST(request: NextRequest) {
             reports.helix.items_found++
           }
 
-          // 2b. Clips paginated — capped at 30 pages (3000 clips) to keep
-          // helix phase under 60s. 30 pages of Dark Pals clips covers the
-          // viral long tail; clip 3001+ has <10 views typically.
+          // 2b. Clips paginated — capped at 10 pages (1000 clips). Each page
+          // ~5s = 50s budget. Previously at 30 pages it ate 150s of the
+          // 90s helix budget and killed per-user VOD enrichment. The daily
+          // twitch-scan cron picks up clips 1001-5000 over time.
           const clips = await getAllClips(cid, cs, helixGameId, {
             startedAt: new Date(Date.now() - 90 * 86400000).toISOString(),
             endedAt: new Date().toISOString(),
-            maxPages: 30,
+            maxPages: 10,
           })
           reports.helix.notes.clips_found = clips.length
           for (const c of clips) {
@@ -394,12 +395,19 @@ export async function POST(request: NextRequest) {
       queries.push(`${game.name} gameplay`)
       queries.push(`${game.name} walkthrough`)
 
+      // Paginated Piped search — verified 2026-06-01 returns ~190 unique per
+      // query in ~12s via the nextpage cursor. Was previously fetching only
+      // page 1 (20 items). 4 queries × ~190 ≈ 750 video ceiling here.
+      const perQueryBudgetMs = 35_000  // 35s per query, max 4 queries = 140s
       for (const q of queries) {
-        if (Date.now() - t0 > 250_000) {
+        if (Date.now() - t0 > 220_000) {
           reports.piped.errors.push('time-budget reached during search')
           break
         }
-        const hits = await searchYouTubeViaPiped(q)
+        const hits = await searchYouTubeViaPipedDeep(q, {
+          maxPages: 12,
+          overallTimeoutMs: perQueryBudgetMs,
+        })
         for (const h of hits) {
           if (seenVids.has(h.videoId)) continue
           seenVids.add(h.videoId)
