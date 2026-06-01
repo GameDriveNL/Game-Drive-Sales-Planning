@@ -70,13 +70,16 @@ export async function GET() {
     youtubeLive = { works: false, sample_videos_found: null, error: 'YOUTUBE_DATA_API_KEY not in env' }
   }
 
-  // 2c. Twitch Helix live test — proves Client ID + Secret are valid,
-  // OAuth client_credentials grant works, and a paginated query succeeds.
+  // 2c. Twitch Helix live test — proves Client ID + Secret are valid and
+  // returns results from real game-directory queries. Tests multiple param
+  // combinations because Helix's behavior is inconsistent across sort/period
+  // combos.
   let twitchLive: {
     works: boolean;
     sample_streamers_found: number | null;
     twitch_game_id_for_dark_pals: string | null;
-    error: string | null
+    error: string | null;
+    debug?: Record<string, number | string>;
   } | null = null
   if (process.env.TWITCH_CLIENT_ID && process.env.TWITCH_CLIENT_SECRET) {
     try {
@@ -86,18 +89,35 @@ export async function GET() {
         'Dark Pals: The 1st Floor'
       )
       if (game) {
-        const sample = await getAllVideos(
-          process.env.TWITCH_CLIENT_ID,
-          process.env.TWITCH_CLIENT_SECRET,
-          game.id,
-          { sort: 'views', period: 'month', maxPages: 1 }
-        )
-        const uniqueStreamers = new Set(sample.map(v => v.user_login)).size
+        // Probe multiple combinations
+        const debug: Record<string, number | string> = {}
+        const tryConfigs: Array<{ name: string; sort: 'time' | 'trending' | 'views'; period: 'all' | 'day' | 'week' | 'month'; type?: 'all' | 'archive' | 'highlight' | 'upload' }> = [
+          { name: 'views_month_archive', sort: 'views', period: 'month' },
+          { name: 'time_month_archive', sort: 'time', period: 'month' },
+          { name: 'time_all_archive', sort: 'time', period: 'all' },
+          { name: 'time_week_archive', sort: 'time', period: 'week' },
+          { name: 'time_month_all', sort: 'time', period: 'month', type: 'all' },
+        ]
+        let bestSample: Awaited<ReturnType<typeof getAllVideos>> = []
+        for (const cfg of tryConfigs) {
+          try {
+            const result = await getAllVideos(
+              process.env.TWITCH_CLIENT_ID, process.env.TWITCH_CLIENT_SECRET, game.id,
+              { sort: cfg.sort, period: cfg.period, type: cfg.type, maxPages: 1 }
+            )
+            debug[cfg.name] = result.length
+            if (result.length > bestSample.length) bestSample = result
+          } catch (e) {
+            debug[cfg.name] = `ERR: ${e instanceof Error ? e.message.substring(0, 80) : String(e)}`
+          }
+        }
+        const uniqueStreamers = new Set(bestSample.map(v => v.user_login)).size
         twitchLive = {
-          works: sample.length > 0,
+          works: bestSample.length > 0,
           sample_streamers_found: uniqueStreamers,
           twitch_game_id_for_dark_pals: game.id,
-          error: sample.length === 0 ? 'Game found but no VODs returned' : null,
+          error: bestSample.length === 0 ? 'No combination of sort/period/type returned VODs' : null,
+          debug,
         }
       } else {
         twitchLive = { works: false, sample_streamers_found: null, twitch_game_id_for_dark_pals: null, error: 'Twitch game lookup returned null' }
