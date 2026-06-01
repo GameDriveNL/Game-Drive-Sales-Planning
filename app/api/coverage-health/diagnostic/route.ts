@@ -18,7 +18,7 @@ import { NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { checkApifyCredits } from '@/lib/apify-utils'
 import { searchVideos } from '@/lib/youtube-data-api'
-import { getGameByName, getAllVideos } from '@/lib/twitch-helix'
+import { getGameByName, getAllVideos, getAllStreams, getAllClips } from '@/lib/twitch-helix'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -89,34 +89,49 @@ export async function GET() {
         'Dark Pals: The 1st Floor'
       )
       if (game) {
-        // Probe multiple combinations
+        // Probe Helix endpoints across video/stream/clip + a known-popular
+        // control game (Just Chatting = 509658) to distinguish auth issues
+        // from Twitch's known game_id index gaps.
         const debug: Record<string, number | string> = {}
-        const tryConfigs: Array<{ name: string; sort: 'time' | 'trending' | 'views'; period: 'all' | 'day' | 'week' | 'month'; type?: 'all' | 'archive' | 'highlight' | 'upload' }> = [
-          { name: 'views_month_archive', sort: 'views', period: 'month' },
-          { name: 'time_month_archive', sort: 'time', period: 'month' },
-          { name: 'time_all_archive', sort: 'time', period: 'all' },
-          { name: 'time_week_archive', sort: 'time', period: 'week' },
-          { name: 'time_month_all', sort: 'time', period: 'month', type: 'all' },
-        ]
-        let bestSample: Awaited<ReturnType<typeof getAllVideos>> = []
-        for (const cfg of tryConfigs) {
-          try {
-            const result = await getAllVideos(
-              process.env.TWITCH_CLIENT_ID, process.env.TWITCH_CLIENT_SECRET, game.id,
-              { sort: cfg.sort, period: cfg.period, type: cfg.type, maxPages: 1 }
-            )
-            debug[cfg.name] = result.length
-            if (result.length > bestSample.length) bestSample = result
-          } catch (e) {
-            debug[cfg.name] = `ERR: ${e instanceof Error ? e.message.substring(0, 80) : String(e)}`
-          }
-        }
-        const uniqueStreamers = new Set(bestSample.map(v => v.user_login)).size
+        const CID = process.env.TWITCH_CLIENT_ID
+        const CS = process.env.TWITCH_CLIENT_SECRET
+
+        // Dark Pals tests
+        try {
+          const s = await getAllStreams(CID, CS, game.id, 2)
+          debug['darkpals_streams_live'] = s.length
+        } catch (e) { debug['darkpals_streams_live'] = `ERR ${e instanceof Error ? e.message.substring(0,60) : ''}` }
+        try {
+          const c = await getAllClips(CID, CS, game.id, {
+            startedAt: new Date(Date.now() - 30*86400000).toISOString(),
+            endedAt: new Date().toISOString(),
+            maxPages: 2,
+          })
+          debug['darkpals_clips_30d'] = c.length
+        } catch (e) { debug['darkpals_clips_30d'] = `ERR ${e instanceof Error ? e.message.substring(0,60) : ''}` }
+        try {
+          const v = await getAllVideos(CID, CS, game.id, { sort: 'time', period: 'month', maxPages: 1 })
+          debug['darkpals_videos_month_time'] = v.length
+        } catch (e) { debug['darkpals_videos_month_time'] = `ERR ${e instanceof Error ? e.message.substring(0,60) : ''}` }
+
+        // Control: Just Chatting (huge directory, should return tons)
+        try {
+          const s = await getAllStreams(CID, CS, '509658', 1)
+          debug['justchatting_streams_live'] = s.length
+        } catch (e) { debug['justchatting_streams_live'] = `ERR ${e instanceof Error ? e.message.substring(0,60) : ''}` }
+        try {
+          const v = await getAllVideos(CID, CS, '509658', { sort: 'time', period: 'day', maxPages: 1 })
+          debug['justchatting_videos_day'] = v.length
+        } catch (e) { debug['justchatting_videos_day'] = `ERR ${e instanceof Error ? e.message.substring(0,60) : ''}` }
+
+        const total = Object.values(debug)
+          .filter((v): v is number => typeof v === 'number')
+          .reduce((s, v) => s + v, 0)
         twitchLive = {
-          works: bestSample.length > 0,
-          sample_streamers_found: uniqueStreamers,
+          works: total > 0,
+          sample_streamers_found: total,
           twitch_game_id_for_dark_pals: game.id,
-          error: bestSample.length === 0 ? 'No combination of sort/period/type returned VODs' : null,
+          error: total === 0 ? 'No Helix endpoint returned data — auth or indexing issue' : null,
           debug,
         }
       } else {
