@@ -65,6 +65,12 @@ export async function middleware(req: NextRequest) {
     return res
   }
 
+  // Raw YouTube Data API debug — returns Google's verbatim error response
+  // so we can see why the key returns 0 items even for popular queries.
+  if (pathname === '/api/coverage-health/yt-raw') {
+    return res
+  }
+
   // Allow SullyGnome collect webhook (called by Apify, no auth)
   if (pathname.startsWith('/api/sullygnome-collect')) {
     return res
