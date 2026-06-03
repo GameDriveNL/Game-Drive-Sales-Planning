@@ -87,6 +87,14 @@
     {
       "path": "/api/cron/onboarding-audit",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/twitch-streams-poll",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/youtube-rss-poll",
+      "schedule": "*/30 * * * *"
     }
   ],
   "buildCommand": "next build"
