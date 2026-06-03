@@ -225,9 +225,22 @@ export async function searchForStrictVODs(
       } | null
       const user = r?.data?.user
       if (!user) return null
+      // Match the game name flexibly: Twitch's GQL game name is often the
+      // BASE name (e.g. "Dark Pals") while our system stores the full
+      // marketing title ("Dark Pals: The 1st Floor"). Accept either exact
+      // match or substring on the first-half-before-colon-or-dash.
+      const wantedShort = gameName.toLowerCase().split(/[:\-—]/, 1)[0].trim()
       const matchingVod = (user.videos?.edges || [])
         .map(e => e.node)
-        .find(n => n?.game?.name?.toLowerCase() === gameName.toLowerCase())
+        .find(n => {
+          const g = n?.game?.name?.toLowerCase()
+          if (!g) return false
+          if (g === gameName.toLowerCase()) return true
+          if (g === wantedShort) return true
+          // Conservative fuzzy: VOD game must contain the short name AND
+          // the short name must be ≥4 chars to avoid common-word collisions.
+          return wantedShort.length >= 4 && g.includes(wantedShort)
+        })
       if (!matchingVod) return null
       return {
         login,
