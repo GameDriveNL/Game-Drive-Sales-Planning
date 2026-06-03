@@ -122,12 +122,17 @@ export async function POST(request: NextRequest) {
     overallTimeoutMs: 70_000,
   })
   const remainingForLangs = Math.max(20_000, 200_000 - (Date.now() - searchStart))
+  // Extended language fanout — added Indonesian, Vietnamese, Russian, Polish,
+  // Turkish, Thai. These are the highest-impact misses per Bram's CSV
+  // language breakdown (id 45, br 38, ru 8, pl 6, tr 5, th 4). Each lang
+  // gets its own Innertube session so YouTube's relevance ranking surfaces
+  // localized long-tail videos that en-search misses.
   const multiHits = await searchYouTubeMultiLang(
-    queries.slice(0, 4),  // narrower variant set for multi-lang to fit time
-    ['nl', 'pt', 'es', 'it', 'ja'],
+    queries.slice(0, 3),  // narrower variant set to fit 11-lang time budget
+    ['nl', 'pt', 'es', 'it', 'ja', 'id', 'vi', 'ru', 'pl', 'tr', 'th'],
     {
-      maxPagesPerQuery: 6,
-      perLangTimeoutMs: 24_000,
+      maxPagesPerQuery: 5,
+      perLangTimeoutMs: 16_000,
       overallTimeoutMs: remainingForLangs,
     },
   )

@@ -90,7 +90,7 @@
     },
     {
       "path": "/api/cron/twitch-streams-poll",
-      "schedule": "*/5 * * * *"
+      "schedule": "*/2 * * * *"
     },
     {
       "path": "/api/cron/youtube-rss-poll",
