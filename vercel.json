@@ -95,6 +95,10 @@
     {
       "path": "/api/cron/youtube-rss-poll",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/tiktok-profile-poll",
+      "schedule": "0 3 * * *"
     }
   ],
   "buildCommand": "next build"

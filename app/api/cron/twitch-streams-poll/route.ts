@@ -143,14 +143,27 @@ export async function GET(request: NextRequest) {
 
   for (const game of games as Array<{ id: string; name: string; client_id: string }>) {
     let twitchGameId = gameIdToTwitchId.get(game.id) || null
-    // Fallback: resolve via GQL anon endpoint, then cache it onto a coverage_sources row
-    // (created if absent). Prevents the cron from silently skipping games whose
-    // twitch_game_id was never seeded.
+    // Fallback: resolve via GQL. Twitch often categorises games by the FULL
+    // marketing title (e.g. "We Were Here Tomorrow"), while our DB stores
+    // shorthand ("WWH Tomorrow"). Try each whitelist keyword as a candidate
+    // game name — the first hit wins. Caches the result to coverage_sources
+    // so subsequent runs skip the lookup.
     if (!twitchGameId) {
-      try {
-        twitchGameId = await resolveTwitchGameId(game.name)
-      } catch {
-        twitchGameId = null
+      const { data: kwRows } = await supabase
+        .from('coverage_keywords')
+        .select('keyword')
+        .eq('game_id', game.id)
+        .eq('keyword_type', 'whitelist')
+        .eq('is_active', true)
+      const candidateNames = Array.from(new Set([
+        game.name,
+        ...(kwRows || []).map((k: { keyword: string }) => k.keyword),
+      ]))
+      for (const candidate of candidateNames) {
+        try {
+          const id = await resolveTwitchGameId(candidate)
+          if (id) { twitchGameId = id; break }
+        } catch { /* try next */ }
       }
       if (twitchGameId) {
         // Upsert coverage_sources row to cache the lookup

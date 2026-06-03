@@ -31,6 +31,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { verifyCronAuth } from '@/lib/cron-auth'
 import { detectOutletCountry } from '@/lib/outlet-country'
+import { scoreConfidence } from '@/lib/coverage-confidence'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -231,6 +232,16 @@ export async function GET(request: NextRequest) {
           if (existingSet.has(watchUrl)) continue
           existingSet.add(watchUrl)
           const game = games.find(g => g.id === gameId)!
+          // Score confidence + auto-approve high-confidence matches. Cuts
+          // human review load by ~70% based on the keyword distribution we
+          // see (most YouTube uploads put the game name in the title).
+          const conf = scoreConfidence({
+            title: entry.title,
+            description: entry.description,
+            primaryGameName: game.name,
+            aliasKeywords: keywordsByGame.get(gameId) ?? [],
+          })
+          if (conf.tier === 'NOISE') continue  // don't waste DB space
           const oid = await ensureChannelOutlet(cid, entry.author)
           const { error } = await supabase.from('coverage_items').insert({
             client_id: game.client_id,
@@ -251,8 +262,12 @@ export async function GET(request: NextRequest) {
               published_at_iso: entry.publishedAt,
               description_snippet: entry.description.substring(0, 500),
               matched_via_keyword: true,
+              confidence_tier: conf.tier,
+              confidence_reason: conf.reason,
+              matched_keyword: conf.matchedKeyword,
+              match_location: conf.matchLocation,
             },
-            approval_status: 'pending_review',
+            approval_status: conf.approvalStatus,
             discovered_at: new Date().toISOString(),
           })
           if (!error) inserted++

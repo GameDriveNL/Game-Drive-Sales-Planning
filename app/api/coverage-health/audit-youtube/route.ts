@@ -30,6 +30,7 @@ import {
   resolveChannelHandleViaInnertube,
   type InnertubeSearchResult,
 } from '@/lib/youtube-innertube'
+import { scoreConfidence } from '@/lib/coverage-confidence'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -163,13 +164,19 @@ export async function POST(request: NextRequest) {
   }
   const handleMs = Date.now() - handleStart
 
-  // Insert
-  let inserted = 0, dup = 0
+  // Insert (with confidence-scored auto-approval to cut review queue)
+  let inserted = 0, dup = 0, autoApproved = 0, pending = 0
   const insertStart = Date.now()
   for (const yt of uniq) {
     if (Date.now() - t0 > 290_000) break
     const watchUrl = `https://www.youtube.com/watch?v=${yt.videoId}`
     if (existingUrls.has(watchUrl)) { dup++; continue }
+    const conf = scoreConfidence({
+      title: yt.title, description: yt.description,
+      primaryGameName: game.name,
+      aliasKeywords: variants,
+    })
+    if (conf.tier === 'NOISE') continue
     existingUrls.add(watchUrl)
     const resolvedHandle = yt.channelId ? channelIdToHandle.get(yt.channelId) : null
     const channelDomainSlug = resolvedHandle
@@ -196,11 +203,19 @@ export async function POST(request: NextRequest) {
         views: yt.views,
         published_text: yt.publishedText,
         duration_seconds: yt.duration,
+        confidence_tier: conf.tier,
+        confidence_reason: conf.reason,
+        matched_keyword: conf.matchedKeyword,
+        match_location: conf.matchLocation,
       },
-      approval_status: 'pending_review',
+      approval_status: conf.approvalStatus,
       discovered_at: new Date().toISOString(),
     })
-    if (!error) inserted++
+    if (!error) {
+      inserted++
+      if (conf.approvalStatus === 'auto_approved') autoApproved++
+      else pending++
+    }
   }
   const insertMs = Date.now() - insertStart
 
@@ -209,7 +224,7 @@ export async function POST(request: NextRequest) {
   }, { onConflict: 'key' })
 
   return NextResponse.json({
-    message: `Innertube YouTube audit for "${game.name}": +${inserted} new of ${uniq.length} found`,
+    message: `Innertube YouTube audit for "${game.name}": +${inserted} new (auto ${autoApproved} / pending ${pending}) of ${uniq.length} found`,
     game_id: game.id,
     game_name: game.name,
     videos_found: uniq.length,
