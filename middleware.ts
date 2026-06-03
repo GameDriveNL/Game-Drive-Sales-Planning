@@ -74,6 +74,11 @@ export async function middleware(req: NextRequest) {
   if (pathname === '/api/coverage-health/forced-historical-scan') {
     return res
   }
+  // Standalone YouTube audit via Innertube. Decoupled from the main scanner
+  // so it gets its own 300s budget — Innertube needs 110-160s on its own.
+  if (pathname === '/api/coverage-health/audit-youtube') {
+    return res
+  }
   if (pathname === '/api/coverage-health/oneshot-darkpals-import') {
     return res
   }
