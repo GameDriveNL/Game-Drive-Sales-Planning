@@ -46,12 +46,14 @@ import {
   getAllClips,
 } from '@/lib/twitch-helix'
 import {
-  searchYouTubeViaPipedDeep,
   fetchVideoDescription,
   extractTwitchLogins,
-  resolveChannelHandle,
-  type PipedSearchResult,
 } from '@/lib/piped-youtube'
+import {
+  searchYouTubeDeep,
+  resolveChannelHandleViaInnertube,
+  type InnertubeSearchResult,
+} from '@/lib/youtube-innertube'
 import { checkApifyCredits, isApifyPlatformEnabled, logApifyRun } from '@/lib/apify-utils'
 
 export const dynamic = 'force-dynamic'
@@ -326,63 +328,61 @@ export async function POST(request: NextRequest) {
     reports.helix.duration_ms = Date.now() - tStart
   }
 
-  // ─── Pass 3: Piped YouTube search ──────────────────────────────────────
+  // ─── Pass 3: YouTube search via Innertube (replaces Piped) ─────────────
+  // youtubei.js wraps YouTube's own internal API — same backend the YT app
+  // uses, so search returns the long-tail Piped misses. Verified 2026-06-01:
+  // 8 queries × 15 pages recovers 38.5% of high-value videos vs Piped's
+  // ~10-13%. Free, no API key, no quota.
   if (requestedPasses.has('piped')) {
     reports.piped.attempted = true
     const tStart = Date.now()
-    const ytItems: PipedSearchResult[] = []
+    const ytItems: InnertubeSearchResult[] = []
     const seenVids = new Set<string>()
     try {
-      // Build query × language matrix — for now keep tight: top 4 variants × 3 langs
-      // ("" + es + pt for the highest-coverage Dark Pals breakdown). Can expand
-      // once Bram raises the YT quota and we want even more recall.
+      // Eight-query fanout. Includes the keyword variants the operator
+      // configured plus the proven-effective "gameplay/walkthrough/horror"
+      // expansions (these surface different long-tail videos).
       const queries: string[] = []
       for (const v of variants.slice(0, 4)) queries.push(v)
       queries.push(`${game.name} gameplay`)
       queries.push(`${game.name} walkthrough`)
+      queries.push(`${game.name} horror`)
+      queries.push(`${game.name.replace(/\s+/g, '')}`)  // joined no-space variant catches hashtag-style titles
 
-      // Paginated Piped search — verified 2026-06-01 returns ~190 unique per
-      // query in ~12s via the nextpage cursor. Was previously fetching only
-      // page 1 (20 items). 4 queries × ~190 ≈ 750 video ceiling here.
-      const perQueryBudgetMs = 35_000  // 35s per query, max 4 queries = 140s
-      for (const q of queries) {
-        if (Date.now() - t0 > 220_000) {
-          reports.piped.errors.push('time-budget reached during search')
-          break
-        }
-        const hits = await searchYouTubeViaPipedDeep(q, {
-          maxPages: 12,
-          overallTimeoutMs: perQueryBudgetMs,
-        })
-        for (const h of hits) {
-          if (seenVids.has(h.videoId)) continue
-          seenVids.add(h.videoId)
-          ytItems.push(h)
-        }
+      // Time budget: 110s for search + 30s for channel handle resolution +
+      // 20s for description xref = 160s out of 300s. Helix/GQL ran before.
+      const hits = await searchYouTubeDeep(queries, {
+        maxPagesPerQuery: 15,
+        overallTimeoutMs: 110_000,
+      })
+      for (const h of hits) {
+        if (seenVids.has(h.videoId)) continue
+        seenVids.add(h.videoId)
+        ytItems.push(h)
       }
       reports.piped.notes.video_ids_collected = ytItems.length
+      reports.piped.notes.queries_used = queries.length
       reports.piped.items_found = ytItems.length
 
-      // 3b. Resolve channel IDs → @handles. Verified 2026-06-01: 9s for 200
-      // channels in parallel-10 batches. Fixes the YouTube "channels" parity
-      // measurement bias — Piped returns /channel/UC… URLs but Bram's sheet
-      // uses @-handles, so before this resolution every video's channel
-      // looked like a miss vs Bram.
-      const channelIdsToResolve = Array.from(new Set(
-        ytItems
-          .map(it => it.channelUrl)
-          .filter(u => u.startsWith('/channel/'))
-          .map(u => u.replace('/channel/', '')),
-      ))
+      // 3b. Resolve channel IDs → @handles for those Innertube didn't already
+      // expose. Verified ~0.5s per channel; parallel-10 = ~50s for 100 channels.
       const channelIdToHandle = new Map<string, string>()
+      for (const it of ytItems) {
+        if (it.channelHandle && it.channelId) {
+          channelIdToHandle.set(it.channelId, it.channelHandle.toLowerCase())
+        }
+      }
+      const unresolvedIds = Array.from(new Set(
+        ytItems.map(it => it.channelId).filter(id => id && !channelIdToHandle.has(id))
+      )).slice(0, 200)  // cap to fit time budget
       const xtStart = Date.now()
-      for (let i = 0; i < channelIdsToResolve.length; i += 10) {
-        if (Date.now() - t0 > 270_000) {
-          reports.piped.errors.push(`channel-handle resolution time budget hit at ${i}/${channelIdsToResolve.length}`)
+      for (let i = 0; i < unresolvedIds.length; i += 10) {
+        if (Date.now() - t0 > 240_000) {
+          reports.piped.errors.push(`channel-handle resolution budget hit at ${i}/${unresolvedIds.length}`)
           break
         }
-        const batch = channelIdsToResolve.slice(i, i + 10)
-        const results = await Promise.all(batch.map(id => resolveChannelHandle(id)))
+        const batch = unresolvedIds.slice(i, i + 10)
+        const results = await Promise.all(batch.map(id => resolveChannelHandleViaInnertube(id)))
         for (let j = 0; j < batch.length; j++) {
           if (results[j]) channelIdToHandle.set(batch[j], results[j]!)
         }
@@ -390,38 +390,32 @@ export async function POST(request: NextRequest) {
       reports.piped.notes.channels_resolved = channelIdToHandle.size
       reports.piped.notes.channel_resolve_ms = Date.now() - xtStart
 
-      // Insert each YouTube video. Outlet = the channel.
+      // Insert each YouTube video.
       for (const yt of ytItems) {
         const watchUrl = `https://www.youtube.com/watch?v=${yt.videoId}`
         if (existingUrls.has(watchUrl)) continue
         existingUrls.add(watchUrl)
-        // Prefer the resolved @handle over the raw channel ID — it's what
-        // Bram's sheet uses and is the canonical YouTube identifier.
-        const channelId = yt.channelUrl.startsWith('/channel/')
-          ? yt.channelUrl.replace('/channel/', '')
-          : ''
-        const resolvedHandle = channelId ? channelIdToHandle.get(channelId) : null
+        const resolvedHandle = yt.channelId ? channelIdToHandle.get(yt.channelId) : null
         const channelDomainSlug = resolvedHandle
           ? `youtube.com/${resolvedHandle}`
-          : yt.channelUrl.startsWith('/c/') || yt.channelUrl.startsWith('/@')
-            ? `youtube.com${yt.channelUrl}`
-            : yt.channelUrl.startsWith('/channel/')
-              ? `youtube.com${yt.channelUrl}`
-              : `youtube.com/@${(yt.channelTitle || 'unknown').toLowerCase().replace(/\s+/g, '')}`
+          : yt.channelId
+            ? `youtube.com/channel/${yt.channelId}`
+            : `youtube.com/@${(yt.channelTitle || 'unknown').toLowerCase().replace(/\s+/g, '')}`
         const oid = await ensureOutlet(channelDomainSlug, yt.channelTitle, null, 'D')
         const { error } = await supabase.from('coverage_items').insert({
           client_id: game.client_id, game_id: game.id, outlet_id: oid,
           title: yt.title.substring(0, 500), url: watchUrl,
-          publish_date: null,  // Piped returns "2 days ago" — not ISO; leave null
+          publish_date: null,  // Innertube returns "2 days ago" — not ISO; leave null
           coverage_type: 'video', source_type: 'youtube',
           monthly_unique_visitors: yt.views,
           territory: inferTerritory(null, null, null),
           source_metadata: {
             discovery: 'onboarding_audit',
-            piped_youtube: true,
+            youtube_innertube: true,
             video_id: yt.videoId,
             channel_title: yt.channelTitle,
-            channel_url: yt.channelUrl,
+            channel_id: yt.channelId,
+            channel_handle: resolvedHandle,
             views: yt.views,
             published_text: yt.publishedText,
             duration_seconds: yt.duration,
