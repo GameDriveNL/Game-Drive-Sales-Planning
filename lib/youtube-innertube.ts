@@ -36,11 +36,13 @@ export interface InnertubeSearchResult {
   description: string  // short snippet from search
 }
 
-let _yt: Innertube | null = null
-async function getClient(): Promise<Innertube> {
-  if (_yt) return _yt
-  _yt = await Innertube.create({ lang: 'en', generate_session_locally: true })
-  return _yt
+const _ytByLang = new Map<string, Innertube>()
+async function getClient(lang = 'en'): Promise<Innertube> {
+  const cached = _ytByLang.get(lang)
+  if (cached) return cached
+  const fresh = await Innertube.create({ lang, generate_session_locally: true })
+  _ytByLang.set(lang, fresh)
+  return fresh
 }
 
 function fromVideo(v: unknown): InnertubeSearchResult | null {
@@ -91,7 +93,7 @@ export async function searchYouTubeDeep(
   const maxPages = opts.maxPagesPerQuery ?? 15
   const overallBudget = opts.overallTimeoutMs ?? 120_000
   const start = Date.now()
-  const yt = await getClient()
+  const yt = await getClient(opts.lang ?? 'en')
   const seen = new Set<string>()
   const all: InnertubeSearchResult[] = []
   for (const q of queries) {
@@ -112,6 +114,52 @@ export async function searchYouTubeDeep(
       }
     } catch {
       // single-query failure — keep going on the other queries
+    }
+  }
+  return all
+}
+
+/**
+ * Multi-language fanout — runs the same queries through Innertube sessions
+ * created with different `lang` codes. Each language returns a DIFFERENT
+ * search ranking from YouTube (their relevance algo accounts for the lang
+ * header), surfacing long-tail videos in that language that the `en` search
+ * never sees.
+ *
+ * Verified Dark Pals miss-language breakdown (≥10K view videos Bram has
+ * that we don't): nl (45), br/pt (38), es (30), it (15), ja (10), ru (8).
+ * Running 6 extra langs at maxPages=8 each is the right shape.
+ *
+ * Budget: defaults to 90s per language, soft-bails on overrun.
+ */
+export async function searchYouTubeMultiLang(
+  queries: string[],
+  langs: string[],
+  opts: {
+    maxPagesPerQuery?: number
+    perLangTimeoutMs?: number
+    overallTimeoutMs?: number
+  } = {},
+): Promise<InnertubeSearchResult[]> {
+  const overallBudget = opts.overallTimeoutMs ?? 220_000
+  const perLang = opts.perLangTimeoutMs ?? 35_000
+  const maxPages = opts.maxPagesPerQuery ?? 8
+  const start = Date.now()
+  const seen = new Set<string>()
+  const all: InnertubeSearchResult[] = []
+  for (const lang of langs) {
+    if (Date.now() - start > overallBudget) break
+    const remaining = overallBudget - (Date.now() - start)
+    const budget = Math.min(perLang, remaining)
+    const langHits = await searchYouTubeDeep(queries, {
+      lang,
+      maxPagesPerQuery: maxPages,
+      overallTimeoutMs: budget,
+    })
+    for (const h of langHits) {
+      if (seen.has(h.videoId)) continue
+      seen.add(h.videoId)
+      all.push(h)
     }
   }
   return all

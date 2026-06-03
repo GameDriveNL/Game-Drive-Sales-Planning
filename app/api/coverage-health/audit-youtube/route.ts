@@ -26,6 +26,7 @@ import { detectOutletCountry } from '@/lib/outlet-country'
 import { inferTerritory } from '@/lib/territory'
 import {
   searchYouTubeDeep,
+  searchYouTubeMultiLang,
   resolveChannelHandleViaInnertube,
   type InnertubeSearchResult,
 } from '@/lib/youtube-innertube'
@@ -108,12 +109,28 @@ export async function POST(request: NextRequest) {
   queries.push(`${game.name} horror`)
   queries.push(`${game.name.replace(/\s+/g, '')}`)
 
-  // 180s for search — leaves 100s for channel handle resolution + inserts
+  // Two-phase search:
+  //   Phase A: english deep-search 15 pages (~60s, ~1100 unique)
+  //   Phase B: 5-lang fanout × 6 pages each (~120s, surfaces nl/pt/es/it/ja
+  //   long-tail that en-search misses — these are the biggest miss-language
+  //   buckets from Bram's Dark Pals breakdown: nl 45, br 38, es 30, it 15,
+  //   ja 10).
   const searchStart = Date.now()
-  const hits: InnertubeSearchResult[] = await searchYouTubeDeep(queries, {
+  const enHits = await searchYouTubeDeep(queries, {
     maxPagesPerQuery: 15,
-    overallTimeoutMs: 180_000,
+    overallTimeoutMs: 70_000,
   })
+  const remainingForLangs = Math.max(20_000, 200_000 - (Date.now() - searchStart))
+  const multiHits = await searchYouTubeMultiLang(
+    queries.slice(0, 4),  // narrower variant set for multi-lang to fit time
+    ['nl', 'pt', 'es', 'it', 'ja'],
+    {
+      maxPagesPerQuery: 6,
+      perLangTimeoutMs: 24_000,
+      overallTimeoutMs: remainingForLangs,
+    },
+  )
+  const hits: InnertubeSearchResult[] = [...enHits, ...multiHits]
   const searchMs = Date.now() - searchStart
 
   // Deduplicate

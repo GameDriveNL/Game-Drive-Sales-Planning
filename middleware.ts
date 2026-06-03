@@ -79,6 +79,9 @@ export async function middleware(req: NextRequest) {
   if (pathname === '/api/coverage-health/audit-youtube') {
     return res
   }
+  if (pathname === '/api/coverage-health/audit-tiktok') {
+    return res
+  }
   if (pathname === '/api/coverage-health/oneshot-darkpals-import') {
     return res
   }
