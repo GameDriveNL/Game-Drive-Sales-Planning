@@ -99,6 +99,10 @@
     {
       "path": "/api/cron/tiktok-profile-poll",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/creator-graph-expand",
+      "schedule": "0 */4 * * *"
     }
   ],
   "buildCommand": "next build"

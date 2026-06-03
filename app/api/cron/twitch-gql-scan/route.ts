@@ -91,7 +91,23 @@ export async function GET(request: NextRequest) {
 
     if (!twitchGameId) {
       try {
-        twitchGameId = await resolveGameId(game.name)
+        // Try DB game.name first, then each whitelist keyword as alias —
+        // games like "WWH Tomorrow" are listed on Twitch as
+        // "We Were Here Tomorrow", and the keyword set already has both.
+        const { data: kwRows } = await supabase
+          .from('coverage_keywords')
+          .select('keyword')
+          .eq('game_id', game.id)
+          .eq('keyword_type', 'whitelist')
+          .eq('is_active', true)
+        const candidateNames = Array.from(new Set([
+          game.name,
+          ...(kwRows || []).map((k: { keyword: string }) => k.keyword),
+        ]))
+        for (const candidate of candidateNames) {
+          twitchGameId = await resolveGameId(candidate)
+          if (twitchGameId) break
+        }
         // Cache it back to the source config so we don't pay this lookup again.
         if (twitchGameId && twitchSrc?.id) {
           await supabase

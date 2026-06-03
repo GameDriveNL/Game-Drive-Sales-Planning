@@ -32,6 +32,7 @@ import { getServerSupabase } from '@/lib/supabase'
 import { verifyCronAuth } from '@/lib/cron-auth'
 import { detectOutletCountry } from '@/lib/outlet-country'
 import { scoreConfidence } from '@/lib/coverage-confidence'
+import { recordScannerError } from '@/lib/scanner-errors'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -77,7 +78,11 @@ function parseRssEntries(xml: string): RssEntry[] {
   return out
 }
 
-async function fetchRss(channelId: string): Promise<string | null> {
+async function fetchRss(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  channelId: string,
+): Promise<string | null> {
   try {
     const ctl = new AbortController()
     const timer = setTimeout(() => ctl.abort(), 10_000)
@@ -86,9 +91,28 @@ async function fetchRss(channelId: string): Promise<string | null> {
       { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: ctl.signal },
     )
     clearTimeout(timer)
-    if (!r.ok) return null
+    if (!r.ok) {
+      // Don't log routine 404s (channel deleted/private) — only auth/rate
+      // errors and 5xxs which indicate platform breakage.
+      if (r.status >= 500 || r.status === 429 || r.status === 403) {
+        await recordScannerError(supabase, {
+          scanner: 'youtube-rss-poll',
+          target: `channel:${channelId}`,
+          category: r.status === 429 ? 'rate_limit' : r.status === 403 ? 'auth_error' : 'fetch_error',
+          http_status: r.status,
+          message: `RSS fetch failed`,
+        })
+      }
+      return null
+    }
     return await r.text()
-  } catch {
+  } catch (err) {
+    await recordScannerError(supabase, {
+      scanner: 'youtube-rss-poll',
+      target: `channel:${channelId}`,
+      category: 'fetch_error',
+      message: err instanceof Error ? err.message : String(err),
+    })
     return null
   }
 }
@@ -207,7 +231,7 @@ export async function GET(request: NextRequest) {
     }
     const batch = toPoll.slice(i, i + CONCURRENCY)
     const results = await Promise.all(batch.map(async (cid) => {
-      const xml = await fetchRss(cid)
+      const xml = await fetchRss(supabase, cid)
       polled++
       if (!xml) return { cid, entries: [] as RssEntry[] }
       return { cid, entries: parseRssEntries(xml) }
