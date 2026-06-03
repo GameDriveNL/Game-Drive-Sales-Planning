@@ -27,6 +27,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { verifyCronAuth } from '@/lib/cron-auth'
 import { detectOutletCountry } from '@/lib/outlet-country'
+import { resolveGameId as resolveTwitchGameId } from '@/lib/twitch-gql'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -141,10 +142,45 @@ export async function GET(request: NextRequest) {
   }
 
   for (const game of games as Array<{ id: string; name: string; client_id: string }>) {
-    const twitchGameId = gameIdToTwitchId.get(game.id)
+    let twitchGameId = gameIdToTwitchId.get(game.id) || null
+    // Fallback: resolve via GQL anon endpoint, then cache it onto a coverage_sources row
+    // (created if absent). Prevents the cron from silently skipping games whose
+    // twitch_game_id was never seeded.
     if (!twitchGameId) {
-      results.push({ game: game.name, twitch_game_id: null, live: 0, inserted: 0, error: 'no cached twitch_game_id' })
-      continue
+      try {
+        twitchGameId = await resolveTwitchGameId(game.name)
+      } catch {
+        twitchGameId = null
+      }
+      if (twitchGameId) {
+        // Upsert coverage_sources row to cache the lookup
+        const { data: existingSrc } = await supabase
+          .from('coverage_sources')
+          .select('id, config')
+          .eq('game_id', game.id)
+          .eq('source_type', 'twitch')
+          .maybeSingle()
+        if (existingSrc?.id) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const config = { ...(existingSrc.config as any || {}), twitch_game_id: twitchGameId }
+          await supabase.from('coverage_sources')
+            .update({ config, updated_at: new Date().toISOString() })
+            .eq('id', existingSrc.id)
+        } else {
+          await supabase.from('coverage_sources').insert({
+            game_id: game.id,
+            source_type: 'twitch',
+            name: `Twitch — ${game.name}`,
+            config: { twitch_game_id: twitchGameId },
+            scan_frequency: 'every_6h',
+            is_active: true,
+          })
+        }
+      } else {
+        // Game probably not in Twitch's catalog (small/new indies). Mark and skip.
+        results.push({ game: game.name, twitch_game_id: null, live: 0, inserted: 0, error: 'Twitch GQL has no game with that name' })
+        continue
+      }
     }
 
     try {
