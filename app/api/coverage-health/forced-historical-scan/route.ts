@@ -38,6 +38,7 @@ import { detectOutletCountry } from '@/lib/outlet-country'
 import { inferTerritory } from '@/lib/territory'
 import {
   fanoutBroadcasters,
+  searchForStrictVODs,
   getGameIdByName,
   type FanoutBroadcaster,
 } from '@/lib/twitch-gql-fanout'
@@ -184,6 +185,15 @@ export async function POST(request: NextRequest) {
         reports.gql.errors.push(`Twitch GQL has no game named "${game.name}"`)
       } else {
         gqlBroadcasters = await fanoutBroadcasters(twitchId, game.name, { maxConcurrency: 30 })
+        // Plus searchFor strict-VOD pass — recovers ~50 more long-tail
+        // broadcasters that game(id).clips/videos miss (their channel/title
+        // contains the game name but they don't show up in the catalog
+        // graph). Verified 2026-06-03 to add +53 for Dark Pals at $0.
+        const sfMap = await searchForStrictVODs(game.name, { maxQueries: 8, concurrency: 8 })
+        sfMap.forEach((b, login) => {
+          if (!gqlBroadcasters.has(login)) gqlBroadcasters.set(login, b)
+        })
+        reports.gql.notes.searchFor_strict_added = sfMap.size
         reports.gql.items_found = gqlBroadcasters.size
 
         // Insert one outlet-level item per broadcaster as a "discovery" record.
