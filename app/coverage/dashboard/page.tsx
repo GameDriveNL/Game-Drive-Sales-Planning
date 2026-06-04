@@ -5,6 +5,7 @@ import { Sidebar } from '../../components/Sidebar'
 import { useAuth } from '@/lib/auth-context'
 import { CoverageNav } from '../components/CoverageNav'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import ScannerHealthPanel from '../components/ScannerHealthPanel'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -414,8 +415,12 @@ export default function DashboardPage() {
             <BarChart data={byTerritory} title="Coverage by Territory" />
           </div>
 
+          {/* Scanner Health — collapsible ops panel. Default closed; expands to
+              show per-scanner item rate, error rate, and last-fired heuristic. */}
+          <ScannerHealthPanel />
+
           {/* Timeline (coverage over time) */}
-          <div style={{ backgroundColor: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+          <div style={{ backgroundColor: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', marginTop: '24px' }}>
             <h3 style={{ fontSize: '14px', fontWeight: 600, color: '#1e293b', marginBottom: '16px' }}>Coverage Over Time (Weekly)</h3>
             {Object.keys(byWeek).length === 0 ? (
               <div style={{ color: '#94a3b8', fontSize: '13px', textAlign: 'center', padding: '20px' }}>No timeline data</div>

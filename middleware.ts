@@ -82,6 +82,13 @@ export async function middleware(req: NextRequest) {
   if (pathname === '/api/coverage-health/audit-tiktok') {
     return res
   }
+  // Scanner Health JSON used by the dashboard ScannerHealthPanel. Public,
+  // read-only aggregate stats — no secrets, no item-level data. Required
+  // because the dashboard polls every 60s and the auth check would
+  // otherwise gate it behind the user's session.
+  if (pathname === '/api/coverage-health/scanner-health') {
+    return res
+  }
   if (pathname === '/api/coverage-health/oneshot-darkpals-import') {
     return res
   }
