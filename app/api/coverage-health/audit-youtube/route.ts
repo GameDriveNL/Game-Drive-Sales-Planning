@@ -129,10 +129,14 @@ export async function POST(request: NextRequest) {
   // localized long-tail videos that en-search misses.
   const multiHits = await searchYouTubeMultiLang(
     queries.slice(0, 3),  // narrower variant set to fit 11-lang time budget
-    ['nl', 'pt', 'es', 'it', 'ja', 'id', 'vi', 'ru', 'pl', 'tr', 'th'],
+    [
+      'nl', 'pt', 'es', 'it', 'ja',        // tier-1: high-density Dark Pals miss
+      'id', 'vi', 'ru', 'pl', 'tr', 'th',  // tier-2: medium-density
+      'zh', 'ko', 'ar', 'hi', 'de', 'fr',  // tier-3: long-tail completeness
+    ],
     {
-      maxPagesPerQuery: 5,
-      perLangTimeoutMs: 16_000,
+      maxPagesPerQuery: 4,        // 17 langs × 4 pages × ~0.5s = ~35s/query × 3 queries
+      perLangTimeoutMs: 11_000,
       overallTimeoutMs: remainingForLangs,
     },
   )

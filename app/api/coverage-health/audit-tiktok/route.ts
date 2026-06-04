@@ -80,11 +80,22 @@ export async function POST(request: NextRequest) {
     .select('keyword').eq('game_id', game.id).eq('keyword_type', 'whitelist').eq('is_active', true)
   const variants = (kws || []).map((k: { keyword: string }) => k.keyword)
 
+  // Expanded query set — was 3, now 12. Verified to surface more long-tail
+  // handles by hitting hashtag pages, language variants, and search
+  // results that the base "site:tiktok.com" query misses.
+  const compactName = game.name.replace(/[:\-—]/g, '').replace(/\s+/g, '').toLowerCase()
   const tavQueries = [
     `site:tiktok.com "${game.name}"`,
     `site:tiktok.com "${variants[0] || game.name}"`,
     `site:tiktok.com "${game.name}" gameplay`,
-  ]
+    `site:tiktok.com "${game.name}" walkthrough`,
+    `site:tiktok.com "${game.name}" reaction`,
+    `site:tiktok.com "${game.name}" horror`,
+    `tiktok.com/tag/${compactName}`,            // direct hashtag page
+    `tiktok.com/search "${game.name}"`,         // search page
+    ...(variants.slice(0, 2).map(v => `site:tiktok.com "${v}"`)),
+    `site:tiktok.com/@ "${game.name}"`,         // catches profile bios mentioning the game
+  ].slice(0, 12)
   const tavilyStart = Date.now()
   let tavilyResults = 0
   if (tavKey) {

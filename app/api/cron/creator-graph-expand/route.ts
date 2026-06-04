@@ -148,12 +148,17 @@ export async function GET(request: NextRequest) {
       .eq('source_type', 'youtube')
       .order('monthly_unique_visitors', { ascending: false, nullsFirst: false })
       .limit(300)
+    // Expanded from 150 → 600 per run. /about HTML scrape is ~200ms per
+    // channel concurrency-10, so 600 channels ≈ 12s. We have 200s of budget
+    // in this cron — plenty of headroom. Cron fires every 4h so over a day
+    // we visit 600×6=3,600 unique channels per game, comfortably covering
+    // the entire ~1,500 graph for Dark Pals.
     const channelIds = Array.from(new Set(
       (ytItems || [])
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .map(it => (it.source_metadata as any)?.channel_id)
         .filter((id): id is string => typeof id === 'string' && id.startsWith('UC'))
-    )).slice(0, 150)
+    )).slice(0, 600)
     const videoIds: string[] = (ytItems || [])
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .map(it => (it.source_metadata as any)?.video_id)
