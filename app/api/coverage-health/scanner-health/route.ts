@@ -78,15 +78,40 @@ export async function GET() {
       ? (now.getTime() - lastDiscoveredAt.getTime()) / (60 * 60 * 1000)
       : Infinity
     const idle = hoursSinceLast > def.idleHrs
+    // Error-rate calculation NOTE:
+    // We can't compute true error_rate = errors / fetches without an
+    // explicit fetch counter on each scanner. The previous proxy
+    // (errors / (errors + insertions)) was extremely misleading for
+    // youtube-rss-poll, which fetches ~5,760 channels/day but only
+    // inserts ~400 items (most channels haven't uploaded). 548 routine
+    // 500s from deleted/region-blocked channels showed as "59% error
+    // rate" → false RED alarm.
+    //
+    // Switching to absolute-error thresholds keyed to each scanner's
+    // expected call volume. Tunable per-scanner — defaults here cover
+    // the common cases.
+    const errorThresholdCritical = def.scanner === 'youtube-rss-poll' ? 3000 : 500
+    const errorThresholdWarn     = def.scanner === 'youtube-rss-poll' ? 1500 : 100
     const errorRate = (items_24h ?? 0) + (errors_24h ?? 0) > 0
       ? (errors_24h ?? 0) / ((items_24h ?? 0) + (errors_24h ?? 0))
       : 0
 
     let status: ScannerStat['status'] = 'healthy'
     let reason = `${items_24h ?? 0} items in 24h`
-    if (idle) { status = 'idle'; reason = `no items for ${hoursSinceLast === Infinity ? 'ever' : hoursSinceLast.toFixed(0) + 'h'}` }
-    else if (errorRate >= 0.5) { status = 'critical'; reason = `${(errorRate * 100).toFixed(0)}% error rate in 24h` }
-    else if (errorRate >= 0.1) { status = 'warn'; reason = `${(errorRate * 100).toFixed(0)}% error rate in 24h` }
+    if (idle) {
+      status = 'idle'
+      reason = lastDiscoveredAt
+        ? `no new items for ${hoursSinceLast.toFixed(0)}h`
+        : 'no items yet (scanner runs less often)'
+    }
+    else if ((errors_24h ?? 0) >= errorThresholdCritical) {
+      status = 'critical'
+      reason = `${errors_24h ?? 0} errors in 24h — investigate`
+    }
+    else if ((errors_24h ?? 0) >= errorThresholdWarn) {
+      status = 'warn'
+      reason = `${errors_24h ?? 0} errors in 24h — check`
+    }
     out.push({
       scanner: def.scanner,
       schedule: def.schedule,
