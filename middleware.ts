@@ -89,6 +89,11 @@ export async function middleware(req: NextRequest) {
   if (pathname === '/api/coverage-health/scanner-health') {
     return res
   }
+  // Noise-flag backfill — retro-classifies every coverage_item with the
+  // shared noise patterns. Public, idempotent.
+  if (pathname === '/api/coverage-health/noise-backfill') {
+    return res
+  }
   if (pathname === '/api/coverage-health/oneshot-darkpals-import') {
     return res
   }

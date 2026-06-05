@@ -21,6 +21,8 @@ interface CoverageItem {
   source_type: string
   outlet?: { id: string; name: string; tier: string | null; monthly_unique_visitors: number | null } | null
   game?: { id: string; name: string } | null
+  noise_flags?: string[] | null
+  title?: string | null
 }
 
 interface ClientOption { id: string; name: string }
@@ -123,6 +125,10 @@ export default function DashboardPage() {
   const [period, setPeriod] = useState('30d')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
+  // Operator-controlled noise filter. Default ON so client reports only
+  // show items free of fan-crossover / sequel-speculation / music-remix
+  // / app-store / low-audience / etc. Toggle off to include everything.
+  const [excludeNoise, setExcludeNoise] = useState(true)
 
   // Fetch reference data
   useEffect(() => {
@@ -174,10 +180,15 @@ export default function DashboardPage() {
   // Filter games by client
   const filteredGames = clientFilter ? games.filter(g => g.client_id === clientFilter) : games
 
-  // Only approved items for main metrics
-  const approved = useMemo(() => items.filter(i =>
-    i.approval_status === 'auto_approved' || i.approval_status === 'manually_approved'
-  ), [items])
+  // Only approved items for main metrics. When excludeNoise=true, drop
+  // anything whose noise_flags array is non-empty so the dashboard reflects
+  // only PR-meaningful items (matches what a client expects in a report).
+  const approved = useMemo(() => items.filter(i => {
+    const isApproved = i.approval_status === 'auto_approved' || i.approval_status === 'manually_approved'
+    if (!isApproved) return false
+    if (excludeNoise && Array.isArray(i.noise_flags) && i.noise_flags.length > 0) return false
+    return true
+  }), [items, excludeNoise])
 
   // ─── Compute stats ──────────────────────────────────────────────────────
 
@@ -366,6 +377,30 @@ export default function DashboardPage() {
                   style={{ padding: '6px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '12px' }} />
               </>
             )}
+          </div>
+
+          {/* Noise filter toggle */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '8px',
+            padding: '8px 12px', marginBottom: '16px',
+            backgroundColor: excludeNoise ? '#f0fdf4' : '#fef3c7',
+            border: `1px solid ${excludeNoise ? '#bbf7d0' : '#fde68a'}`,
+            borderRadius: '8px',
+          }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
+              <input
+                type="checkbox"
+                checked={excludeNoise}
+                onChange={e => setExcludeNoise(e.target.checked)}
+                style={{ cursor: 'pointer' }}
+              />
+              <strong style={{ color: excludeNoise ? '#15803d' : '#92400e' }}>
+                {excludeNoise ? 'Excluding suspected noise' : 'Including ALL coverage (incl. noise)'}
+              </strong>
+              <span style={{ color: '#64748b', fontSize: '12px' }}>
+                — fan crossover, sequel speculation, music remixes, app-store listings, low-audience long tail
+              </span>
+            </label>
           </div>
 
           {/* Summary stat cards */}

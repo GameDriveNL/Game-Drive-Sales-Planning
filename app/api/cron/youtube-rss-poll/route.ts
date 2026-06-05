@@ -33,6 +33,7 @@ import { verifyCronAuth } from '@/lib/cron-auth'
 import { detectOutletCountry } from '@/lib/outlet-country'
 import { scoreConfidence } from '@/lib/coverage-confidence'
 import { recordScannerError } from '@/lib/scanner-errors'
+import { detectNoise } from '@/lib/noise-detector'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -266,6 +267,15 @@ export async function GET(request: NextRequest) {
             aliasKeywords: keywordsByGame.get(gameId) ?? [],
           })
           if (conf.tier === 'NOISE') continue  // don't waste DB space
+          // Classify item-level noise patterns (fan crossover, sequel
+          // speculation, music remix, etc.) — stored as a tag array on
+          // the row so the report UI can filter them in/out. NEVER auto-
+          // hides; the toggle is operator-controlled.
+          const noise = detectNoise({
+            title: entry.title,
+            description: entry.description,
+            sourceType: 'youtube',
+          })
           const oid = await ensureChannelOutlet(cid, entry.author)
           const { error } = await supabase.from('coverage_items').insert({
             client_id: game.client_id,
@@ -290,7 +300,9 @@ export async function GET(request: NextRequest) {
               confidence_reason: conf.reason,
               matched_keyword: conf.matchedKeyword,
               match_location: conf.matchLocation,
+              noise_reasons: noise.reasons,
             },
+            noise_flags: noise.flags,
             approval_status: conf.approvalStatus,
             discovered_at: new Date().toISOString(),
           })
