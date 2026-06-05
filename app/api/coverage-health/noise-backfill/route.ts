@@ -33,13 +33,15 @@ export async function POST(request: NextRequest) {
 
   // Pull items that need classification — either noise_flags = {} (unprocessed)
   // OR force = true (re-process everything).
+  // Process unclassified items first (NULL noise_classified_at). When
+  // force=true, re-classify everything so pattern updates apply retroactively.
   let qb = supabase
     .from('coverage_items')
     .select('id, title, source_metadata, source_type, monthly_unique_visitors, noise_flags')
     .order('discovered_at', { ascending: false })
     .limit(cap)
   if (body.game_id) qb = qb.eq('game_id', body.game_id)
-  if (!force) qb = qb.eq('noise_flags', '{}')
+  if (!force) qb = qb.is('noise_classified_at', null)
 
   const { data: items, error } = await qb
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -71,19 +73,19 @@ export async function POST(request: NextRequest) {
       noise++
       for (const f of result.flags) byFlag[f] = (byFlag[f] ?? 0) + 1
     }
-    // Only push update if state changed
-    const before = (it.noise_flags as string[] | null) ?? []
-    const after = result.flags as string[]
-    if (before.length !== after.length || before.some(x => !after.includes(x as never))) {
-      updates.push({ id: it.id as string, noise_flags: after })
-    }
+    // Always mark classified — that way next run skips this row even if it's
+    // signal (flags=[]). Previously stuck re-processing the same signal items.
+    updates.push({ id: it.id as string, noise_flags: result.flags as string[] })
   }
 
-  // Batch-write updates (upsert-style)
+  // Batch-write updates including noise_classified_at marker
+  const nowIso = new Date().toISOString()
   for (let i = 0; i < updates.length; i += 100) {
     const batch = updates.slice(i, i + 100)
     await Promise.all(batch.map(u =>
-      supabase.from('coverage_items').update({ noise_flags: u.noise_flags }).eq('id', u.id)
+      supabase.from('coverage_items')
+        .update({ noise_flags: u.noise_flags, noise_classified_at: nowIso })
+        .eq('id', u.id)
     ))
     updated += batch.length
   }

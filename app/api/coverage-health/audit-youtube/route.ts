@@ -31,6 +31,7 @@ import {
   type InnertubeSearchResult,
 } from '@/lib/youtube-innertube'
 import { scoreConfidence } from '@/lib/coverage-confidence'
+import { detectNoise } from '@/lib/noise-detector'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -186,6 +187,12 @@ export async function POST(request: NextRequest) {
       aliasKeywords: variants,
     })
     if (conf.tier === 'NOISE') continue
+    const noise = detectNoise({
+      title: yt.title,
+      description: yt.description,
+      audienceViews: yt.views ?? null,
+      sourceType: 'youtube',
+    })
     existingUrls.add(watchUrl)
     const resolvedHandle = yt.channelId ? channelIdToHandle.get(yt.channelId) : null
     const channelDomainSlug = resolvedHandle
@@ -219,6 +226,8 @@ export async function POST(request: NextRequest) {
       },
       approval_status: conf.approvalStatus,
       discovered_at: new Date().toISOString(),
+      noise_flags: noise.flags,
+      noise_classified_at: new Date().toISOString(),
     })
     if (!error) {
       inserted++

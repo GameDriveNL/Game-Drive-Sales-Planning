@@ -103,6 +103,10 @@
     {
       "path": "/api/cron/creator-graph-expand",
       "schedule": "0 */4 * * *"
+    },
+    {
+      "path": "/api/cron/audience-enrich",
+      "schedule": "30 */4 * * *"
     }
   ],
   "buildCommand": "next build"

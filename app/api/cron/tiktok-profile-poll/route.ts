@@ -27,6 +27,7 @@ import { verifyCronAuth } from '@/lib/cron-auth'
 import { detectOutletCountry } from '@/lib/outlet-country'
 import { stalkTikTokUser, classifyTier } from '@/lib/tiktok-stalk'
 import { scoreConfidence } from '@/lib/coverage-confidence'
+import { detectNoise } from '@/lib/noise-detector'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -210,6 +211,12 @@ export async function GET(request: NextRequest) {
             aliasKeywords: keywordsByGame.get(gameId) ?? [],
           })
           if (conf.tier === 'NOISE' || conf.tier === 'WEAK') continue  // TikTok descs are usually full; weak = unrelated post by known creator
+          const noise = detectNoise({
+            title: v.description, description: v.description,
+            audienceFollowers: stalk.followerCount,
+            audienceViews: v.playCount,
+            sourceType: 'tiktok',
+          })
           existingSet.add(tikUrl)
           const tier = classifyTier(stalk.followerCount)
           const oid = await ensureOutlet(h, stalk.displayName, stalk.followerCount, tier)
@@ -235,6 +242,8 @@ export async function GET(request: NextRequest) {
             },
             approval_status: conf.approvalStatus,
             discovered_at: new Date().toISOString(),
+            noise_flags: noise.flags,
+            noise_classified_at: new Date().toISOString(),
           })
           if (!error) {
             inserted++

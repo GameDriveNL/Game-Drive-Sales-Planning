@@ -28,6 +28,7 @@ import { getServerSupabase } from '@/lib/supabase'
 import { verifyCronAuth } from '@/lib/cron-auth'
 import { detectOutletCountry } from '@/lib/outlet-country'
 import { resolveGameId as resolveTwitchGameId } from '@/lib/twitch-gql'
+import { detectNoise } from '@/lib/noise-detector'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -214,6 +215,12 @@ export async function GET(request: NextRequest) {
         const channelUrl = `https://www.twitch.tv/${s.user_login}`
         if (existingSet.has(channelUrl)) continue
         existingSet.add(channelUrl)
+        const noise = detectNoise({
+          title: s.title || '',
+          description: '',
+          audienceViews: s.viewer_count,
+          sourceType: 'twitch',
+        })
         const oid = await ensureChannelOutlet(s.user_login, s.user_name, s.viewer_count)
         const { error } = await supabase.from('coverage_items').insert({
           client_id: game.client_id,
@@ -240,6 +247,8 @@ export async function GET(request: NextRequest) {
           },
           approval_status: 'pending_review',
           discovered_at: new Date().toISOString(),
+          noise_flags: noise.flags,
+          noise_classified_at: new Date().toISOString(),
         })
         if (!error) inserted++
       }
