@@ -36,6 +36,7 @@ interface SteamSalesResponse {
   response: {
     results?: SteamDetailedSalesResult[];
     package_info?: Array<{ packageid: number; package_name: string }>;
+    bundle_info?: Array<{ bundleid: number; bundle_name: string }>;
     app_info?: Array<{ appid: number; app_name: string }>;
     country_info?: Array<{ country_code: string; country_name: string; region: string }>;
     max_id?: string;
@@ -178,18 +179,25 @@ export async function POST(request: Request) {
     // Step 2: Get detailed sales for each date
     let totalImported = 0;
     let totalSkipped = 0;
+    let totalBundles = 0;
     const errors: string[] = [];
 
     for (const date of datesToSync) {
       const salesResult = await getDetailedSalesForDate(financialApiKey, date, app_id);
-      
+
       if (salesResult.success && salesResult.results) {
         // Store the sales data in our database
         const storeResult = await storeSalesData(client_id, salesResult.results, salesResult.metadata);
         totalImported += storeResult.imported;
         totalSkipped += storeResult.skipped;
-        // Also extract and store any bundle line items into steam_bundles
-        await storeBundleData(client_id, salesResult.results, salesResult.metadata);
+        // Also extract and store any bundle line items into steam_bundles.
+        // Non-fatal: a bundle write failure must not abort the sales sync.
+        try {
+          const bundleResult = await storeBundleData(client_id, salesResult.results, salesResult.metadata);
+          totalBundles += bundleResult.imported;
+        } catch (bundleErr) {
+          errors.push(`${date} (bundles): ${bundleErr instanceof Error ? bundleErr.message : String(bundleErr)}`);
+        }
       } else if (salesResult.error) {
         errors.push(`${date}: ${salesResult.error}`);
       }
@@ -274,6 +282,7 @@ export async function POST(request: Request) {
         : `Synced ${datesToSync.length} date(s) from Steam Financial API.`,
       rowsImported: totalImported,
       rowsSkipped: totalSkipped,
+      bundleRowsImported: totalBundles,
       datesProcessed: datesToSync.length,
       hasMoreDates,
       remainingDates: hasMoreDates ? totalDatesFromApi - datesToSync.length : 0,
@@ -424,14 +433,16 @@ async function getDetailedSalesForDate(
   results?: SteamDetailedSalesResult[]; 
   metadata?: {
     packages: Map<number, string>;
+    bundles: Map<number, string>;
     apps: Map<number, string>;
     countries: Map<string, { name: string; region: string }>;
   };
-  error?: string 
+  error?: string
 }> {
   try {
     const allResults: SteamDetailedSalesResult[] = [];
     const packages = new Map<number, string>();
+    const bundles = new Map<number, string>();
     const apps = new Map<number, string>();
     const countries = new Map<string, { name: string; region: string }>();
     
@@ -467,6 +478,7 @@ async function getDetailedSalesForDate(
 
       // Collect metadata
       data.response.package_info?.forEach(p => packages.set(p.packageid, p.package_name));
+      data.response.bundle_info?.forEach(b => bundles.set(b.bundleid, b.bundle_name));
       data.response.app_info?.forEach(a => apps.set(a.appid, a.app_name));
       data.response.country_info?.forEach(c => countries.set(c.country_code, { 
         name: c.country_name, 
@@ -485,7 +497,7 @@ async function getDetailedSalesForDate(
     return {
       success: true,
       results: allResults,
-      metadata: { packages, apps, countries }
+      metadata: { packages, bundles, apps, countries }
     };
   } catch (error) {
     return {
@@ -572,11 +584,11 @@ async function storeSalesData(
 async function storeBundleData(
   clientId: string,
   results: SteamDetailedSalesResult[],
-  metadata?: { packages: Map<number, string>; apps: Map<number, string> }
-): Promise<void> {
+  metadata?: { packages: Map<number, string>; bundles?: Map<number, string>; apps: Map<number, string> }
+): Promise<{ imported: number }> {
   // Only process rows that have a bundleid
   const bundleRows = results.filter(r => r.bundleid)
-  if (bundleRows.length === 0) return
+  if (bundleRows.length === 0) return { imported: 0 }
 
   // Build a lookup: Steam app_id string → game UUID
   const appIds = Array.from(new Set(
@@ -597,7 +609,10 @@ async function storeBundleData(
     }
   }
 
-  // Aggregate by bundleid + date + primary_appid
+  // Aggregate by the same grain as the unique index (game_id, bundle_name, date)
+  // so a single upsert never contains two rows that collide on the conflict
+  // target — Postgres rejects an ON CONFLICT batch that affects a row twice.
+  // Bundle names come from bundle_info (keyed by bundleid), NOT package_info.
   const agg = new Map<string, {
     bundleId: number; bundleName: string; date: string
     gameId: string | null; grossUnits: number; netUnits: number
@@ -607,17 +622,18 @@ async function storeBundleData(
   for (const r of bundleRows) {
     const date = r.date.replace(/\//g, '-')
     const appIdStr = r.primary_appid?.toString() || r.appid?.toString() || ''
-    const key = `${r.bundleid}|${date}|${appIdStr}`
-    const bundleName = r.bundleid && metadata?.packages.get(r.bundleid)
-      ? metadata.packages.get(r.bundleid)!
+    const gameId = gameIdByAppId.get(appIdStr) || null
+    const bundleName = (r.bundleid && metadata?.bundles?.get(r.bundleid))
+      ? metadata.bundles.get(r.bundleid)!
       : `Bundle #${r.bundleid}`
+    const key = `${gameId ?? 'null'}|${bundleName}|${date}`
 
     if (!agg.has(key)) {
       agg.set(key, {
         bundleId: r.bundleid!,
         bundleName,
         date,
-        gameId: gameIdByAppId.get(appIdStr) || null,
+        gameId,
         grossUnits: 0, netUnits: 0, grossRevenue: 0, netRevenue: 0,
       })
     }
@@ -642,8 +658,17 @@ async function storeBundleData(
   }))
 
   if (upsertRows.length > 0) {
-    await supabase.from('steam_bundles').upsert(upsertRows, { onConflict: 'game_id,bundle_name,date' })
+    const { error } = await supabase
+      .from('steam_bundles')
+      .upsert(upsertRows, { onConflict: 'game_id,bundle_name,date' })
+    if (error) {
+      // Surface failures instead of swallowing them — a silent failure here is
+      // exactly why steam_bundles sat empty after this feature shipped.
+      console.error('[Steam Sync] storeBundleData upsert failed:', error.message)
+      throw new Error(`storeBundleData upsert failed: ${error.message}`)
+    }
   }
+  return { imported: upsertRows.length }
 }
 
 // Test if the Financial API key is valid
