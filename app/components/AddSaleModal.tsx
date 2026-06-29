@@ -411,7 +411,14 @@ export default function AddSaleModal({
               />
             </div>
           </div>
-          
+
+          {/* Clarify the inclusive end date vs the Steam turn-off day (GD-014) */}
+          {startDate && endDate && (
+            <div className={styles.hint} style={{ display: 'block', marginTop: '-6px', marginBottom: '10px', color: '#64748b' }}>
+              🟢 Live {format(parseISO(startDate), 'd MMM')} – {format(parseISO(endDate), 'd MMM yyyy')} ({duration} day{duration === 1 ? '' : 's'}, end date inclusive) · discount turns off {format(addDays(parseISO(endDate), 1), 'd MMM')}
+            </div>
+          )}
+
           <div className={styles.row}>
             <div className={styles.field}>
               <label>Discount % *</label>
