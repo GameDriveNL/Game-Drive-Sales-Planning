@@ -20,6 +20,8 @@ export interface FeedbackComment {
 
 export interface FeedbackItem {
   id: string
+  seq: number
+  needs_clarification: boolean
   title: string
   description: string | null
   item_type: FeedbackType
@@ -73,6 +75,12 @@ export const AREA_TAGS: { key: string; label: string; color: string }[] = [
   { key: 'dashboard', label: 'Dashboard', color: '#2563eb' },
   { key: 'general', label: 'General', color: '#64748b' },
 ]
+
+// Human-friendly reference code, e.g. GD-007 — used to reference items beyond their title.
+export function refCode(seq: number | null | undefined): string {
+  if (!seq && seq !== 0) return 'GD-—'
+  return 'GD-' + String(seq).padStart(3, '0')
+}
 
 export function tagColor(tag: string): string {
   return AREA_TAGS.find(t => t.key === tag)?.color || '#64748b'

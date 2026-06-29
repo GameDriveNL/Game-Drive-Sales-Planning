@@ -183,11 +183,73 @@
 .card:hover { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); transform: translateY(-1px); }
 .cardTop {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 8px;
   margin-bottom: 6px;
 }
 .cardType { font-size: 11px; font-weight: 700; color: #6b6b82; }
+.priorityDot { margin-left: auto; }
+.refCode {
+  font-size: 10.5px;
+  font-weight: 800;
+  color: #6c2bd9;
+  background: #f1ecfb;
+  border-radius: 5px;
+  padding: 1px 6px;
+  letter-spacing: 0.3px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+}
+.clarifyBadge {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 10.5px;
+  font-weight: 800;
+  color: #fff;
+  background: #dc2626;
+  border-radius: 6px;
+  padding: 2px 8px;
+  letter-spacing: 0.2px;
+}
+.clarifyPill {
+  font-size: 10px;
+  font-weight: 800;
+  color: #dc2626;
+  border: 1px solid #f0caca;
+  background: #fef2f2;
+  border-radius: 6px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+.detailRefCode {
+  font-size: 12px;
+  font-weight: 800;
+  color: #6c2bd9;
+  background: #f1ecfb;
+  border-radius: 6px;
+  padding: 2px 9px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.clarifyToggle, .clarifyToggleOn {
+  margin-left: auto;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.clarifyToggle {
+  background: #fff;
+  border: 1px solid #f0caca;
+  color: #dc2626;
+}
+.clarifyToggle:hover { background: #fef2f2; }
+.clarifyToggleOn {
+  background: #dc2626;
+  border: 1px solid #dc2626;
+  color: #fff;
+}
 .priorityDot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .cardTitle {
   font-size: 13.5px;
@@ -373,7 +435,7 @@
 .saveBtn:disabled { background: #c9bce6; cursor: not-allowed; }
 
 /* ─── Detail modal ─── */
-.detailHead { display: flex; justify-content: space-between; align-items: center; }
+.detailHead { display: flex; align-items: center; gap: 8px; }
 .closeBtn {
   background: none; border: none; font-size: 18px; color: #9a9ab0; cursor: pointer; padding: 4px;
 }

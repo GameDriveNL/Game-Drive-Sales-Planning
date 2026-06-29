@@ -96,6 +96,7 @@ export async function PATCH(request: Request) {
     const allowed = [
       'title', 'description', 'item_type', 'status', 'priority',
       'tags', 'archived', 'answer', 'answered', 'reporter', 'code_refs', 'sort_order',
+      'needs_clarification',
     ]
     const updates: Record<string, unknown> = {}
     for (const key of allowed) {

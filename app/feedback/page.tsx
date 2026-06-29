@@ -5,7 +5,7 @@ import { Sidebar } from '../components/Sidebar'
 import styles from './feedback.module.css'
 import {
   FeedbackItem, FeedbackType, FeedbackStatus, FeedbackPriority,
-  STATUS_COLUMNS, TYPE_META, PRIORITY_META, AREA_TAGS, tagColor, tagLabel,
+  STATUS_COLUMNS, TYPE_META, PRIORITY_META, AREA_TAGS, tagColor, tagLabel, refCode,
 } from './types'
 
 type View = 'board' | 'wishlist' | 'questions' | 'archive'
@@ -307,10 +307,14 @@ function Card({ item, onClick, onDragStart, onArchive }: {
       style={{ borderLeftColor: tm.color }}
     >
       <div className={styles.cardTop}>
+        <span className={styles.refCode}>{refCode(item.seq)}</span>
         <span className={styles.cardType}>{tm.icon} {tm.label}</span>
         <span className={styles.priorityDot} style={{ background: pm.color }} title={pm.label} />
       </div>
       <div className={styles.cardTitle}>{item.title}</div>
+      {item.needs_clarification && (
+        <div className={styles.clarifyBadge}>⚑ Clarification needed</div>
+      )}
       {item.tags.length > 0 && (
         <div className={styles.cardTags}>
           {item.tags.map(t => (
@@ -341,10 +345,12 @@ function QuestionList({ items, onOpen }: { items: FeedbackItem[]; onOpen: (id: s
       {items.map(q => (
         <div key={q.id} className={styles.qItem} onClick={() => onOpen(q.id)}>
           <div className={styles.qHead}>
+            <span className={styles.refCode}>{refCode(q.seq)}</span>
             <span className={q.answered ? styles.qAnswered : styles.qOpen}>
               {q.answered ? '✓ Answered' : '○ Open'}
             </span>
             <span className={styles.qTitle}>{q.title}</span>
+            {q.needs_clarification && <span className={styles.clarifyPill}>⚑ Clarification</span>}
           </div>
           {q.answer
             ? <div className={styles.qAnswer}>{q.answer}</div>
@@ -364,6 +370,7 @@ function WishlistGrid({ items, onOpen }: { items: FeedbackItem[]; onOpen: (id: s
       <div className={styles.wishGrid}>
         {items.map(w => (
           <div key={w.id} className={styles.wishCard} onClick={() => onOpen(w.id)}>
+            <span className={styles.refCode}>{refCode(w.seq)}</span>
             <div className={styles.wishTitle}>{w.title}</div>
             {w.description && <div className={styles.wishDesc}>{w.description}</div>}
             {w.tags.length > 0 && (
@@ -388,6 +395,7 @@ function ArchiveList({ items, onOpen, onRestore }: {
       {items.map(it => (
         <div key={it.id} className={styles.archItem}>
           <div className={styles.archMain} onClick={() => onOpen(it.id)}>
+            <span className={styles.refCode}>{refCode(it.seq)}</span>
             <span className={styles.archCheck}>✓</span>
             <span className={styles.archTitle}>{it.title}</span>
             <span className={styles.archType}>{TYPE_META[it.item_type].icon}</span>
@@ -492,7 +500,13 @@ function DetailModal({ item, onClose, onPatch, onDelete, onComment }: {
     <div className={styles.overlay} onClick={onClose}>
       <div className={styles.modalWide} onClick={e => e.stopPropagation()}>
         <div className={styles.detailHead}>
+          <span className={styles.detailRefCode}>{refCode(item.seq)}</span>
           <span className={styles.cardType} style={{ color: tm.color }}>{tm.icon} {tm.label}</span>
+          <button
+            className={item.needs_clarification ? styles.clarifyToggleOn : styles.clarifyToggle}
+            onClick={() => onPatch(item.id, { needs_clarification: !item.needs_clarification })}
+            title="Flag for the client: not a confirmed code defect — needs an answer or confirmation"
+          >⚑ {item.needs_clarification ? 'Clarification needed' : 'Flag clarification'}</button>
           <button className={styles.closeBtn} onClick={onClose}>✕</button>
         </div>
 
