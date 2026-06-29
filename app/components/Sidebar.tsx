@@ -101,6 +101,7 @@ export function Sidebar() {
 
   const isSettingsActive = pathname.startsWith('/settings')
   const isManualActive = pathname.startsWith('/manual')
+  const isFeedbackActive = pathname.startsWith('/feedback')
 
   const userInitial = profile
     ? (profile.display_name || profile.email || '?').charAt(0).toUpperCase()
@@ -180,6 +181,39 @@ export function Sidebar() {
             )
           })}
         </nav>
+
+        {/* Feedback board — visible to everyone, sits above Manual */}
+        <div className={collapsed ? styles.settingsSectionCollapsed : styles.settingsSection}>
+          {collapsed ? (
+            <Link
+              href="/feedback"
+              className={isFeedbackActive ? styles.navItemCollapsedActive : styles.navItemCollapsed}
+              title="Feedback"
+            >
+              <div className={styles.navIconCollapsed}>
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+              </div>
+              <span className={styles.tooltip}>Feedback</span>
+            </Link>
+          ) : (
+            <Link
+              href="/feedback"
+              className={isFeedbackActive ? styles.navItemActive : styles.navItem}
+            >
+              <div className={styles.navIcon}>
+                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+              </div>
+              <div className={styles.navText}>
+                <div className={styles.navLabel}>Feedback</div>
+                <div className={styles.navDescription}>Bugs, ideas &amp; questions</div>
+              </div>
+            </Link>
+          )}
+        </div>
 
         {/* Manual — sits just above Settings, visible to everyone */}
         <div className={collapsed ? styles.settingsSectionCollapsed : styles.settingsSection}>
