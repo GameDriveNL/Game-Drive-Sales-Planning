@@ -188,12 +188,28 @@ export async function GET(request: NextRequest) {
               name: String(outlet.name || outlet.domain || 'Unknown'),
               count: 0,
               tier: String(outlet.tier || 'untiered'),
-              // Outlet audience size: subscribers for social, monthly visitors for news
-              // This is context for how large the outlet is, not the sum of view counts
-              visitors: Number(outlet.monthly_unique_visitors || 0),
+              // Outlet audience size: subscribers for social, monthly visitors for news.
+              // GD-003: fall back to the item's own audience figure when the outlet
+              // record hasn't been traffic-enriched, so top outlets don't show 0.
+              visitors: Number(outlet.monthly_unique_visitors || reach || 0),
             }
           }
           topOutlets[outletId].count++
+        } else if (sourceType) {
+          // GD-001: items discovered without a registered outlet (e.g. YouTube
+          // videos) were dropped from the report entirely. Aggregate them under a
+          // synthetic per-source bucket so they're included instead of vanishing.
+          const key = `src:${sourceType}`
+          if (!topOutlets[key]) {
+            topOutlets[key] = {
+              name: sourceType.charAt(0).toUpperCase() + sourceType.slice(1),
+              count: 0,
+              tier: 'untiered',
+              visitors: 0,
+            }
+          }
+          topOutlets[key].count++
+          topOutlets[key].visitors += reach
         }
       }
 
