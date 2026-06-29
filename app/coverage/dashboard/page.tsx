@@ -257,6 +257,20 @@ export default function DashboardPage() {
     return map
   }, [approved])
 
+  // Top 10 outlets by monthly unique visitors (mirrors the report widget)
+  const topOutlets = useMemo(() => {
+    const map = new Map<string, { name: string; umv: number; tier: string; count: number }>()
+    approved.forEach(i => {
+      const o = i.outlet
+      if (!o) return
+      const id = o.id || o.name || 'unknown'
+      const existing = map.get(id)
+      if (existing) existing.count++
+      else map.set(id, { name: o.name || '—', umv: o.monthly_unique_visitors || 0, tier: (o.tier as string) || '', count: 1 })
+    })
+    return Array.from(map.values()).sort((a, b) => b.umv - a.umv).slice(0, 10)
+  }, [approved])
+
   // Timeline (coverage over time by week)
   const byWeek = useMemo(() => {
     const map: Record<string, number> = {}
@@ -451,6 +465,37 @@ export default function DashboardPage() {
           <div style={{ marginBottom: '24px' }}>
             <BarChart data={byTerritory} title="Coverage by Territory" />
           </div>
+
+          {/* Top 10 outlets by monthly unique visitors */}
+          {topOutlets.length > 0 && (
+            <div style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', marginBottom: '24px' }}>
+              <h3 style={{ fontSize: '14px', fontWeight: 600, color: '#1e293b', marginBottom: '16px' }}>Top 10 Outlets by Monthly Unique Visitors</h3>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ textAlign: 'left', borderBottom: '2px solid #e2e8f0', color: '#475569' }}>
+                      <th style={{ padding: '8px 12px', fontWeight: 600 }}>#</th>
+                      <th style={{ padding: '8px 12px', fontWeight: 600 }}>Outlet</th>
+                      <th style={{ padding: '8px 12px', fontWeight: 600 }}>Tier</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>UMV</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>Items</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {topOutlets.map((o, i) => (
+                      <tr key={o.name + i} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '8px 12px', color: '#94a3b8' }}>{i + 1}</td>
+                        <td style={{ padding: '8px 12px', fontWeight: 500, color: '#1e293b' }}>{o.name}</td>
+                        <td style={{ padding: '8px 12px' }}>{o.tier || '—'}</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'right', color: '#1e293b' }}>{o.umv ? o.umv.toLocaleString() : '—'}</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'right', color: '#475569' }}>{o.count}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Scanner Health — collapsible ops panel. Default closed; expands to
               show per-scanner item rate, error rate, and last-fired heuristic. */}

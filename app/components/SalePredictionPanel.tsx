@@ -185,8 +185,8 @@ export default function SalePredictionPanel({
         {prediction && !loading && (
           <>
             {!prediction.has_sufficient_data && (
-              <div style={{ padding: '6px 10px', background: '#fffbeb', borderRadius: '4px', color: '#b45309', fontSize: '12px', marginBottom: '8px' }}>
-                Limited historical data — predictions may be less accurate
+              <div style={{ padding: '8px 10px', background: '#fffbeb', borderRadius: '4px', color: '#b45309', fontSize: '12px', marginBottom: '8px', borderLeft: '3px solid #f59e0b' }}>
+                <strong>Needs imported Steam performance data.</strong> Predictions use at least 14 days of actual Steam revenue/units for this product+platform — planned sales alone don&apos;t count. Import the product&apos;s Steam history (Analytics → Import CSV) to improve accuracy.
               </div>
             )}
 
@@ -216,7 +216,9 @@ export default function SalePredictionPanel({
                 </div>
               </div>
               <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
-                Based on {prediction.historical.total_performance_days} days of data, {prediction.historical.total_sales} past sales
+                {prediction.historical.total_performance_days < 1
+                  ? `No imported Steam performance data yet — based on ${prediction.historical.total_sales} recorded sale(s) only`
+                  : `Based on ${prediction.historical.total_performance_days} days of imported Steam data, ${prediction.historical.total_sales} past sales`}
               </div>
             </div>
 

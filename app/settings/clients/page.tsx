@@ -758,7 +758,8 @@ export default function SettingsClientsPage() {
                                     <>
                                       {game.products && game.products.length > 0 ? (
                                         <div className={styles.productList}>
-                                          {game.products.map(product => (
+                                          {/* Sorted by name so long DLC lists are easy to scan */}
+                                          {[...game.products].sort((a, b) => a.name.localeCompare(b.name)).map(product => (
                                             <div key={product.id} className={styles.productRow}>
                                               <span className={styles.productName}>{product.name}</span>
                                               <span className={styles.typeBadge}>{product.product_type}</span>

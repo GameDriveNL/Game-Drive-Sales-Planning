@@ -1142,11 +1142,11 @@ ${social && social.total_posts > 0 ? `
                                 <div>
                                   <div style={{ fontWeight: 600, fontSize: '12px' }}>
                                     {item.display_metrics[0].value.toLocaleString()}
-                                    <span style={{ fontWeight: 400, color: '#64748b', marginLeft: '3px' }}>{item.display_metrics[0].label.toLowerCase()}</span>
+                                    <span style={{ fontWeight: 400, color: '#64748b', marginLeft: '3px' }}>{item.display_metrics[0].label}</span>
                                   </div>
                                   {item.display_metrics.length > 1 && (
                                     <div style={{ fontSize: '11px', color: '#94a3b8' }}>
-                                      {item.display_metrics.slice(1).map(m => `${m.value.toLocaleString()} ${m.label.toLowerCase()}`).join(' · ')}
+                                      {item.display_metrics.slice(1).map(m => `${m.value.toLocaleString()} ${m.label}`).join(' · ')}
                                     </div>
                                   )}
                                 </div>
@@ -1157,7 +1157,9 @@ ${social && social.total_posts > 0 ? `
                                 </div>
                               ) : '-'}
                             </td>
-                            <td style={tdStyle}>{item.review_score ?? '-'}</td>
+                            <td style={tdStyle}>{item.review_score != null
+                              ? item.review_score
+                              : <span style={{ color: '#cbd5e1' }} title="No review score for this item">Not reviewed</span>}</td>
                           </tr>
                         ))}
                       </tbody>
