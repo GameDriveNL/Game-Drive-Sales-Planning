@@ -407,6 +407,14 @@ export default function AnalyticsPage() {
           query = query.eq('platform', selectedPlatform)
         }
 
+        // Exclude zero-activity rows. The view is ~95% dead rows (mostly
+        // duplicate demo entries) that contribute $0 / 0 units to every total
+        // but bloat the result ~22x. For a large client this made the batched
+        // fetch so slow it never finished — leaving the page showing partial,
+        // under-counted totals. Filtering them is lossless (zeros sum to zero)
+        // and lets the load complete in ~18 batches instead of ~384.
+        query = query.or('net_units_sold.neq.0,gross_units_sold.neq.0,net_steam_sales_usd.neq.0')
+
         const { data, error } = await query
 
         if (error) throw error
