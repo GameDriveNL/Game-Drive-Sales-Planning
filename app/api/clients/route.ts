@@ -9,7 +9,10 @@ export async function GET(request: Request) {
 
     let selectQuery = 'id, name, email, contact_person, steam_api_key, sales_planning_enabled, pr_tracking_enabled, created_at';
     if (include === 'nested') {
-      selectQuery = '*, games(*, products(*))';
+      // Include product_platforms so the settings page can show each product's
+      // assigned platforms — without this nested join it always renders
+      // "No platforms assigned" even when platforms are set.
+      selectQuery = '*, games(*, products(*, product_platforms(id, product_id, platform_id, platform:platforms(id, name, color_hex))))';
     }
 
     const { data, error } = await supabase
