@@ -861,7 +861,11 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  /* was overflow:hidden, which clipped the Revenue Over Time chart (its SVG is
+     taller than the fixed grid row). Allow it to render fully; min-height:0 lets
+     the flex child size to content instead of being squeezed. */
+  overflow: visible;
+  min-height: 0;
 }
 
 .chartTitle {

@@ -78,11 +78,11 @@ export default function SettingsClientsPage() {
   const [clientForm, setClientForm] = useState({ name: '', email: '', contact_person: '', sales_planning_enabled: true, pr_tracking_enabled: false })
 
   // Game form
-  const [gameForm, setGameForm] = useState({ name: '', steam_app_id: '', client_id: '', sales_planning_enabled: true, pr_tracking_enabled: false, pr_coverage_until: '', auto_base_product: true, launch_date: format(new Date(), 'yyyy-MM-dd'), auto_calendar: true })
+  const [gameForm, setGameForm] = useState({ name: '', steam_app_id: '', client_id: '', sales_planning_enabled: true, pr_tracking_enabled: false, pr_coverage_until: '', auto_base_product: true, launch_date: '', auto_calendar: true })
   const [baseProductPlatformIds, setBaseProductPlatformIds] = useState<string[]>([])
 
   // Product form
-  const [productForm, setProductForm] = useState({ name: '', game_id: '', product_type: 'base' as string, steam_product_id: '', launch_date: format(new Date(), 'yyyy-MM-dd'), product_aliases: '', auto_calendar: true })
+  const [productForm, setProductForm] = useState({ name: '', game_id: '', product_type: 'base' as string, steam_product_id: '', launch_date: '', product_aliases: '', auto_calendar: true })
   const [productPlatformIds, setProductPlatformIds] = useState<string[]>([])
 
   // Fetch all data via API routes (bypasses RLS)
@@ -226,7 +226,7 @@ export default function SettingsClientsPage() {
       pr_tracking_enabled: client?.pr_tracking_enabled ?? false,
       pr_coverage_until: '',
       auto_base_product: true,
-      launch_date: format(new Date(), 'yyyy-MM-dd'),
+      launch_date: '',
       auto_calendar: true
     })
     setBaseProductPlatformIds([])
@@ -239,7 +239,7 @@ export default function SettingsClientsPage() {
       sales_planning_enabled: game.sales_planning_enabled,
       pr_tracking_enabled: game.pr_tracking_enabled,
       pr_coverage_until: game.pr_coverage_until || '',
-      auto_base_product: false, launch_date: format(new Date(), 'yyyy-MM-dd'), auto_calendar: false
+      auto_base_product: false, launch_date: '', auto_calendar: false
     })
     setModalTarget({ gameId: game.id })
     setModalType('editGame')
@@ -399,7 +399,7 @@ export default function SettingsClientsPage() {
   const openAddProduct = (gameId: string) => {
     setProductForm({
       name: '', game_id: gameId, product_type: 'base', steam_product_id: '',
-      launch_date: format(new Date(), 'yyyy-MM-dd'), product_aliases: '', auto_calendar: true
+      launch_date: '', product_aliases: '', auto_calendar: true
     })
     setProductPlatformIds([])
     setModalType('addProduct')

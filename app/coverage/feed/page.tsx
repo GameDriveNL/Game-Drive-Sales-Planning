@@ -114,7 +114,11 @@ function formatNumber(n: number | null | undefined): string {
 
 function formatDate(d: string | null): string {
   if (!d) return '—'
-  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  // Parse the date part as a local date (avoids the UTC-midnight → previous-day
+  // shift) and render one consistent EU-style format app-wide (e.g. "9 Apr 2026").
+  const [y, m, day] = d.split('T')[0].split('-').map(Number)
+  if (!y || !m || !day) return '—'
+  return new Date(y, m - 1, day).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
