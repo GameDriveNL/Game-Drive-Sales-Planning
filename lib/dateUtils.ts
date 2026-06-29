@@ -30,6 +30,38 @@ export function parseLocalDate(dateStr: string): Date {
   return normalizeToLocalDate(dateStr)
 }
 
+// Sane planning window. Dates outside this are treated as invalid input and
+// must never reach timeline positioning math — a malformed year like 201546
+// produces a multi-million-pixel offset that crashes the Gantt render.
+export const MIN_PLANNING_YEAR = 2000
+export const MAX_PLANNING_YEAR = 2100
+
+/**
+ * Validates that a 'yyyy-MM-dd' (or ISO) string is a real date within the
+ * planning window. Used to reject bad input before it is persisted.
+ */
+export function isValidPlanningDate(date: string | null | undefined): boolean {
+  if (!date) return false
+  const [year, month, day] = date.split('T')[0].split('-').map(Number)
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return false
+  if (year < MIN_PLANNING_YEAR || year > MAX_PLANNING_YEAR) return false
+  if (month < 1 || month > 12) return false
+  if (day < 1 || day > 31) return false
+  return true
+}
+
+/**
+ * Clamps a day offset to a bounded range around the visible timeline so a
+ * malformed or out-of-range date can never produce a runaway pixel offset.
+ * NaN (from an Invalid Date) collapses to 0. `timelineLength` is the number of
+ * days currently rendered.
+ */
+export function clampDayOffset(offset: number, timelineLength: number): number {
+  const PAD = 3650 // ~10 years of slack beyond the rendered range
+  if (!Number.isFinite(offset)) return 0
+  return Math.max(-PAD, Math.min(offset, timelineLength + PAD))
+}
+
 export function generateTimelineMonths(startDate: Date, monthCount: number = 12): Date[] {
   const months: Date[] = []
   for (let i = 0; i < monthCount; i++) {

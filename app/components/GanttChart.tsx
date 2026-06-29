@@ -5,7 +5,7 @@ import { DndContext, DragEndEvent, DragStartEvent, useSensor, useSensors, Pointe
 import { format, addDays, differenceInDays, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isToday, startOfQuarter, endOfQuarter, eachQuarterOfInterval, addMonths, subMonths } from 'date-fns'
 import { Sale, Platform, Product, Game, Client, SaleWithDetails, PlatformEvent, LaunchConflict } from '@/lib/types'
 import { validateSale } from '@/lib/validation'
-import { normalizeToLocalDate } from '@/lib/dateUtils'
+import { normalizeToLocalDate, clampDayOffset } from '@/lib/dateUtils'
 import SaleBlock from './SaleBlock'
 import styles from './GanttChart.module.css'
 
@@ -833,16 +833,18 @@ export default function GanttChart(props: GanttChartProps) {
   
   const getPositionForDate = useCallback((date: Date | string): number => {
     const d = typeof date === 'string' ? normalizeToLocalDate(date) : date
-    const daysDiff = differenceInDays(d, days[0])
+    // Clamp so a malformed/out-of-range date can't produce a runaway pixel
+    // offset that crashes the render (e.g. a 5-digit year → millions of px).
+    const daysDiff = clampDayOffset(differenceInDays(d, days[0]), days.length)
     return daysDiff * dayWidth
   }, [days, dayWidth])
-  
+
   const getWidthForRange = useCallback((start: Date | string, end: Date | string): number => {
     const s = typeof start === 'string' ? normalizeToLocalDate(start) : start
     const e = typeof end === 'string' ? normalizeToLocalDate(end) : end
-    const daysDiff = differenceInDays(e, s) + 1
-    return daysDiff * dayWidth
-  }, [dayWidth])
+    const daysDiff = clampDayOffset(differenceInDays(e, s) + 1, days.length)
+    return Math.max(0, daysDiff) * dayWidth
+  }, [days.length, dayWidth])
   
   const getDayIndexForDate = useCallback((date: Date | string): number => {
     const d = typeof date === 'string' ? normalizeToLocalDate(date) : date

@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Platform, PlatformEvent } from '@/lib/types'
 import { format, parseISO } from 'date-fns'
+import { isValidPlanningDate } from '@/lib/dateUtils'
 import styles from './PlatformSettings.module.css'
 
 interface PlatformSettingsProps {
@@ -134,9 +135,16 @@ export default function PlatformSettings({ isOpen, onClose, onEventsChange }: Pl
   }
   
   const handleSaveEvent = async () => {
+    // Reject malformed/out-of-range dates before they can be persisted — a bad
+    // year (e.g. 201546) otherwise crashes the timeline render downstream.
+    if (!isValidPlanningDate(eventForm.start_date) || !isValidPlanningDate(eventForm.end_date)) {
+      setError('Please enter valid start and end dates between 2000 and 2100.')
+      return
+    }
+
     setSaving(true)
     setError(null)
-    
+
     try {
       const url = '/api/platform-events'
       const method = editingEvent ? 'PUT' : 'POST'
@@ -355,6 +363,8 @@ export default function PlatformSettings({ isOpen, onClose, onEventsChange }: Pl
                       <input
                         type="date"
                         value={eventForm.start_date}
+                        min="2000-01-01"
+                        max="2100-12-31"
                         onChange={e => setEventForm(prev => ({ ...prev, start_date: e.target.value }))}
                       />
                     </div>
@@ -364,6 +374,8 @@ export default function PlatformSettings({ isOpen, onClose, onEventsChange }: Pl
                       <input
                         type="date"
                         value={eventForm.end_date}
+                        min={eventForm.start_date || '2000-01-01'}
+                        max="2100-12-31"
                         onChange={e => setEventForm(prev => ({ ...prev, end_date: e.target.value }))}
                       />
                     </div>
