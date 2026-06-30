@@ -131,8 +131,10 @@ export async function GET(request: NextRequest) {
         .order('publish_date', { ascending: false })
 
       if (gameId) covQuery = covQuery.eq('game_id', gameId)
-      if (dateFrom) covQuery = covQuery.gte('publish_date', dateFrom)
-      if (dateTo) covQuery = covQuery.lte('publish_date', dateTo)
+      // GD-001: YouTube items from Apify often have null publish_date.
+      // Fall back to discovered_at for null-date items so they're not silently excluded.
+      if (dateFrom) covQuery = covQuery.or(`publish_date.gte.${dateFrom},and(publish_date.is.null,discovered_at.gte.${dateFrom})`)
+      if (dateTo) covQuery = covQuery.or(`publish_date.lte.${dateTo},and(publish_date.is.null,discovered_at.lte.${dateTo})`)
 
       const { data: covData, error: covError } = await covQuery.limit(5000)
       if (covError) throw covError
@@ -241,8 +243,8 @@ export async function GET(request: NextRequest) {
         .order('discovered_at', { ascending: false })
 
       if (gameId) socialQuery = socialQuery.eq('game_id', gameId)
-      if (dateFrom) socialQuery = socialQuery.gte('publish_date', dateFrom)
-      if (dateTo) socialQuery = socialQuery.lte('publish_date', dateTo)
+      if (dateFrom) socialQuery = socialQuery.or(`publish_date.gte.${dateFrom},and(publish_date.is.null,discovered_at.gte.${dateFrom})`)
+      if (dateTo) socialQuery = socialQuery.or(`publish_date.lte.${dateTo},and(publish_date.is.null,discovered_at.lte.${dateTo})`)
 
       const { data: socialData, error: socialError } = await socialQuery.limit(5000)
       if (socialError) throw socialError
