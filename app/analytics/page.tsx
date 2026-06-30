@@ -77,6 +77,18 @@ export default function AnalyticsPage() {
   // Wishlist widget state
   const [wishlistData, setWishlistData] = useState<{game: string; gameId: string; date: string; additions: number; deletions: number; purchases: number; gifts: number}[]>([])
   const [bundleData, setBundleData] = useState<{bundleName: string; gameId: string; game: string; date: string; netUnits: number; netRevenue: number}[]>([])
+  const [propositionRows, setPropositionRows] = useState<Array<{
+    product_name: string
+    product_type: string | null
+    net_units: number
+    net_revenue: number
+    gross_revenue: number
+    avg_price: number
+    refund_rate: number
+    row_count: number
+  }>>([])
+  const [propositionSortKey, setPropositionSortKey] = useState<string>('net_revenue')
+  const [propositionSortDir, setPropositionSortDir] = useState<'asc' | 'desc'>('desc')
 
   // Sale comparison picker state — set of period startDates for selected sale periods (up to 5)
   const [selectedComparisonPeriods, setSelectedComparisonPeriods] = useState<Set<string>>(new Set())
@@ -222,6 +234,33 @@ export default function AnalyticsPage() {
     }
     fetchWishlistData()
   }, [supabase, selectedClient, selectedProduct, dateRange])
+
+  // Fetch proposition breakdown for Proposition Comparison section
+  useEffect(() => {
+    if (selectedClient === 'all') {
+      setPropositionRows([])
+      return
+    }
+    const fetchPropositions = async () => {
+      const params = new URLSearchParams({
+        client_id: selectedClient,
+        drill: 'game',
+        page_size: '200',
+        sort_by: 'net_revenue',
+        sort_dir: 'desc',
+      })
+      if (dateRange.start) params.set('date_from', dateRange.start.toISOString().split('T')[0])
+      if (dateRange.end) params.set('date_to', dateRange.end.toISOString().split('T')[0])
+      try {
+        const res = await fetch(`/api/reports/data-table?${params}`)
+        if (res.ok) {
+          const json = await res.json()
+          setPropositionRows(json.rows || [])
+        }
+      } catch { /* ignore */ }
+    }
+    fetchPropositions()
+  }, [selectedClient, dateRange])
 
   // Load demo product names for the current client so we can decorate the product dropdown
   // and badge rows in the table. Demos live in the products table with product_type='demo'.
@@ -3237,6 +3276,125 @@ export default function AnalyticsPage() {
               </span>
             </div>
             {renderWishlistWidget()}
+          </div>
+        )}
+
+        {/* Proposition Comparison — shows all products for current client side-by-side */}
+        {propositionRows.length > 1 && (
+          <div style={{
+            backgroundColor: '#fff',
+            borderRadius: '12px',
+            border: '1px solid #e2e8f0',
+            padding: '20px 24px',
+            marginTop: '16px',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+              <span style={{ fontSize: '18px' }}>📦</span>
+              <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#1e293b', margin: 0 }}>Proposition Comparison</h3>
+              <span style={{ fontSize: '12px', color: '#94a3b8', marginLeft: 'auto' }}>
+                {propositionRows.length} products · click column headers to sort
+              </span>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                    {[
+                      { key: 'product_name', label: 'Product', align: 'left' },
+                      { key: 'product_type', label: 'Type', align: 'left' },
+                      { key: 'net_units', label: 'Net Units', align: 'right' },
+                      { key: 'net_revenue', label: 'Net Revenue', align: 'right' },
+                      { key: 'avg_price', label: 'Avg Price', align: 'right' },
+                      { key: 'refund_rate', label: 'Refund Rate', align: 'right' },
+                    ].map(col => (
+                      <th
+                        key={col.key}
+                        onClick={() => {
+                          if (propositionSortKey === col.key) {
+                            setPropositionSortDir(d => d === 'asc' ? 'desc' : 'asc')
+                          } else {
+                            setPropositionSortKey(col.key)
+                            setPropositionSortDir('desc')
+                          }
+                        }}
+                        style={{
+                          padding: '8px 12px', textAlign: col.align as 'left' | 'right',
+                          fontWeight: 600, color: propositionSortKey === col.key ? '#b8232f' : '#475569',
+                          cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap'
+                        }}
+                      >
+                        {col.label}{propositionSortKey === col.key ? (propositionSortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...propositionRows]
+                    .sort((a, b) => {
+                      const av = a[propositionSortKey as keyof typeof a]
+                      const bv = b[propositionSortKey as keyof typeof b]
+                      const dir = propositionSortDir === 'asc' ? 1 : -1
+                      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir
+                      return String(av || '').localeCompare(String(bv || '')) * dir
+                    })
+                    .map((row, i) => {
+                      const TYPE_COLORS: Record<string, { bg: string; text: string }> = {
+                        game: { bg: '#dbeafe', text: '#1e40af' },
+                        dlc: { bg: '#fef9c3', text: '#854d0e' },
+                        bundle: { bg: '#f3e8ff', text: '#6b21a8' },
+                        demo: { bg: '#dcfce7', text: '#166534' },
+                      }
+                      const typeKey = (row.product_type || '').toLowerCase()
+                      const typeColor = TYPE_COLORS[typeKey] || { bg: '#f3f4f6', text: '#374151' }
+                      const totalUnits = propositionRows.reduce((s, r) => s + r.net_units, 0)
+                      const sharePct = totalUnits > 0 ? (row.net_units / totalUnits * 100) : 0
+                      return (
+                        <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '10px 12px', fontWeight: 500, color: '#1e293b' }}>
+                            {row.product_name}
+                            <div style={{ width: `${Math.min(sharePct, 100)}%`, height: '2px', backgroundColor: '#e2e8f0', borderRadius: '1px', marginTop: '4px' }}>
+                              <div style={{ width: `${Math.min(sharePct, 100)}%`, height: '100%', backgroundColor: '#b8232f', borderRadius: '1px' }} />
+                            </div>
+                          </td>
+                          <td style={{ padding: '10px 12px' }}>
+                            {row.product_type ? (
+                              <span style={{ padding: '2px 8px', borderRadius: '9999px', fontSize: '11px', fontWeight: 600, backgroundColor: typeColor.bg, color: typeColor.text }}>
+                                {row.product_type}
+                              </span>
+                            ) : <span style={{ color: '#94a3b8' }}>—</span>}
+                          </td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', color: '#1e293b' }}>
+                            {row.net_units.toLocaleString()}
+                          </td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', color: '#16a34a', fontWeight: 600 }}>
+                            ${row.net_revenue.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                          </td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', color: '#475569' }}>
+                            ${row.avg_price.toFixed(2)}
+                          </td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', color: row.refund_rate > 5 ? '#dc2626' : '#475569' }}>
+                            {row.refund_rate.toFixed(1)}%
+                          </td>
+                        </tr>
+                      )
+                    })}
+                </tbody>
+                <tfoot>
+                  <tr style={{ borderTop: '2px solid #e2e8f0', backgroundColor: '#f8fafc' }}>
+                    <td style={{ padding: '10px 12px', fontWeight: 700, color: '#1e293b', fontSize: '12px' }}>TOTAL</td>
+                    <td />
+                    <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#1e293b' }}>
+                      {propositionRows.reduce((s, r) => s + r.net_units, 0).toLocaleString()}
+                    </td>
+                    <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#16a34a' }}>
+                      ${propositionRows.reduce((s, r) => s + r.net_revenue, 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                    </td>
+                    <td />
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
           </div>
         )}
 
