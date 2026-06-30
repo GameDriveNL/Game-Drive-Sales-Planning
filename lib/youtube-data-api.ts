@@ -35,9 +35,44 @@ export interface YouTubeSearchOpts {
   relevanceLanguage?: string  // ISO 639-1 (e.g. 'fr', 'de', 'ja')
   regionCode?: string         // ISO 3166-1 alpha-2 (e.g. 'NL', 'JP')
   pageToken?: string          // for pagination
+  channelId?: string          // restrict results to a specific channel
 }
 
 const ENDPOINT = 'https://www.googleapis.com/youtube/v3/search'
+
+/**
+ * Resolve a YouTube channel URL to a channel ID.
+ * Handles /channel/UCxxx (direct), /@handle, /c/name, and /user/name URLs.
+ * Returns null if the channel ID cannot be resolved.
+ */
+export async function resolveChannelId(apiKey: string, channelUrl: string): Promise<string | null> {
+  try {
+    const u = new URL(channelUrl)
+    const path = u.pathname
+
+    const chanMatch = path.match(/^\/channel\/(UC[\w-]+)/)
+    if (chanMatch) return chanMatch[1]
+
+    const handleMatch = path.match(/^\/@([\w.-]+)/)
+    if (handleMatch) {
+      const params = new URLSearchParams({ part: 'id', forHandle: `@${handleMatch[1]}`, key: apiKey })
+      const res = await fetch(`https://www.googleapis.com/youtube/v3/channels?${params}`)
+      if (!res.ok) return null
+      const data = await res.json() as { items?: Array<{ id?: string }> }
+      return data.items?.[0]?.id ?? null
+    }
+
+    const customMatch = path.match(/^\/(?:c|user)\/([\w.-]+)/)
+    if (customMatch) {
+      const params = new URLSearchParams({ part: 'id', forUsername: customMatch[1], key: apiKey })
+      const res = await fetch(`https://www.googleapis.com/youtube/v3/channels?${params}`)
+      if (!res.ok) return null
+      const data = await res.json() as { items?: Array<{ id?: string }> }
+      return data.items?.[0]?.id ?? null
+    }
+  } catch { /* fall through */ }
+  return null
+}
 
 /**
  * Run a search.list call. Returns parsed results or empty array on error.
@@ -60,6 +95,7 @@ export async function searchVideos(
   if (opts.relevanceLanguage) params.set('relevanceLanguage', opts.relevanceLanguage)
   if (opts.regionCode) params.set('regionCode', opts.regionCode)
   if (opts.pageToken) params.set('pageToken', opts.pageToken)
+  if (opts.channelId) params.set('channelId', opts.channelId)
 
   try {
     const controller = new AbortController()
