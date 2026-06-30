@@ -90,7 +90,8 @@ export default function AddSaleModal({
 
   const selectedPlatform = platforms.find(p => p.id === platformId)
   const selectedProduct = products.find(p => p.id === productId)
-  
+  const isSteamPlatform = selectedPlatform?.name?.toLowerCase().includes('steam') ?? false
+
   // Calculate cooldown end date
   const cooldownEndDate = endDate && selectedPlatform
     ? format(addDays(parseISO(endDate), selectedPlatform.cooldown_days), 'yyyy-MM-dd')
@@ -499,12 +500,17 @@ export default function AddSaleModal({
 
             <div className={styles.field}>
               <label>Cooldown Until</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 value={cooldownEndDate ? format(parseISO(cooldownEndDate), 'dd/MM/yyyy') : '-'}
                 disabled
                 className={styles.disabled}
               />
+              {isSteamPlatform && cooldownEndDate && (
+                <div style={{ fontSize: '11px', color: '#ca8a04', marginTop: '4px', lineHeight: 1.4 }}>
+                  Steam sales change over at <strong>7PM CEST</strong>. Next sale eligible from 7PM on this date.
+                </div>
+              )}
             </div>
             
             <div className={styles.field}>
