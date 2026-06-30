@@ -893,6 +893,64 @@ ${social && social.total_posts > 0 ? `
                 </div>
               </div>
 
+              {/* Revenue chart */}
+              {sales && sales.daily_revenue.length > 1 && (() => {
+                const data = sales.daily_revenue.filter(d => d.value > 0 || true)
+                const maxVal = Math.max(...data.map(d => d.value), 1)
+                const W = 800, H = 200
+                const PAD = { top: 12, right: 20, bottom: 32, left: 64 }
+                const innerW = W - PAD.left - PAD.right
+                const innerH = H - PAD.top - PAD.bottom
+                const xScale = (i: number) => PAD.left + (data.length > 1 ? (i / (data.length - 1)) * innerW : innerW / 2)
+                const yScale = (v: number) => PAD.top + (1 - v / maxVal) * innerH
+                const pts = data.map((d, i) => `${xScale(i)},${yScale(d.value)}`).join(' ')
+                const labelEvery = Math.max(1, Math.floor(data.length / 7))
+                const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+                const ticks = [0, 0.25, 0.5, 0.75, 1]
+                return (
+                  <div style={{ ...cardStyle, marginBottom: '24px' }}>
+                    <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#334155', marginBottom: '12px' }}>
+                      Revenue Over Period
+                      {annotations.summary_graph_note && (
+                        <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 400, marginLeft: '8px' }}>· {annotations.summary_graph_note}</span>
+                      )}
+                    </h3>
+                    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: '180px', display: 'block', overflow: 'visible' }}>
+                      {/* Gridlines + Y labels */}
+                      {ticks.map(frac => {
+                        const y = PAD.top + (1 - frac) * innerH
+                        const val = maxVal * frac
+                        const label = val >= 1_000_000 ? `$${(val/1_000_000).toFixed(1)}M`
+                          : val >= 1_000 ? `$${(val/1_000).toFixed(0)}K`
+                          : `$${Math.round(val)}`
+                        return (
+                          <g key={frac}>
+                            <line x1={PAD.left} y1={y} x2={W - PAD.right} y2={y} stroke="#e2e8f0" strokeWidth="1" />
+                            <text x={PAD.left - 6} y={y + 4} textAnchor="end" fontSize="10" fill="#94a3b8">{label}</text>
+                          </g>
+                        )
+                      })}
+                      {/* Area fill */}
+                      <polygon
+                        points={`${PAD.left},${PAD.top + innerH} ${pts} ${xScale(data.length-1)},${PAD.top + innerH}`}
+                        fill="#d22939" fillOpacity="0.08"
+                      />
+                      {/* Line */}
+                      <polyline points={pts} fill="none" stroke="#d22939" strokeWidth="2" strokeLinejoin="round" />
+                      {/* X labels */}
+                      {data.map((d, i) => {
+                        if (i % labelEvery !== 0 && i !== data.length - 1) return null
+                        const parts = d.date.split('-').map(Number)
+                        const label = `${parts[2]} ${MONTHS[parts[1]-1]}`
+                        return (
+                          <text key={d.date} x={xScale(i)} y={H - 4} textAnchor="middle" fontSize="10" fill="#94a3b8">{label}</text>
+                        )
+                      })}
+                    </svg>
+                  </div>
+                )
+              })()}
+
               {/* Quick breakdowns */}
               <div style={breakGrid}>
                 {sales && sales.platform_revenue.length > 0 && (
