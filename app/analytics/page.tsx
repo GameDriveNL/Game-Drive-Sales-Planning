@@ -78,6 +78,9 @@ export default function AnalyticsPage() {
   const [wishlistData, setWishlistData] = useState<{game: string; gameId: string; date: string; additions: number; deletions: number; purchases: number; gifts: number}[]>([])
   const [bundleData, setBundleData] = useState<{bundleName: string; gameId: string; game: string; date: string; netUnits: number; netRevenue: number}[]>([])
 
+  // Sale comparison picker state — set of period startDates for selected sale periods (up to 5)
+  const [selectedComparisonPeriods, setSelectedComparisonPeriods] = useState<Set<string>>(new Set())
+
   // AI Insights state
   const [insightsExpanded, setInsightsExpanded] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -2392,10 +2395,34 @@ export default function AnalyticsPage() {
     const saleAvgRev = saleData.days > 0 ? saleData.revenue / saleData.days : 0
     const regularAvgRev = regularData.days > 0 ? regularData.revenue / regularData.days : 0
     const uplift = regularAvgRev > 0 ? ((saleAvgRev - regularAvgRev) / regularAvgRev) * 100 : 0
-    const width = 800
-    const height = 160
-    const barHeight = 50
-    const labelWidth = 120
+
+    // Sale periods available for comparison picker
+    const salePeriods = periodData.filter(p => p.isSale)
+
+    // Determine which periods are active in the comparison view
+    // Default: first time the picker is shown, all sale periods are selected (up to 5)
+    const effectiveSelected: Set<string> = selectedComparisonPeriods.size > 0
+      ? selectedComparisonPeriods
+      : new Set(salePeriods.slice(0, 5).map(p => p.startDate))
+
+    const comparisonPeriods = salePeriods.filter(p => effectiveSelected.has(p.startDate))
+
+    // Palette for comparison bars
+    const PALETTE = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']
+
+    const togglePeriod = (startDate: string) => {
+      setSelectedComparisonPeriods(prev => {
+        const next = new Set(prev.size === 0 ? salePeriods.slice(0, 5).map(p => p.startDate) : prev)
+        if (next.has(startDate)) {
+          if (next.size > 1) next.delete(startDate) // keep at least 1
+        } else {
+          if (next.size < 5) next.add(startDate)
+        }
+        return next
+      })
+    }
+
+    const maxAvgRev = Math.max(...comparisonPeriods.map(p => p.avgDailyRevenue), regularAvgRev, 1)
 
     return (
       <div className={styles.chartCard}>
@@ -2408,47 +2435,159 @@ export default function AnalyticsPage() {
             </button>
           )}
         </div>
-        <div style={{ padding: '0 20px 20px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
-            {/* Sale Periods Card */}
-            <div style={{ padding: '16px', backgroundColor: '#eff6ff', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
-              <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px', fontWeight: '500' }}>Sale Periods</div>
-              <div style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>
-                {formatCurrency(saleData.revenue)}
-              </div>
-              <div style={{ fontSize: '11px', color: '#64748b' }}>
-                {formatNumber(saleData.units)} units · {saleData.days} days
-              </div>
-              <div style={{ fontSize: '11px', color: '#3b82f6', fontWeight: '600', marginTop: '8px' }}>
-                {formatCurrency(saleAvgRev)}/day
-              </div>
-            </div>
 
-            {/* Regular Periods Card */}
-            <div style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px', fontWeight: '500' }}>Regular Price</div>
-              <div style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>
-                {formatCurrency(regularData.revenue)}
-              </div>
-              <div style={{ fontSize: '11px', color: '#64748b' }}>
-                {formatNumber(regularData.units)} units · {regularData.days} days
-              </div>
-              <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '600', marginTop: '8px' }}>
-                {formatCurrency(regularAvgRev)}/day
-              </div>
-            </div>
-
-            {/* Uplift Card */}
-            <div style={{ padding: '16px', backgroundColor: uplift >= 0 ? '#f0fdf4' : '#fef2f2', borderRadius: '8px', border: `1px solid ${uplift >= 0 ? '#bbf7d0' : '#fecaca'}` }}>
-              <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px', fontWeight: '500' }}>Sale Uplift</div>
-              <div style={{ fontSize: '32px', fontWeight: '700', color: uplift >= 0 ? '#16a34a' : '#dc2626', marginBottom: '4px' }}>
-                {uplift >= 0 ? '+' : ''}{uplift.toFixed(0)}%
-              </div>
-              <div style={{ fontSize: '11px', color: '#64748b' }}>
-                vs regular pricing
-              </div>
-            </div>
+        {/* Sale picker — only shown when there are multiple sale periods */}
+        {salePeriods.length > 1 && (
+          <div style={{ padding: '0 20px 12px', display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+            <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, marginRight: '4px' }}>Compare:</span>
+            {salePeriods.map((p, i) => {
+              const isOn = effectiveSelected.has(p.startDate)
+              const color = PALETTE[salePeriods.indexOf(p) % PALETTE.length]
+              return (
+                <button
+                  key={p.startDate}
+                  onClick={() => togglePeriod(p.startDate)}
+                  title={`${formatDate(p.startDate)} – ${formatDate(p.endDate)} · ${p.days} days`}
+                  style={{
+                    padding: '3px 10px',
+                    borderRadius: '20px',
+                    border: `1px solid ${isOn ? color : '#e2e8f0'}`,
+                    background: isOn ? color : '#f8fafc',
+                    color: isOn ? '#fff' : '#64748b',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {p.name}
+                </button>
+              )
+            })}
+            {salePeriods.length > 5 && (
+              <span style={{ fontSize: '10px', color: '#94a3b8' }}>max 5</span>
+            )}
           </div>
+        )}
+
+        <div style={{ padding: '0 20px 20px' }}>
+          {/* Side-by-side comparison bars for selected sale periods + regular baseline */}
+          {comparisonPeriods.length >= 2 ? (
+            <div>
+              {/* Horizontal bar chart: avg daily revenue per period */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {/* Regular baseline row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ width: '130px', fontSize: '11px', color: '#64748b', fontWeight: 500, textAlign: 'right', flexShrink: 0 }}>
+                    Regular Price
+                  </div>
+                  <div style={{ flex: 1, height: '28px', backgroundColor: '#f1f5f9', borderRadius: '4px', overflow: 'hidden', position: 'relative' }}>
+                    <div style={{
+                      height: '100%',
+                      width: `${(regularAvgRev / maxAvgRev) * 100}%`,
+                      backgroundColor: '#94a3b8',
+                      borderRadius: '4px',
+                      minWidth: regularAvgRev > 0 ? '3px' : 0,
+                    }} />
+                  </div>
+                  <div style={{ width: '90px', fontSize: '12px', fontWeight: 700, color: '#475569', flexShrink: 0 }}>
+                    {formatCurrency(regularAvgRev)}/d
+                  </div>
+                </div>
+                {/* Sale period rows */}
+                {comparisonPeriods.map((p, i) => {
+                  const color = PALETTE[salePeriods.indexOf(p) % PALETTE.length]
+                  const pct = maxAvgRev > 0 ? (p.avgDailyRevenue / maxAvgRev) * 100 : 0
+                  const upliftVsReg = regularAvgRev > 0 ? ((p.avgDailyRevenue - regularAvgRev) / regularAvgRev) * 100 : 0
+                  return (
+                    <div key={p.startDate} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{ width: '130px', fontSize: '11px', color, fontWeight: 600, textAlign: 'right', flexShrink: 0 }}>
+                        {p.name}
+                      </div>
+                      <div style={{ flex: 1, height: '28px', backgroundColor: '#f1f5f9', borderRadius: '4px', overflow: 'hidden', position: 'relative' }}>
+                        <div style={{
+                          height: '100%',
+                          width: `${pct}%`,
+                          backgroundColor: color,
+                          borderRadius: '4px',
+                          opacity: 0.85,
+                          minWidth: p.avgDailyRevenue > 0 ? '3px' : 0,
+                        }} />
+                      </div>
+                      <div style={{ width: '90px', fontSize: '12px', fontWeight: 700, color, flexShrink: 0 }}>
+                        {formatCurrency(p.avgDailyRevenue)}/d
+                      </div>
+                      <div style={{
+                        width: '54px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        color: upliftVsReg >= 0 ? '#16a34a' : '#dc2626',
+                        flexShrink: 0,
+                      }}>
+                        {upliftVsReg >= 0 ? '+' : ''}{upliftVsReg.toFixed(0)}%
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              {/* Summary stats row below */}
+              <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(comparisonPeriods.length, 5)}, 1fr)`, gap: '10px', marginTop: '20px' }}>
+                {comparisonPeriods.map((p, i) => {
+                  const color = PALETTE[salePeriods.indexOf(p) % PALETTE.length]
+                  return (
+                    <div key={p.startDate} style={{ padding: '12px', borderRadius: '8px', border: `1px solid ${color}30`, backgroundColor: `${color}08` }}>
+                      <div style={{ fontSize: '10px', color, fontWeight: 700, marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{p.name}</div>
+                      <div style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b', marginBottom: '2px' }}>{formatCurrency(p.totalRevenue)}</div>
+                      <div style={{ fontSize: '10px', color: '#64748b' }}>{formatNumber(p.totalUnits)} units · {p.days}d</div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ) : (
+            /* Single sale selected or no picker — show original aggregate view */
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+              {/* Sale Periods Card */}
+              <div style={{ padding: '16px', backgroundColor: '#eff6ff', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
+                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px', fontWeight: '500' }}>Sale Periods</div>
+                <div style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>
+                  {formatCurrency(saleData.revenue)}
+                </div>
+                <div style={{ fontSize: '11px', color: '#64748b' }}>
+                  {formatNumber(saleData.units)} units · {saleData.days} days
+                </div>
+                <div style={{ fontSize: '11px', color: '#3b82f6', fontWeight: '600', marginTop: '8px' }}>
+                  {formatCurrency(saleAvgRev)}/day
+                </div>
+              </div>
+
+              {/* Regular Periods Card */}
+              <div style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px', fontWeight: '500' }}>Regular Price</div>
+                <div style={{ fontSize: '24px', fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>
+                  {formatCurrency(regularData.revenue)}
+                </div>
+                <div style={{ fontSize: '11px', color: '#64748b' }}>
+                  {formatNumber(regularData.units)} units · {regularData.days} days
+                </div>
+                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '600', marginTop: '8px' }}>
+                  {formatCurrency(regularAvgRev)}/day
+                </div>
+              </div>
+
+              {/* Uplift Card */}
+              <div style={{ padding: '16px', backgroundColor: uplift >= 0 ? '#f0fdf4' : '#fef2f2', borderRadius: '8px', border: `1px solid ${uplift >= 0 ? '#bbf7d0' : '#fecaca'}` }}>
+                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '8px', fontWeight: '500' }}>Sale Uplift</div>
+                <div style={{ fontSize: '32px', fontWeight: '700', color: uplift >= 0 ? '#16a34a' : '#dc2626', marginBottom: '4px' }}>
+                  {uplift >= 0 ? '+' : ''}{uplift.toFixed(0)}%
+                </div>
+                <div style={{ fontSize: '11px', color: '#64748b' }}>
+                  vs regular pricing
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     )
