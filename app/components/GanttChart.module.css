@@ -458,6 +458,26 @@
   padding: 0;
   background: #f8f8fa; /* Grey background to match UI */
   width: 100%;
+  /* Hide native horizontal scrollbar — the top custom scrollGrabBar handles horizontal scrolling */
+  scrollbar-width: thin; /* keep vertical; browser will still show it */
+}
+
+.scrollContainer::-webkit-scrollbar {
+  height: 0; /* hide horizontal scrollbar, keep vertical */
+  width: 8px; /* keep vertical scrollbar visible */
+}
+
+.scrollContainer::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+.scrollContainer::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.scrollContainer::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
 .timeline {
