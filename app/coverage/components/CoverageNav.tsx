@@ -12,6 +12,7 @@ const NAV_TABS = [
   { label: 'Dashboard',       href: '/coverage/dashboard' },
   { label: 'Timeline',        href: '/coverage/timeline' },
   { label: 'Reception',       href: '/coverage/reception' },
+  { label: 'Competitors',     href: '/coverage/competitors' },
   { label: 'PR Report',       href: '/coverage/report' },
 ]
 
