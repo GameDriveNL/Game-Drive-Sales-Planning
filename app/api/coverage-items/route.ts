@@ -93,6 +93,17 @@ export async function GET(request: NextRequest) {
       })
     }
 
+    // System-level domain blacklist — Steam Store and Steam Community are first-party
+    // Steam pages, not press coverage. Always excluded regardless of client settings.
+    const DOMAIN_BLACKLIST = ['store.steampowered.com', 'steamcommunity.com', 'steampowered.com']
+    filtered = filtered.filter((item: Record<string, unknown>) => {
+      const url = String(item.url || '')
+      try {
+        const host = new URL(url).hostname.replace(/^www\./, '')
+        return !DOMAIN_BLACKLIST.some(d => host === d || host.endsWith('.' + d))
+      } catch { return true }
+    })
+
     // Apply keyword blacklist filtering
     // Fetch blacklist keywords for the client/game and hide matching items
     const applyBlacklist = searchParams.get('apply_blacklist') !== 'false' // default: on

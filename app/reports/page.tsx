@@ -126,6 +126,8 @@ export default function ReportsPage() {
   const [annotations, setAnnotations] = useState<Record<string, string>>({})
   const [savingAnnotation, setSavingAnnotation] = useState<string | null>(null)
 
+  const [coverageFilter, setCoverageFilter] = useState<'all' | 'press' | 'social'>('all')
+
   // Export modal state
   const [showExportModal, setShowExportModal] = useState(false)
   const [exportSections, setExportSections] = useState({ summary: true, sales: true, pr_coverage: true, social: true })
@@ -711,6 +713,40 @@ ${social && social.total_posts > 0 ? `
   const sales = reportData?.sales
   const cov = reportData?.coverage
 
+  const SOCIAL_TYPES = new Set(['youtube', 'twitter', 'tiktok', 'twitch', 'instagram', 'reddit'])
+  const filteredCovItems = cov ? (
+    coverageFilter === 'all' ? cov.items
+    : coverageFilter === 'press' ? cov.items.filter(i => !SOCIAL_TYPES.has(i.source_type || ''))
+    : cov.items.filter(i => SOCIAL_TYPES.has(i.source_type || ''))
+  ) : []
+  const filteredCovStats = cov ? (() => {
+    const tierMap: Record<string, number> = {}
+    const typeMap: Record<string, number> = {}
+    const terrMap: Record<string, number> = {}
+    for (const i of filteredCovItems) {
+      const tier = (i.outlet as unknown as Record<string, string>)?.tier || 'untiered'
+      tierMap[tier] = (tierMap[tier] || 0) + 1
+      const covType = i.coverage_type || 'article'
+      typeMap[covType] = (typeMap[covType] || 0) + 1
+      const terr = i.territory || 'Unknown'
+      terrMap[terr] = (terrMap[terr] || 0) + 1
+    }
+    const sortEntries = (m: Record<string, number>) => Object.entries(m).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }))
+    const scored = filteredCovItems.filter(i => i.review_score != null)
+    return {
+      total_pieces: filteredCovItems.length,
+      total_audience_reach: filteredCovItems.reduce((s, i) => s + (i.display_visitors || 0), 0),
+      estimated_views: filteredCovItems.reduce((s, i) => {
+        const r = i.display_visitors || 0
+        return s + (SOCIAL_TYPES.has(i.source_type || '') ? r : Math.round(r * 0.02))
+      }, 0),
+      avg_review_score: scored.length > 0 ? Math.round((scored.reduce((s, i) => s + i.review_score!, 0) / scored.length) * 10) / 10 : null,
+      tier_breakdown: sortEntries(tierMap),
+      type_breakdown: sortEntries(typeMap),
+      territory_breakdown: sortEntries(terrMap).slice(0, 8),
+    }
+  })() : null
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <Sidebar />
@@ -1026,22 +1062,37 @@ ${social && social.total_posts > 0 ? `
           {activeTab === 'PR Coverage' && cov && (
             <div>
               <div style={cardStyle}>
-                <h2 style={{ fontSize: '18px', fontWeight: 600, color: '#1e293b', marginBottom: '16px' }}>PR Coverage Report</h2>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <h2 style={{ fontSize: '18px', fontWeight: 600, color: '#1e293b' }}>PR Coverage Report</h2>
+                  <div style={{ display: 'flex', gap: '4px', background: '#f1f5f9', borderRadius: '8px', padding: '3px' }}>
+                    {(['all', 'press', 'social'] as const).map(f => (
+                      <button key={f} onClick={() => setCoverageFilter(f)} style={{
+                        padding: '5px 14px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '13px',
+                        fontWeight: coverageFilter === f ? 600 : 400,
+                        background: coverageFilter === f ? '#fff' : 'transparent',
+                        color: coverageFilter === f ? '#1e293b' : '#64748b',
+                        boxShadow: coverageFilter === f ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                      }}>
+                        {f === 'all' ? 'All' : f === 'press' ? 'Press Only' : 'Social & Influencers'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div style={statGrid}>
                   <div style={statCard}>
-                    <div style={statValue}>{formatNumber(cov.total_pieces)}</div>
+                    <div style={statValue}>{formatNumber(filteredCovStats?.total_pieces ?? 0)}</div>
                     <div style={statLabel}>Total Pieces</div>
                   </div>
                   <div style={statCard}>
-                    <div style={statValue}>{formatNumber(cov.total_audience_reach)}</div>
+                    <div style={statValue}>{formatNumber(filteredCovStats?.total_audience_reach ?? 0)}</div>
                     <div style={statLabel}>Audience Reach</div>
                   </div>
                   <div style={statCard}>
-                    <div style={statValue}>{formatNumber(cov.estimated_views)}</div>
+                    <div style={statValue}>{formatNumber(filteredCovStats?.estimated_views ?? 0)}</div>
                     <div style={statLabel}>Est. Views</div>
                   </div>
                   <div style={statCard}>
-                    <div style={statValue}>{cov.avg_review_score ?? 'N/A'}</div>
+                    <div style={statValue}>{filteredCovStats?.avg_review_score ?? 'N/A'}</div>
                     <div style={statLabel}>Avg Review Score</div>
                   </div>
                 </div>
@@ -1050,7 +1101,7 @@ ${social && social.total_posts > 0 ? `
               <div style={breakGrid}>
                 <div style={breakCard}>
                   <div style={breakTitle}>By Tier</div>
-                  {cov.tier_breakdown.map(t => (
+                  {(filteredCovStats?.tier_breakdown ?? []).map(t => (
                     <div key={t.name} style={breakItem}>
                       <span style={tierColors[t.name] || { color: '#475569' }}>Tier {t.name}</span>
                       <span style={{ fontWeight: 600, color: '#1e293b' }}>{t.value}</span>
@@ -1059,7 +1110,7 @@ ${social && social.total_posts > 0 ? `
                 </div>
                 <div style={breakCard}>
                   <div style={breakTitle}>By Type</div>
-                  {cov.type_breakdown.map(t => (
+                  {(filteredCovStats?.type_breakdown ?? []).map(t => (
                     <div key={t.name} style={breakItem}>
                       <span style={{ color: '#475569' }}>{t.name}</span>
                       <span style={{ fontWeight: 600, color: '#1e293b' }}>{t.value}</span>
@@ -1068,7 +1119,7 @@ ${social && social.total_posts > 0 ? `
                 </div>
                 <div style={breakCard}>
                   <div style={breakTitle}>By Territory</div>
-                  {cov.territory_breakdown.slice(0, 8).map(t => (
+                  {(filteredCovStats?.territory_breakdown ?? []).map(t => (
                     <div key={t.name} style={breakItem}>
                       <span style={{ color: '#475569' }}>{t.name}</span>
                       <span style={{ fontWeight: 600, color: '#1e293b' }}>{t.value}</span>
@@ -1105,9 +1156,9 @@ ${social && social.total_posts > 0 ? `
               )}
 
               {/* Coverage items table */}
-              {cov.items.length > 0 && (
+              {filteredCovItems.length > 0 && (
                 <div style={cardStyle}>
-                  <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#334155', marginBottom: '12px' }}>Coverage Items ({cov.items.length})</h3>
+                  <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#334155', marginBottom: '12px' }}>Coverage Items ({filteredCovItems.length}{coverageFilter !== 'all' ? ` of ${cov.items.length}` : ''})</h3>
                   <div style={{ overflowX: 'auto' }}>
                     <table style={tableStyle}>
                       <thead>
@@ -1123,7 +1174,7 @@ ${social && social.total_posts > 0 ? `
                         </tr>
                       </thead>
                       <tbody>
-                        {cov.items.map(item => (
+                        {filteredCovItems.map(item => (
                           <tr key={item.id}>
                             <td style={tdStyle}>{item.publish_date || '-'}</td>
                             <td style={tdStyle}>{(item.outlet as unknown as Record<string, string>)?.name || '-'}</td>
