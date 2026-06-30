@@ -101,6 +101,8 @@ export async function POST(request: Request) {
     const gameId = body.game_id as string | undefined
     const maxQueries = Math.min(body.max_queries || 20, 30) // cap at 30 queries
     const dryRun = body.dry_run as boolean | undefined
+    const dateFrom = body.date_from as string | undefined
+    const dateTo = body.date_to as string | undefined
 
     if (!gameId) {
       return NextResponse.json({ error: 'game_id is required' }, { status: 400 })
@@ -179,11 +181,16 @@ export async function POST(request: Request) {
       if (Date.now() - startTime > 270000) break
 
       try {
-        const response = await tvly.search(searchQuery, {
+        const searchOpts: Record<string, unknown> = {
           maxResults: 20,
-          searchDepth: 'advanced' as const,
-          includeAnswer: false
-        })
+          searchDepth: 'advanced',
+          includeAnswer: false,
+        }
+        if (dateFrom) searchOpts.publishedAfterDate = dateFrom
+        if (dateTo) searchOpts.publishedBeforeDate = dateTo
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const response = await tvly.search(searchQuery, searchOpts as any)
         queriesMade++
 
         let newForQuery = 0
