@@ -2632,6 +2632,35 @@ export default function AnalyticsPage() {
     )
   }
 
+  // Proposition revenue trend — weekly revenue per top-5 product using already-loaded performanceData
+  const multiGameTrends = useMemo(() => {
+    if (propositionRows.length <= 1 || selectedProduct !== 'all') return []
+    const TREND_PALETTE = ['#b8232f', '#2563eb', '#059669', '#d97706', '#7c3aed']
+    const topProds = [...propositionRows].sort((a, b) => b.net_revenue - a.net_revenue).slice(0, 5)
+    const topProdNames = new Set(topProds.map(p => p.product_name))
+
+    const weekRevMap: Record<string, Record<string, number>> = {}
+    for (const row of performanceData) {
+      if (!topProdNames.has(row.product_name)) continue
+      const d = new Date(row.date)
+      d.setDate(d.getDate() - d.getDay())
+      const wk = d.toISOString().split('T')[0]
+      if (!weekRevMap[row.product_name]) weekRevMap[row.product_name] = {}
+      weekRevMap[row.product_name][wk] = (weekRevMap[row.product_name][wk] || 0) + toNumber(row.net_steam_sales_usd)
+    }
+
+    const weekSet = new Set(Object.values(weekRevMap).flatMap(m => Object.keys(m)))
+    const allWeeks = Array.from(weekSet).sort()
+    if (allWeeks.length < 2) return []
+
+    return topProds.map((prod, i) => ({
+      name: prod.product_name,
+      color: TREND_PALETTE[i % TREND_PALETTE.length],
+      data: allWeeks.map(wk => weekRevMap[prod.product_name]?.[wk] || 0),
+      weeks: allWeeks,
+    }))
+  }, [propositionRows, performanceData, selectedProduct])
+
   // Render wishlist & bundles widget
   // Compute wishlist stats from filtered data
   const wlTotalAdds = wishlistData.reduce((s, r) => s + r.additions, 0)
@@ -3395,6 +3424,72 @@ export default function AnalyticsPage() {
                 </tfoot>
               </table>
             </div>
+
+            {/* Revenue trend chart — weekly per top product */}
+            {multiGameTrends.length > 0 && (() => {
+              const allData = multiGameTrends.flatMap(s => s.data)
+              const maxVal = Math.max(...allData, 1)
+              const weeks = multiGameTrends[0].weeks
+              const chartH = 120
+              const chartW = Math.max(weeks.length * 20, 400)
+
+              return (
+                <div style={{ marginTop: '20px', borderTop: '1px solid #f1f5f9', paddingTop: '16px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 600, color: '#475569', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Weekly Revenue Trends
+                  </div>
+                  {/* Legend */}
+                  <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                    {multiGameTrends.map(s => (
+                      <div key={s.name} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <span style={{ display: 'inline-block', width: '12px', height: '3px', backgroundColor: s.color, borderRadius: '2px' }} />
+                        <span style={{ fontSize: '11px', color: '#475569' }}>{s.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {/* SVG chart */}
+                  <div style={{ overflowX: 'auto' }}>
+                    <svg width={chartW} height={chartH + 20} style={{ display: 'block' }}>
+                      {/* Horizontal guide lines */}
+                      {[0.25, 0.5, 0.75, 1].map(f => (
+                        <line key={f} x1={0} x2={chartW} y1={(1 - f) * chartH} y2={(1 - f) * chartH} stroke="#f1f5f9" strokeWidth={1} />
+                      ))}
+                      {/* Lines per product */}
+                      {multiGameTrends.map(series => {
+                        const pts = series.data.map((v, i) => {
+                          const x = (i / (weeks.length - 1)) * chartW
+                          const y = chartH - (v / maxVal) * chartH
+                          return `${x},${y}`
+                        }).join(' ')
+                        return (
+                          <polyline
+                            key={series.name}
+                            points={pts}
+                            fill="none"
+                            stroke={series.color}
+                            strokeWidth={2}
+                            strokeLinejoin="round"
+                            strokeLinecap="round"
+                            opacity={0.9}
+                          />
+                        )
+                      })}
+                      {/* X-axis month labels */}
+                      {weeks.map((wk, i) => {
+                        const d = new Date(wk)
+                        if (d.getDate() > 7) return null
+                        const x = (i / (weeks.length - 1)) * chartW
+                        return (
+                          <text key={wk} x={x} y={chartH + 14} textAnchor="middle" fontSize={9} fill="#94a3b8">
+                            {d.toLocaleString('en-US', { month: 'short' })}
+                          </text>
+                        )
+                      })}
+                    </svg>
+                  </div>
+                </div>
+              )
+            })()}
           </div>
         )}
 
