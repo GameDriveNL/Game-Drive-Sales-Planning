@@ -46,8 +46,15 @@ interface SocialData {
   sentiment_breakdown: NameValue[]; top_posts: SocialPost[]; worst_posts: SocialPost[]
 }
 
+interface WishlistData {
+  total_additions: number; total_deletions: number; total_purchases: number
+  total_gifts: number; net_wishlists: number; conversion_rate: number
+  daily: { date: string; additions: number; deletions: number; purchases: number }[]
+  game_breakdown: { name: string; additions: number; deletions: number; purchases: number }[]
+}
+
 interface ReportData {
-  sales?: SalesData; coverage?: CoverageData; social?: SocialData
+  sales?: SalesData; coverage?: CoverageData; social?: SocialData; wishlist?: WishlistData
   annotations: Annotation[]; client: { id: string; name: string } | null
   game?: { id: string; name: string } | null
 }
@@ -1050,6 +1057,33 @@ ${social && social.total_posts > 0 ? `
                     ))}
                   </div>
                 )}
+                {reportData?.wishlist && reportData.wishlist.total_additions > 0 && (
+                  <div style={breakCard}>
+                    <div style={breakTitle}>Wishlist Performance</div>
+                    <div style={breakItem}>
+                      <span style={{ color: '#475569' }}>Additions</span>
+                      <span style={{ fontWeight: 600, color: '#16a34a' }}>+{formatNumber(reportData.wishlist.total_additions)}</span>
+                    </div>
+                    <div style={breakItem}>
+                      <span style={{ color: '#475569' }}>Deletions</span>
+                      <span style={{ fontWeight: 600, color: '#dc2626' }}>-{formatNumber(reportData.wishlist.total_deletions)}</span>
+                    </div>
+                    <div style={breakItem}>
+                      <span style={{ color: '#475569' }}>Net</span>
+                      <span style={{ fontWeight: 600, color: reportData.wishlist.net_wishlists >= 0 ? '#16a34a' : '#dc2626' }}>
+                        {reportData.wishlist.net_wishlists >= 0 ? '+' : ''}{formatNumber(reportData.wishlist.net_wishlists)}
+                      </span>
+                    </div>
+                    <div style={breakItem}>
+                      <span style={{ color: '#475569' }}>Purchases</span>
+                      <span style={{ fontWeight: 600, color: '#1e293b' }}>{formatNumber(reportData.wishlist.total_purchases)}</span>
+                    </div>
+                    <div style={breakItem}>
+                      <span style={{ color: '#475569' }}>Conversion</span>
+                      <span style={{ fontWeight: 600, color: '#1e293b' }}>{reportData.wishlist.conversion_rate.toFixed(1)}%</span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1154,6 +1188,94 @@ ${social && social.total_posts > 0 ? `
                   </button>
                 </div>
               </div>
+
+              {/* Wishlist section */}
+              {reportData?.wishlist && reportData.wishlist.total_additions > 0 && (() => {
+                const wl = reportData.wishlist!
+                const daily = wl.daily
+                const maxAdd = Math.max(...daily.map(d => d.additions), 1)
+                const W = 700, H = 120
+                const PAD = { top: 8, right: 16, bottom: 24, left: 48 }
+                const innerW = W - PAD.left - PAD.right
+                const innerH = H - PAD.top - PAD.bottom
+                const xStep = daily.length > 1 ? innerW / (daily.length - 1) : innerW
+                const yAdd = (v: number) => PAD.top + (1 - v / maxAdd) * innerH
+                const addPts = daily.map((d, i) => `${PAD.left + i * xStep},${yAdd(d.additions)}`).join(' ')
+                const delPts = daily.map((d, i) => `${PAD.left + i * xStep},${yAdd(d.deletions)}`).join(' ')
+                const labelEvery = Math.max(1, Math.floor(daily.length / 6))
+                const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+                return (
+                  <div style={cardStyle}>
+                    <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#334155', marginBottom: '16px' }}>Wishlist Performance</h3>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', marginBottom: '20px' }}>
+                      {[
+                        { label: 'Additions', value: `+${formatNumber(wl.total_additions)}`, color: '#16a34a', bg: '#f0fdf4' },
+                        { label: 'Deletions', value: `-${formatNumber(wl.total_deletions)}`, color: '#dc2626', bg: '#fef2f2' },
+                        { label: 'Net', value: `${wl.net_wishlists >= 0 ? '+' : ''}${formatNumber(wl.net_wishlists)}`, color: wl.net_wishlists >= 0 ? '#16a34a' : '#dc2626', bg: '#f8fafc' },
+                        { label: 'Purchases', value: formatNumber(wl.total_purchases), color: '#1e293b', bg: '#eff6ff' },
+                        { label: 'Conversion', value: `${wl.conversion_rate.toFixed(1)}%`, color: '#7c3aed', bg: '#f5f3ff' },
+                      ].map(s => (
+                        <div key={s.label} style={{ padding: '12px 16px', background: s.bg, borderRadius: '8px' }}>
+                          <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 500, marginBottom: '4px' }}>{s.label}</div>
+                          <div style={{ fontSize: '20px', fontWeight: 700, color: s.color }}>{s.value}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {daily.length > 1 && (
+                      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: '110px', display: 'block' }}>
+                        <line x1={PAD.left} y1={PAD.top} x2={PAD.left} y2={PAD.top + innerH} stroke="#e2e8f0" strokeWidth="1"/>
+                        <line x1={PAD.left} y1={PAD.top + innerH} x2={W - PAD.right} y2={PAD.top + innerH} stroke="#e2e8f0" strokeWidth="1"/>
+                        <polyline points={addPts} fill="none" stroke="#16a34a" strokeWidth="2" strokeLinejoin="round"/>
+                        <polyline points={delPts} fill="none" stroke="#dc2626" strokeWidth="2" strokeLinejoin="round" strokeDasharray="4,3"/>
+                        {daily.map((d, i) => {
+                          if (i % labelEvery !== 0) return null
+                          const dt = new Date(d.date + 'T00:00:00')
+                          const lbl = `${MONTHS[dt.getMonth()]} ${dt.getDate()}`
+                          return <text key={d.date} x={PAD.left + i * xStep} y={H - 4} textAnchor="middle" fontSize="9" fill="#94a3b8">{lbl}</text>
+                        })}
+                        {/* legend */}
+                        <g>
+                          <line x1={W - 130} y1={10} x2={W - 118} y2={10} stroke="#16a34a" strokeWidth="2"/>
+                          <text x={W - 115} y={14} fontSize="9" fill="#64748b">Additions</text>
+                          <line x1={W - 70} y1={10} x2={W - 58} y2={10} stroke="#dc2626" strokeWidth="2" strokeDasharray="3,2"/>
+                          <text x={W - 55} y={14} fontSize="9" fill="#64748b">Deletions</text>
+                        </g>
+                      </svg>
+                    )}
+
+                    {wl.game_breakdown.length > 1 && (
+                      <div style={{ marginTop: '16px' }}>
+                        <div style={{ fontSize: '13px', fontWeight: 600, color: '#475569', marginBottom: '8px' }}>By Game</div>
+                        <table style={tableStyle}>
+                          <thead>
+                            <tr>
+                              <th style={thStyle}>Game</th>
+                              <th style={{ ...thStyle, textAlign: 'right' }}>Additions</th>
+                              <th style={{ ...thStyle, textAlign: 'right' }}>Deletions</th>
+                              <th style={{ ...thStyle, textAlign: 'right' }}>Purchases</th>
+                              <th style={{ ...thStyle, textAlign: 'right' }}>Conversion</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {wl.game_breakdown.map((g, i) => (
+                              <tr key={g.name} style={{ background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
+                                <td style={tdStyle}>{g.name}</td>
+                                <td style={{ ...tdStyle, textAlign: 'right', color: '#16a34a', fontWeight: 600 }}>+{formatNumber(g.additions)}</td>
+                                <td style={{ ...tdStyle, textAlign: 'right', color: '#dc2626' }}>-{formatNumber(g.deletions)}</td>
+                                <td style={{ ...tdStyle, textAlign: 'right' }}>{formatNumber(g.purchases)}</td>
+                                <td style={{ ...tdStyle, textAlign: 'right' }}>{g.additions > 0 ? ((g.purchases / g.additions) * 100).toFixed(1) : '0.0'}%</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
             </div>
           )}
 

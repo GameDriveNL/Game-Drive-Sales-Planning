@@ -470,6 +470,85 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // --- Wishlist data (from steam_wishlists) ---
+    if (!section || section === 'summary' || section === 'sales') {
+      // Resolve game_ids for this client (optionally filtered to a specific game)
+      let gamesForWl: { id: string; name: string }[] = []
+      if (gameId) {
+        const { data: gd } = await supabase.from('games').select('id, name').eq('id', gameId).single()
+        if (gd) gamesForWl = [gd]
+      } else {
+        const { data: gd } = await supabase.from('games').select('id, name').eq('client_id', clientId)
+        gamesForWl = gd || []
+      }
+
+      if (gamesForWl.length > 0) {
+        const gameIds = gamesForWl.map(g => g.id)
+        let wlQuery = supabase
+          .from('steam_wishlists')
+          .select('date, additions, deletions, purchases_and_activations, gifts, game_id')
+          .in('game_id', gameIds)
+          .order('date', { ascending: true })
+
+        if (dateFrom) wlQuery = wlQuery.gte('date', dateFrom)
+        if (dateTo) wlQuery = wlQuery.lte('date', dateTo)
+
+        const { data: wlRows } = await wlQuery
+
+        if (wlRows && wlRows.length > 0) {
+          let totalAdditions = 0
+          let totalDeletions = 0
+          let totalPurchases = 0
+          let totalGifts = 0
+          const dailyWl: Record<string, { additions: number; deletions: number; purchases: number }> = {}
+          const gameBreakdown: Record<string, { name: string; additions: number; deletions: number; purchases: number }> = {}
+          const gameNameMap = Object.fromEntries(gamesForWl.map(g => [g.id, g.name]))
+
+          for (const row of wlRows) {
+            const r = row as Record<string, unknown>
+            const adds = Number(r.additions || 0)
+            const dels = Number(r.deletions || 0)
+            const purch = Number(r.purchases_and_activations || 0)
+            const gifts = Number(r.gifts || 0)
+            const date = String(r.date || '')
+            const gid = String(r.game_id || '')
+
+            totalAdditions += adds
+            totalDeletions += dels
+            totalPurchases += purch
+            totalGifts += gifts
+
+            if (date) {
+              if (!dailyWl[date]) dailyWl[date] = { additions: 0, deletions: 0, purchases: 0 }
+              dailyWl[date].additions += adds
+              dailyWl[date].deletions += dels
+              dailyWl[date].purchases += purch
+            }
+
+            if (gid) {
+              if (!gameBreakdown[gid]) gameBreakdown[gid] = { name: gameNameMap[gid] || gid, additions: 0, deletions: 0, purchases: 0 }
+              gameBreakdown[gid].additions += adds
+              gameBreakdown[gid].deletions += dels
+              gameBreakdown[gid].purchases += purch
+            }
+          }
+
+          result.wishlist = {
+            total_additions: totalAdditions,
+            total_deletions: totalDeletions,
+            total_purchases: totalPurchases,
+            total_gifts: totalGifts,
+            net_wishlists: totalAdditions - totalDeletions,
+            conversion_rate: totalAdditions > 0 ? ((totalPurchases / totalAdditions) * 100) : 0,
+            daily: Object.entries(dailyWl)
+              .sort((a, b) => a[0].localeCompare(b[0]))
+              .map(([date, d]) => ({ date, ...d })),
+            game_breakdown: Object.values(gameBreakdown).sort((a, b) => b.additions - a.additions),
+          }
+        }
+      }
+    }
+
     // --- Annotations ---
     let annQuery = supabase
       .from('report_annotations')
