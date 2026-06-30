@@ -29,8 +29,15 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    // Resolve game_id → game name so we can filter by product_name in the view
+    let gameNameFilter: string | null = null
+    if (gameId) {
+      const { data: gameRow } = await supabase.from('games').select('name').eq('id', gameId).single()
+      if (gameRow?.name) gameNameFilter = gameRow.name
+    }
+
     // Fetch all matching rows
-    const columns = 'date,product_name,platform,country_code,country,region,gross_units_sold,chargebacks_returns,net_units_sold,base_price_usd,sale_price_usd,gross_steam_sales_usd,net_steam_sales_usd,vat_tax_usd'
+    const columns = 'date,product_name,product_type,platform,country_code,country,region,gross_units_sold,chargebacks_returns,net_units_sold,base_price_usd,sale_price_usd,gross_steam_sales_usd,net_steam_sales_usd,vat_tax_usd'
 
     let allRows: Record<string, unknown>[] = []
     let offset = 0
@@ -45,6 +52,7 @@ export async function GET(request: NextRequest) {
 
       if (dateFrom) query = query.gte('date', dateFrom)
       if (dateTo) query = query.lte('date', dateTo)
+      if (gameNameFilter) query = query.eq('product_name', gameNameFilter)
       if (filterProduct) query = query.eq('product_name', filterProduct)
       if (filterPlatform) query = query.eq('platform', filterPlatform)
       if (filterCountry) query = query.eq('country_code', filterCountry)
@@ -118,10 +126,12 @@ export async function GET(request: NextRequest) {
         switch (drillLevel) {
           case 'game':
             base.product_name = parts[0]
+            base.product_type = row.product_type || null
             break
           case 'product':
             base.product_name = parts[0]
             base.platform = parts[1]
+            base.product_type = row.product_type || null
             break
           case 'platform':
             base.platform = parts[0]

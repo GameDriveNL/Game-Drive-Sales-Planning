@@ -669,12 +669,12 @@ ${social && social.total_posts > 0 ? `
 
   function getDrillColumns(drill: string): { key: string; label: string }[] {
     switch (drill) {
-      case 'game': return [{ key: 'product_name', label: 'Product' }]
-      case 'product': return [{ key: 'product_name', label: 'Product' }, { key: 'platform', label: 'Platform' }]
+      case 'game': return [{ key: 'product_name', label: 'Product' }, { key: 'product_type', label: 'Type' }]
+      case 'product': return [{ key: 'product_name', label: 'Product' }, { key: 'product_type', label: 'Type' }, { key: 'platform', label: 'Platform' }]
       case 'platform': return [{ key: 'platform', label: 'Platform' }]
       case 'country': return [{ key: 'country_code', label: 'Code' }, { key: 'country', label: 'Country' }]
       case 'daily': return [{ key: 'date', label: 'Date' }]
-      default: return [{ key: 'product_name', label: 'Product' }]
+      default: return [{ key: 'product_name', label: 'Product' }, { key: 'product_type', label: 'Type' }]
     }
   }
 
