@@ -9,6 +9,22 @@ import { CoverageNav } from '../components/CoverageNav'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
+interface CreatorWatch {
+  id: string
+  channel_url: string
+  channel_name: string
+  channel_handle: string | null
+  game_id: string | null
+  client_id: string | null
+  enabled: boolean
+  days_lookback: number
+  notes: string | null
+  last_checked_at: string | null
+  total_matches: number
+  created_at: string
+  game?: { id: string; name: string } | null
+}
+
 type SourceType = 'rss' | 'tavily' | 'youtube' | 'twitch' | 'reddit' | 'twitter' | 'tiktok' | 'instagram' | 'sullygnome' | 'semrush'
 type ScanFrequency = 'hourly' | 'every_6h' | 'daily' | 'weekly'
 
@@ -165,6 +181,22 @@ export default function SourcesPage() {
   } | null>(null)
   const [showRetroLog, setShowRetroLog] = useState(false)
 
+  // Creator Watch state
+  const [creatorWatches, setCreatorWatches] = useState<CreatorWatch[]>([])
+  const [showCWForm, setShowCWForm] = useState(false)
+  const [cwEditId, setCwEditId] = useState<string | null>(null)
+  const [cwChannelUrl, setCwChannelUrl] = useState('')
+  const [cwChannelName, setCwChannelName] = useState('')
+  const [cwChannelHandle, setCwChannelHandle] = useState('')
+  const [cwGameId, setCwGameId] = useState('')
+  const [cwDaysLookback, setCwDaysLookback] = useState(30)
+  const [cwNotes, setCwNotes] = useState('')
+  const [cwEnabled, setCwEnabled] = useState(true)
+  const [cwSaving, setCwSaving] = useState(false)
+  const [cwSaveError, setCwSaveError] = useState<string | null>(null)
+  const [cwScanning, setCwScanning] = useState<string | null>(null) // creator_id being scanned, or 'all'
+  const [cwScanResult, setCwScanResult] = useState<string | null>(null)
+
   // Scan state
   const [scanning, setScanning] = useState(false)
   const [scanResult, setScanResult] = useState<string | null>(null)
@@ -219,6 +251,15 @@ export default function SourcesPage() {
     }
   }, [])
 
+  const fetchCreatorWatches = useCallback(async () => {
+    try {
+      const res = await fetch('/api/creator-watch')
+      if (res.ok) setCreatorWatches(await res.json())
+    } catch (err) {
+      console.error('Failed to fetch creator watches:', err)
+    }
+  }, [])
+
   const fetchApiKeyStatus = useCallback(async () => {
     try {
       const res = await fetch('/api/service-api-keys')
@@ -244,8 +285,9 @@ export default function SourcesPage() {
       fetchReferenceData()
       fetchApiKeyStatus()
       fetchPlatformStats()
+      fetchCreatorWatches()
     }
-  }, [canView, fetchSources, fetchReferenceData, fetchApiKeyStatus, fetchPlatformStats])
+  }, [canView, fetchSources, fetchReferenceData, fetchApiKeyStatus, fetchPlatformStats, fetchCreatorWatches])
 
   // ─── Filtered sources ─────────────────────────────────────────────────────
 
@@ -898,6 +940,363 @@ export default function SourcesPage() {
     )
   }
 
+  // ─── Creator Watch handlers ───────────────────────────────────────────────
+
+  const resetCWForm = () => {
+    setCwEditId(null)
+    setCwChannelUrl('')
+    setCwChannelName('')
+    setCwChannelHandle('')
+    setCwGameId('')
+    setCwDaysLookback(30)
+    setCwNotes('')
+    setCwEnabled(true)
+    setCwSaveError(null)
+  }
+
+  const openCWEdit = (cw: CreatorWatch) => {
+    resetCWForm()
+    setCwEditId(cw.id)
+    setCwChannelUrl(cw.channel_url)
+    setCwChannelName(cw.channel_name)
+    setCwChannelHandle(cw.channel_handle || '')
+    setCwGameId(cw.game_id || '')
+    setCwDaysLookback(cw.days_lookback)
+    setCwNotes(cw.notes || '')
+    setCwEnabled(cw.enabled)
+    setShowCWForm(true)
+  }
+
+  const handleCWSave = async () => {
+    if (!cwChannelUrl.trim() || !cwChannelName.trim()) {
+      setCwSaveError('Channel URL and name are required')
+      return
+    }
+    setCwSaving(true)
+    setCwSaveError(null)
+    const payload = {
+      channel_url: cwChannelUrl.trim(),
+      channel_name: cwChannelName.trim(),
+      channel_handle: cwChannelHandle.trim() || null,
+      game_id: cwGameId || null,
+      days_lookback: cwDaysLookback,
+      notes: cwNotes.trim() || null,
+      enabled: cwEnabled,
+      ...(cwEditId ? { id: cwEditId } : {}),
+    }
+    try {
+      const res = await fetch('/api/creator-watch', {
+        method: cwEditId ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        setCwSaveError(json.error || 'Failed to save')
+      } else {
+        setShowCWForm(false)
+        resetCWForm()
+        fetchCreatorWatches()
+      }
+    } catch {
+      setCwSaveError('Network error')
+    }
+    setCwSaving(false)
+  }
+
+  const handleCWDelete = async (id: string) => {
+    try {
+      await fetch(`/api/creator-watch?id=${id}`, { method: 'DELETE' })
+      fetchCreatorWatches()
+    } catch (err) {
+      console.error('Delete creator watch failed:', err)
+    }
+  }
+
+  const handleCWToggle = async (cw: CreatorWatch) => {
+    try {
+      await fetch('/api/creator-watch', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: cw.id, enabled: !cw.enabled }),
+      })
+      fetchCreatorWatches()
+    } catch (err) {
+      console.error('Toggle creator watch failed:', err)
+    }
+  }
+
+  const handleCWScan = async (creatorId?: string) => {
+    const key = creatorId || 'all'
+    setCwScanning(key)
+    setCwScanResult(null)
+    try {
+      const body: Record<string, unknown> = {}
+      if (creatorId) body.creator_id = creatorId
+      const res = await fetch('/api/coverage-health/creator-watch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const json = await res.json()
+      if (res.ok) {
+        setCwScanResult(`Scanned ${json.scanned} creator(s): +${json.total_inserted} new videos`)
+        fetchCreatorWatches()
+      } else {
+        setCwScanResult(`Error: ${json.error || 'Scan failed'}`)
+      }
+    } catch {
+      setCwScanResult('Network error during scan')
+    }
+    setCwScanning(null)
+  }
+
+  const renderCreatorWatchSection = () => {
+    const enabled = creatorWatches.filter(c => c.enabled)
+    return (
+      <div style={{ marginBottom: '24px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <div>
+            <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#1e293b', margin: 0 }}>
+              👀 Creator Watch
+            </h3>
+            <p style={{ fontSize: '12px', color: '#94a3b8', margin: '2px 0 0 0' }}>
+              Monitor known YouTube creators — catches coverage where the game name isn&apos;t in the title
+            </p>
+          </div>
+          {canEdit && (
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button
+                onClick={() => handleCWScan()}
+                disabled={cwScanning !== null || enabled.length === 0}
+                style={{
+                  padding: '6px 12px',
+                  backgroundColor: cwScanning !== null ? '#f1f5f9' : '#059669',
+                  color: cwScanning !== null ? '#64748b' : 'white',
+                  border: 'none', borderRadius: '6px', fontSize: '12px',
+                  cursor: cwScanning !== null || enabled.length === 0 ? 'not-allowed' : 'pointer',
+                  fontWeight: 500,
+                  opacity: cwScanning !== null || enabled.length === 0 ? 0.7 : 1,
+                }}
+              >
+                {cwScanning === 'all' ? 'Scanning...' : `Scan All (${enabled.length})`}
+              </button>
+              <button
+                onClick={() => { resetCWForm(); setShowCWForm(true) }}
+                style={{ padding: '6px 12px', backgroundColor: '#b8232f', color: 'white', border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: 500 }}
+              >
+                + Add Creator
+              </button>
+            </div>
+          )}
+        </div>
+
+        {cwScanResult && (
+          <div style={{
+            padding: '8px 12px', borderRadius: '6px', fontSize: '12px', marginBottom: '10px',
+            backgroundColor: cwScanResult.startsWith('Error') ? '#fee2e2' : '#f0fdf4',
+            color: cwScanResult.startsWith('Error') ? '#991b1b' : '#166534',
+          }}>
+            {cwScanResult}
+          </div>
+        )}
+
+        {/* Add / Edit form (inline) */}
+        {showCWForm && (
+          <div style={{
+            padding: '16px', borderRadius: '10px', marginBottom: '12px',
+            backgroundColor: '#f8fafc', border: '1px solid #e2e8f0',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <strong style={{ fontSize: '14px', color: '#1e293b' }}>
+                {cwEditId ? 'Edit Creator' : 'Add Creator'}
+              </strong>
+              <button onClick={() => { setShowCWForm(false); resetCWForm() }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '18px', color: '#94a3b8' }}>×</button>
+            </div>
+            {cwSaveError && (
+              <div style={{ padding: '8px 12px', backgroundColor: '#fee2e2', color: '#dc2626', borderRadius: '6px', fontSize: '13px', marginBottom: '10px' }}>
+                {cwSaveError}
+              </div>
+            )}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#374151', marginBottom: '3px' }}>Channel URL *</label>
+                <input
+                  type="url"
+                  value={cwChannelUrl}
+                  onChange={e => setCwChannelUrl(e.target.value)}
+                  placeholder="https://www.youtube.com/@ChannelName"
+                  style={{ width: '100%', padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#374151', marginBottom: '3px' }}>Creator Name *</label>
+                <input
+                  type="text"
+                  value={cwChannelName}
+                  onChange={e => setCwChannelName(e.target.value)}
+                  placeholder="e.g. Pixel Maniacs"
+                  style={{ width: '100%', padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#374151', marginBottom: '3px' }}>Handle (for outlet linking)</label>
+                <input
+                  type="text"
+                  value={cwChannelHandle}
+                  onChange={e => setCwChannelHandle(e.target.value)}
+                  placeholder="@PixelManiacs"
+                  style={{ width: '100%', padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#374151', marginBottom: '3px' }}>Linked Game</label>
+                <select
+                  value={cwGameId}
+                  onChange={e => setCwGameId(e.target.value)}
+                  style={{ width: '100%', padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px', backgroundColor: 'white', boxSizing: 'border-box' }}
+                >
+                  <option value="">All Games</option>
+                  {games.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#374151', marginBottom: '3px' }}>Days to look back</label>
+                <input
+                  type="number"
+                  min={7}
+                  max={365}
+                  value={cwDaysLookback}
+                  onChange={e => setCwDaysLookback(Math.min(365, Math.max(7, Number(e.target.value))))}
+                  style={{ width: '100%', padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box' }}
+                />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: '2px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={cwEnabled} onChange={e => setCwEnabled(e.target.checked)} style={{ width: '16px', height: '16px' }} />
+                  <span style={{ fontSize: '13px', color: '#374151' }}>Active</span>
+                </label>
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#374151', marginBottom: '3px' }}>Notes</label>
+                <input
+                  type="text"
+                  value={cwNotes}
+                  onChange={e => setCwNotes(e.target.value)}
+                  placeholder="Why is this creator being watched?"
+                  style={{ width: '100%', padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box' }}
+                />
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '12px' }}>
+              <button onClick={() => { setShowCWForm(false); resetCWForm() }} style={{ padding: '7px 16px', backgroundColor: 'white', color: '#475569', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px', cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button
+                onClick={handleCWSave}
+                disabled={cwSaving}
+                style={{ padding: '7px 20px', backgroundColor: '#b8232f', color: 'white', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: 500, cursor: cwSaving ? 'not-allowed' : 'pointer', opacity: cwSaving ? 0.7 : 1 }}
+              >
+                {cwSaving ? 'Saving...' : cwEditId ? 'Save Changes' : 'Add Creator'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Creator list */}
+        {creatorWatches.length === 0 ? (
+          <div style={{ padding: '24px', textAlign: 'center', color: '#94a3b8', backgroundColor: 'white', borderRadius: '10px', fontSize: '13px' }}>
+            <div style={{ fontSize: '24px', marginBottom: '8px' }}>👀</div>
+            <div style={{ fontWeight: 500, marginBottom: '4px' }}>No creators being watched</div>
+            <div>Add YouTube creators who you know cover your games, even when they don&apos;t put the game name in the video title.</div>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: '10px' }}>
+            {creatorWatches.map(cw => (
+              <div
+                key={cw.id}
+                style={{
+                  backgroundColor: 'white',
+                  borderRadius: '10px',
+                  padding: '14px 16px',
+                  border: cw.enabled ? '1px solid #e2e8f0' : '1px solid #fecaca',
+                  opacity: cw.enabled ? 1 : 0.7,
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                    <span style={{ fontSize: '18px' }}>▶️</span>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: '14px', color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {cw.channel_name}
+                      </div>
+                      {cw.channel_handle && (
+                        <div style={{ fontSize: '11px', color: '#94a3b8' }}>{cw.channel_handle}</div>
+                      )}
+                    </div>
+                  </div>
+                  {canEdit && (
+                    <button
+                      onClick={() => handleCWToggle(cw)}
+                      style={{
+                        padding: '2px 8px', borderRadius: '9999px', fontSize: '11px', fontWeight: 500,
+                        border: 'none', cursor: 'pointer', flexShrink: 0,
+                        backgroundColor: cw.enabled ? '#dcfce7' : '#f3f4f6',
+                        color: cw.enabled ? '#166534' : '#6b7280',
+                      }}
+                    >
+                      {cw.enabled ? 'Active' : 'Inactive'}
+                    </button>
+                  )}
+                </div>
+                <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '6px', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                  {cw.channel_url}
+                </div>
+                {cw.notes && (
+                  <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '6px', fontStyle: 'italic' }}>{cw.notes}</div>
+                )}
+                <div style={{ display: 'flex', gap: '12px', fontSize: '12px', color: '#94a3b8', flexWrap: 'wrap', borderTop: '1px solid #f1f5f9', paddingTop: '8px', marginBottom: canEdit ? '8px' : '0' }}>
+                  {cw.game && <span>🎮 {cw.game.name}</span>}
+                  <span>Lookback: <strong style={{ color: '#475569' }}>{cw.days_lookback}d</strong></span>
+                  <span>Last scan: <strong style={{ color: '#475569' }}>{timeAgo(cw.last_checked_at)}</strong></span>
+                  <span>Matches: <strong style={{ color: cw.total_matches > 0 ? '#059669' : '#475569' }}>{cw.total_matches}</strong></span>
+                </div>
+                {canEdit && (
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button
+                      onClick={() => handleCWScan(cw.id)}
+                      disabled={cwScanning !== null}
+                      style={{
+                        padding: '3px 10px', backgroundColor: cwScanning === cw.id ? '#f1f5f9' : '#059669',
+                        color: cwScanning === cw.id ? '#64748b' : 'white', border: 'none', borderRadius: '4px',
+                        fontSize: '12px', cursor: cwScanning !== null ? 'not-allowed' : 'pointer', fontWeight: 500,
+                        opacity: cwScanning !== null ? 0.7 : 1,
+                      }}
+                    >
+                      {cwScanning === cw.id ? 'Scanning...' : 'Scan'}
+                    </button>
+                    <button
+                      onClick={() => openCWEdit(cw)}
+                      style={{ padding: '3px 10px', backgroundColor: 'white', color: '#475569', border: '1px solid #e2e8f0', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleCWDelete(cw.id)}
+                      style={{ padding: '3px 10px', backgroundColor: 'white', color: '#ef4444', border: '1px solid #fecaca', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   // ─── Tab content renderers ────────────────────────────────────────────────
 
   const renderRSSTab = () => {
@@ -1385,6 +1784,7 @@ export default function SourcesPage() {
         </div>
 
         {renderSection('semrush', 'SEMRush', 'Domain SEO/traffic analysis — supplements outlet traffic data', smSources)}
+        {renderCreatorWatchSection()}
       </div>
     )
   }
