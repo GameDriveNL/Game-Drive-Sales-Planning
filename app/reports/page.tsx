@@ -893,9 +893,17 @@ ${social && social.total_posts > 0 ? `
                 </div>
               </div>
 
-              {/* Revenue chart */}
+              {/* Prominent annotation callout — shown above stats when content exists */}
+              {annotations.summary && (
+                <div style={{ background: '#fff1f2', borderLeft: '4px solid #d22939', borderRadius: '0 8px 8px 0', padding: '16px 20px', marginBottom: '24px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#d22939', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>Executive Summary</div>
+                  <div style={{ fontSize: '14px', color: '#374151', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{annotations.summary}</div>
+                </div>
+              )}
+
+              {/* Revenue + PR coverage chart */}
               {sales && sales.daily_revenue.length > 1 && (() => {
-                const data = sales.daily_revenue.filter(d => d.value > 0 || true)
+                const data = sales.daily_revenue
                 const maxVal = Math.max(...data.map(d => d.value), 1)
                 const W = 800, H = 200
                 const PAD = { top: 12, right: 20, bottom: 32, left: 64 }
@@ -907,16 +915,31 @@ ${social && social.total_posts > 0 ? `
                 const labelEvery = Math.max(1, Math.floor(data.length / 7))
                 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
                 const ticks = [0, 0.25, 0.5, 0.75, 1]
+
+                // Build PR coverage date map for chart markers
+                const coverageDates: Record<string, number> = {}
+                if (cov) {
+                  for (const item of cov.items) {
+                    if (item.publish_date) {
+                      const d = String(item.publish_date).split('T')[0]
+                      coverageDates[d] = (coverageDates[d] || 0) + 1
+                    }
+                  }
+                }
+                const hasPR = Object.keys(coverageDates).length > 0
+
                 return (
                   <div style={{ ...cardStyle, marginBottom: '24px' }}>
-                    <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#334155', marginBottom: '12px' }}>
-                      Revenue Over Period
-                      {annotations.summary_graph_note && (
-                        <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 400, marginLeft: '8px' }}>· {annotations.summary_graph_note}</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                      <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#334155' }}>Revenue Over Period</h3>
+                      {hasPR && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#64748b' }}>
+                          <span style={{ display: 'inline-block', width: '10px', height: '2px', background: '#d22939', verticalAlign: 'middle' }}></span> Revenue
+                          <span style={{ marginLeft: '8px', display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', background: '#3b82f6', verticalAlign: 'middle' }}></span> PR Coverage
+                        </div>
                       )}
-                    </h3>
+                    </div>
                     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: '180px', display: 'block', overflow: 'visible' }}>
-                      {/* Gridlines + Y labels */}
                       {ticks.map(frac => {
                         const y = PAD.top + (1 - frac) * innerH
                         const val = maxVal * frac
@@ -930,20 +953,38 @@ ${social && social.total_posts > 0 ? `
                           </g>
                         )
                       })}
-                      {/* Area fill */}
-                      <polygon
-                        points={`${PAD.left},${PAD.top + innerH} ${pts} ${xScale(data.length-1)},${PAD.top + innerH}`}
-                        fill="#d22939" fillOpacity="0.08"
-                      />
-                      {/* Line */}
+                      {/* PR coverage markers (behind the revenue line) */}
+                      {data.map((d, i) => {
+                        const count = coverageDates[d.date] || 0
+                        if (!count) return null
+                        return (
+                          <g key={`pr-${d.date}`}>
+                            <line x1={xScale(i)} y1={PAD.top} x2={xScale(i)} y2={PAD.top + innerH}
+                              stroke="#3b82f6" strokeWidth="1" strokeDasharray="3,3" opacity="0.4" />
+                          </g>
+                        )
+                      })}
+                      <polygon points={`${PAD.left},${PAD.top + innerH} ${pts} ${xScale(data.length-1)},${PAD.top + innerH}`}
+                        fill="#d22939" fillOpacity="0.08" />
                       <polyline points={pts} fill="none" stroke="#d22939" strokeWidth="2" strokeLinejoin="round" />
-                      {/* X labels */}
+                      {/* PR coverage dots (on top of the revenue line) */}
+                      {data.map((d, i) => {
+                        const count = coverageDates[d.date] || 0
+                        if (!count) return null
+                        return (
+                          <circle key={`prdot-${d.date}`} cx={xScale(i)} cy={yScale(d.value)}
+                            r="4" fill="#3b82f6" opacity="0.8">
+                            <title>{count} PR item{count !== 1 ? 's' : ''} on {d.date}</title>
+                          </circle>
+                        )
+                      })}
                       {data.map((d, i) => {
                         if (i % labelEvery !== 0 && i !== data.length - 1) return null
                         const parts = d.date.split('-').map(Number)
-                        const label = `${parts[2]} ${MONTHS[parts[1]-1]}`
                         return (
-                          <text key={d.date} x={xScale(i)} y={H - 4} textAnchor="middle" fontSize="10" fill="#94a3b8">{label}</text>
+                          <text key={d.date} x={xScale(i)} y={H - 4} textAnchor="middle" fontSize="10" fill="#94a3b8">
+                            {`${parts[2]} ${MONTHS[parts[1]-1]}`}
+                          </text>
                         )
                       })}
                     </svg>
