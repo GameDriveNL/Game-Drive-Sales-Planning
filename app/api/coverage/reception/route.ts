@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
   let query = supabase
     .from('coverage_items')
     .select(`
-      id, title, url, publish_date, coverage_type, sentiment,
+      id, title, url, publish_date, coverage_type, sentiment, territory,
       monthly_unique_visitors, review_score, quotes, source_type,
       outlet:outlets(id, name, tier),
       game:games(id, name)
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
 
   const rows = (items || []) as unknown as Array<{
     id: string; title: string | null; url: string; publish_date: string | null;
-    coverage_type: string | null; sentiment: string | null;
+    coverage_type: string | null; sentiment: string | null; territory: string | null;
     monthly_unique_visitors: number | null; review_score: number | null;
     quotes: string | null; source_type: string;
     outlet: { id: string; name: string; tier: string | null } | null;
@@ -51,6 +51,7 @@ export async function GET(request: NextRequest) {
   let reviewSum = 0; let reviewCount = 0
   const sentimentTotals = { positive: 0, neutral: 0, negative: 0, mixed: 0, unknown: 0 }
   const coverageTypes: Record<string, number> = {}
+  const territoryMap: Record<string, { positive: number; neutral: number; negative: number; mixed: number; unknown: number; count: number; reach: number }> = {}
 
   for (const item of rows) {
     const month = item.publish_date ? item.publish_date.slice(0, 7) : 'unknown'
@@ -78,6 +79,15 @@ export async function GET(request: NextRequest) {
 
     const ct = item.coverage_type || 'other'
     coverageTypes[ct] = (coverageTypes[ct] || 0) + 1
+
+    // Territory grouping
+    const territory = item.territory || 'Unknown'
+    if (!territoryMap[territory]) territoryMap[territory] = { positive: 0, neutral: 0, negative: 0, mixed: 0, unknown: 0, count: 0, reach: 0 }
+    territoryMap[territory].count++
+    territoryMap[territory].reach += item.monthly_unique_visitors || 0
+    const ts = (item.sentiment || 'unknown') as keyof typeof sentimentTotals
+    if (ts in territoryMap[territory]) (territoryMap[territory] as Record<string, number>)[ts]++
+    else territoryMap[territory].unknown++
   }
 
   const monthlyData = Object.entries(monthMap)
@@ -134,6 +144,22 @@ export async function GET(request: NextRequest) {
     ? Math.round(((sentimentTotals.positive * 1 + sentimentTotals.mixed * 0.25 - sentimentTotals.negative * 1) / total) * 100)
     : 0
 
+  const territory_data = Object.entries(territoryMap)
+    .sort((a, b) => b[1].count - a[1].count)
+    .map(([territory, d]) => ({
+      territory,
+      count: d.count,
+      reach: d.reach,
+      positive: d.positive,
+      neutral: d.neutral,
+      negative: d.negative,
+      mixed: d.mixed,
+      unknown: d.unknown,
+      sentiment_score: d.count > 0
+        ? Math.round(((d.positive * 1 + d.mixed * 0.25 - d.negative * 1) / d.count) * 100)
+        : 0,
+    }))
+
   return NextResponse.json({
     total_pieces: total,
     total_reach: totalReach,
@@ -144,5 +170,6 @@ export async function GET(request: NextRequest) {
     monthly_data: monthlyData,
     top_coverage: topCoverage,
     quoted_items: quotedItems,
+    territory_data,
   })
 }

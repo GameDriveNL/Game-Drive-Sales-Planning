@@ -44,6 +44,18 @@ interface QuotedItem {
   publish_date: string | null
 }
 
+interface TerritoryPoint {
+  territory: string
+  count: number
+  reach: number
+  positive: number
+  neutral: number
+  negative: number
+  mixed: number
+  unknown: number
+  sentiment_score: number
+}
+
 interface ReceptionData {
   total_pieces: number
   total_reach: number
@@ -54,6 +66,7 @@ interface ReceptionData {
   monthly_data: MonthlyPoint[]
   top_coverage: TopCoverage[]
   quoted_items: QuotedItem[]
+  territory_data: TerritoryPoint[]
 }
 
 interface ClientOption { id: string; name: string }
@@ -483,6 +496,40 @@ export default function ReceptionPage() {
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* Territory sentiment */}
+            {data.territory_data.length > 1 && (
+              <div style={{ backgroundColor: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', marginTop: '24px' }}>
+                <h2 style={{ fontSize: '15px', fontWeight: 600, color: '#1e293b', margin: '0 0 16px' }}>Sentiment by country</h2>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '10px' }}>
+                  {data.territory_data.filter(t => t.territory !== 'Unknown').slice(0, 20).map(t => {
+                    const total = t.positive + t.neutral + t.negative + t.mixed + t.unknown || 1
+                    const posWidth = (t.positive / total) * 100
+                    const neutralWidth = (t.neutral / total) * 100
+                    const mixedWidth = (t.mixed / total) * 100
+                    const negWidth = (t.negative / total) * 100
+                    const scoreColor = t.sentiment_score >= 30 ? '#16a34a' : t.sentiment_score >= -30 ? '#ca8a04' : '#dc2626'
+                    return (
+                      <div key={t.territory} style={{ padding: '12px', backgroundColor: '#f8fafc', borderRadius: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                          <div style={{ fontSize: '13px', fontWeight: 600, color: '#1e293b' }}>{t.territory}</div>
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <span style={{ fontSize: '11px', color: '#64748b' }}>{t.count} piece{t.count !== 1 ? 's' : ''}</span>
+                            <span style={{ fontSize: '11px', fontWeight: 700, color: scoreColor }}>{t.sentiment_score > 0 ? '+' : ''}{t.sentiment_score}</span>
+                          </div>
+                        </div>
+                        <div style={{ height: '6px', borderRadius: '3px', overflow: 'hidden', display: 'flex' }}>
+                          <div style={{ width: `${posWidth}%`, backgroundColor: SENTIMENT_COLORS.positive }} />
+                          <div style={{ width: `${neutralWidth}%`, backgroundColor: SENTIMENT_COLORS.neutral }} />
+                          <div style={{ width: `${mixedWidth}%`, backgroundColor: SENTIMENT_COLORS.mixed }} />
+                          <div style={{ width: `${negWidth}%`, backgroundColor: SENTIMENT_COLORS.negative }} />
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}
