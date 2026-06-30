@@ -207,6 +207,7 @@ export default function EditSaleModal({
         comment: comment || undefined,
         prev_sale_end_date: prevSaleEndDate || undefined
       })
+      dirtyRef.current = false
       onClose()
     } catch (err) {
       console.error('Error saving sale:', err)
@@ -246,8 +247,19 @@ export default function EditSaleModal({
   // B8/B9: modal close guards
   const overlayMouseDownRef = useRef(false)
   const dirtyRef = useRef(false)
+  const [showDiscardBar, setShowDiscardBar] = useState(false)
+
   const handleClose = () => {
-    if (dirtyRef.current && !window.confirm('You have unsaved changes. Close without saving?')) return
+    if (dirtyRef.current) {
+      setShowDiscardBar(true) // show inline discard confirmation instead of native dialog
+      return
+    }
+    onClose()
+  }
+
+  const handleDiscardConfirm = () => {
+    dirtyRef.current = false
+    setShowDiscardBar(false)
     onClose()
   }
 
@@ -528,18 +540,26 @@ export default function EditSaleModal({
             />
           </div>
           
+          {showDiscardBar && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 16px', background: '#fef9c3', borderRadius: '8px', marginBottom: '8px', border: '1px solid #fde68a' }}>
+              <span style={{ fontSize: '13px', color: '#92400e', flex: 1 }}>You have unsaved changes. Discard them?</span>
+              <button type="button" style={{ padding: '4px 12px', fontSize: '12px', border: '1px solid #d1d5db', borderRadius: '6px', background: '#fff', cursor: 'pointer' }} onClick={() => setShowDiscardBar(false)}>Keep editing</button>
+              <button type="button" style={{ padding: '4px 12px', fontSize: '12px', border: 'none', borderRadius: '6px', background: '#ef4444', color: '#fff', cursor: 'pointer', fontWeight: 600 }} onClick={handleDiscardConfirm}>Discard</button>
+            </div>
+          )}
+
           <div className={styles.actions}>
-            <button 
-              type="button" 
-              className={styles.deleteBtn} 
+            <button
+              type="button"
+              className={styles.deleteBtn}
               onClick={handleDelete}
             >
               Delete
             </button>
             {onDuplicate && (
-              <button 
-                type="button" 
-                className={styles.duplicateBtn} 
+              <button
+                type="button"
+                className={styles.duplicateBtn}
                 onClick={handleDuplicate}
               >
                 Duplicate
@@ -548,8 +568,8 @@ export default function EditSaleModal({
             <button type="button" className={styles.cancelBtn} onClick={handleClose}>
               Cancel
             </button>
-            <button 
-              type="submit" 
+            <button
+              type="submit"
               className={styles.saveBtn}
               disabled={saving || !!validationError || !productId || !platformId}
             >
