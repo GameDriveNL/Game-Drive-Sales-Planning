@@ -4,6 +4,7 @@ export type FeedbackType = 'bug' | 'feature' | 'question' | 'wishlist'
 
 export type FeedbackStatus =
   | 'backlogged'
+  | 'clarification_needed'
   | 'in_development'
   | 'tested_pending_review'
   | 'fix_verified'
@@ -40,10 +41,11 @@ export interface FeedbackItem {
   comments?: FeedbackComment[]
 }
 
-// The four Kanban columns, in flow order. fix_verified is the terminal column;
+// The five Kanban columns, in flow order. fix_verified is the terminal column;
 // from there an item can be archived (lifted off the board).
 export const STATUS_COLUMNS: { key: FeedbackStatus; label: string; hint: string }[] = [
   { key: 'backlogged', label: 'Backlogged', hint: 'Reported, not started' },
+  { key: 'clarification_needed', label: 'Clarification Needed', hint: 'Blocked on a decision or answer from you' },
   { key: 'in_development', label: 'In Development', hint: 'Being worked on' },
   { key: 'tested_pending_review', label: 'Tested — Pending Review', hint: 'Fixed, awaiting your check' },
   { key: 'fix_verified', label: 'Fix Verified', hint: 'Confirmed working' },
