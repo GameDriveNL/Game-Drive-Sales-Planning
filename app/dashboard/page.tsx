@@ -276,16 +276,16 @@ export default function DashboardPage() {
           <div style={cardStyle}>
             <div style={sectionTitle}>Quick Navigation</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
-              <Link href="/" style={quickLink}>
+              <Link href={selectedClient ? `/?client=${selectedClient}` : '/'} style={quickLink}>
                 <span>&#128197;</span> Sales Timeline
               </Link>
-              <Link href="/analytics" style={quickLink}>
+              <Link href={selectedClient ? `/analytics?client=${selectedClient}` : '/analytics'} style={quickLink}>
                 <span>&#128202;</span> Analytics
               </Link>
-              <Link href="/coverage" style={quickLink}>
+              <Link href={selectedClient ? `/coverage/dashboard?client=${selectedClient}` : '/coverage/dashboard'} style={quickLink}>
                 <span>&#128240;</span> PR Coverage
               </Link>
-              <Link href="/reports" style={quickLink}>
+              <Link href={selectedClient ? `/reports?client=${selectedClient}` : '/reports'} style={quickLink}>
                 <span>&#128203;</span> Report Builder
               </Link>
             </div>

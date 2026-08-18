@@ -4,6 +4,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import styles from './page.module.css'
 import * as XLSX from 'xlsx'
@@ -32,6 +33,7 @@ import { toNumber, safeDivide, isSalePrice, calculateDiscountPct, DEFAULT_WIDGET
 
 export default function AnalyticsPage() {
   const supabase = createClientComponentClient()
+  const searchParams = useSearchParams()
   const { hasAccess, loading: authLoading } = useAuth()
   const canView = hasAccess('analytics', 'view')
   const canEdit = hasAccess('analytics', 'edit')
@@ -43,7 +45,7 @@ export default function AnalyticsPage() {
   const [dateRange, setDateRange] = useState<DateRange>({ start: null, end: null })
   const [selectedDatePreset, setSelectedDatePreset] = useState<string>('60d')
   const [selectedProduct, setSelectedProduct] = useState<string>('all')
-  const [selectedClient, setSelectedClient] = useState<string>('all')
+  const [selectedClient, setSelectedClient] = useState<string>(() => searchParams.get('client') || 'all')
   const [selectedRegion, setSelectedRegion] = useState<string>('all')
   const [selectedPlatform, setSelectedPlatform] = useState<string>('all')
   const [hoveredPieSlice, setHoveredPieSlice] = useState<number | null>(null)

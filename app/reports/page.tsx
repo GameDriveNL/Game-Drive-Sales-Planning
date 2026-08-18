@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import PptxGenJS from 'pptxgenjs'
 import Link from 'next/link'
@@ -120,9 +121,10 @@ interface DataTableResponse {
 
 export default function ReportsPage() {
   const supabase = createClientComponentClient()
+  const searchParams = useSearchParams()
   const [clients, setClients] = useState<{ id: string; name: string }[]>([])
   const [games, setGames] = useState<{ id: string; name: string }[]>([])
-  const [selectedClient, setSelectedClient] = useState('')
+  const [selectedClient, setSelectedClient] = useState(() => searchParams.get('client') || '')
   const [selectedGame, setSelectedGame] = useState('')
   const [datePreset, setDatePreset] = useState('last30')
   const [dateFrom, setDateFrom] = useState('')

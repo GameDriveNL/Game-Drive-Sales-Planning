@@ -3,6 +3,7 @@
 // Cache invalidation: 2026-02-11T12:00:00Z - Replaced PageToggle with global Sidebar
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { parseISO, format, addDays } from 'date-fns'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import GanttChart, { CoverageDayData } from './components/GanttChart'
@@ -43,6 +44,7 @@ interface ConflictInfo { productName: string; eventName: string; overlapDays: nu
 
 export default function GameDriveDashboard() {
   const supabase = createClientComponentClient()
+  const searchParams = useSearchParams()
   const { hasAccess, loading: authLoading, resolveAccess } = useAuth()
   const canEdit = hasAccess('sales_timeline', 'edit')
   const canView = hasAccess('sales_timeline', 'view')
@@ -72,7 +74,7 @@ export default function GameDriveDashboard() {
   const [lastGeneratedVariations, setLastGeneratedVariations] = useState<CalendarVariation[]>([])
   const [clearSalesState, setClearSalesState] = useState<ClearSalesState | null>(null)
   const [editLaunchDateState, setEditLaunchDateState] = useState<EditLaunchDateState | null>(null)
-  const [filterClientId, setFilterClientId] = useState<string>('')
+  const [filterClientId, setFilterClientId] = useState<string>(() => searchParams.get('client') || '')
   const [filterGameId, setFilterGameId] = useState<string>('')
   const [filterPlatformIds, setFilterPlatformIds] = useState<Set<string>>(new Set())
   const [platformsExpanded, setPlatformsExpanded] = useState(false)

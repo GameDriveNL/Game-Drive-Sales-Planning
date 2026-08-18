@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Sidebar } from '../../components/Sidebar'
 import { useAuth } from '@/lib/auth-context'
 import { CoverageNav } from '../components/CoverageNav'
@@ -111,6 +112,7 @@ export default function DashboardPage() {
   const { hasAccess, loading: authLoading } = useAuth()
   const canView = hasAccess('pr_coverage', 'view')
   const supabase = createClientComponentClient()
+  const searchParams = useSearchParams()
 
   const [items, setItems] = useState<CoverageItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -120,7 +122,7 @@ export default function DashboardPage() {
   const [games, setGames] = useState<GameOption[]>([])
 
   // Filters
-  const [clientFilter, setClientFilter] = useState('')
+  const [clientFilter, setClientFilter] = useState(() => searchParams.get('client') || '')
   const [gameFilter, setGameFilter] = useState('')
   const [period, setPeriod] = useState('30d')
   const [customFrom, setCustomFrom] = useState('')
