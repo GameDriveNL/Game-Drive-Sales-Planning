@@ -323,13 +323,25 @@ async function processSingleDate(
         ? apps.get(result.appid)
         : 'Unknown';
 
+    // Package/bundle line items have no appid from Steam's API — synthesize a
+    // stable non-null key from packageid instead. A null app_id defeats the
+    // (client_id, sale_date, app_id, product_type, country_code) unique
+    // constraint, since Postgres never matches NULL = NULL on conflict, so
+    // these rows were re-inserted as fresh duplicates on every re-sync
+    // instead of upserting in place.
+    const appIdKey = (result.primary_appid || result.appid)
+      ? (result.primary_appid || result.appid).toString()
+      : result.packageid
+        ? `pkg_${result.packageid}`
+        : null
+
     const salesData = {
       client_id: clientId,
       sale_date: result.date.replace(/\//g, '-'),
-      app_id: (result.primary_appid || result.appid)?.toString() || null,
+      app_id: appIdKey,
       app_name: productName || null,
       product_type: result.packageid ? 'package' : 'app',
-      country_code: result.country_code || null,
+      country_code: result.country_code || 'XX',
       units_sold: result.net_units_sold || 0,
       gross_revenue: parseFloat(result.gross_sales_usd || '0'),
       net_revenue: parseFloat(result.net_sales_usd || '0')
