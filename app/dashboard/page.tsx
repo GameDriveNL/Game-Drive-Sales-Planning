@@ -40,7 +40,12 @@ function formatCompact(val: number): string {
 export default function DashboardPage() {
   const supabase = createClientComponentClient()
   const [clients, setClients] = useState<{ id: string; name: string }[]>([])
-  const [selectedClient, setSelectedClient] = useState('')
+  const [selectedClient, setSelectedClient] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('gd-dashboard-client') || ''
+    }
+    return ''
+  })
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<DashboardData | null>(null)
 
@@ -52,6 +57,13 @@ export default function DashboardPage() {
       }
     })
   }, [supabase])
+
+  // Remember the last selected client across visits to the dashboard
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (selectedClient) localStorage.setItem('gd-dashboard-client', selectedClient)
+    else localStorage.removeItem('gd-dashboard-client')
+  }, [selectedClient])
 
   const fetchDashboard = useCallback(async () => {
     if (!selectedClient) return
