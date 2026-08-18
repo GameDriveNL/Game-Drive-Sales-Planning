@@ -411,7 +411,7 @@ export default function SettingsClientsPage() {
       game_id: product.game_id,
       product_type: product.product_type,
       steam_product_id: product.steam_product_id || '',
-      launch_date: product.launch_date || format(new Date(), 'yyyy-MM-dd'),
+      launch_date: product.launch_date || '',
       product_aliases: (product.product_aliases || []).join(', '),
       auto_calendar: false
     })
