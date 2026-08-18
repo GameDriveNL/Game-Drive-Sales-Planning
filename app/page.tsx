@@ -75,6 +75,11 @@ export default function GameDriveDashboard() {
   const [clearSalesState, setClearSalesState] = useState<ClearSalesState | null>(null)
   const [editLaunchDateState, setEditLaunchDateState] = useState<EditLaunchDateState | null>(null)
   const [filterClientId, setFilterClientId] = useState<string>(() => searchParams.get('client') || '')
+
+  useEffect(() => {
+    const clientParam = searchParams.get('client')
+    if (clientParam) setFilterClientId(clientParam)
+  }, [searchParams])
   const [filterGameId, setFilterGameId] = useState<string>('')
   const [filterPlatformIds, setFilterPlatformIds] = useState<Set<string>>(new Set())
   const [platformsExpanded, setPlatformsExpanded] = useState(false)

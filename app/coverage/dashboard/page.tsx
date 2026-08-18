@@ -123,6 +123,11 @@ export default function DashboardPage() {
 
   // Filters
   const [clientFilter, setClientFilter] = useState(() => searchParams.get('client') || '')
+
+  useEffect(() => {
+    const clientParam = searchParams.get('client')
+    if (clientParam) setClientFilter(clientParam)
+  }, [searchParams])
   const [gameFilter, setGameFilter] = useState('')
   const [period, setPeriod] = useState('30d')
   const [customFrom, setCustomFrom] = useState('')

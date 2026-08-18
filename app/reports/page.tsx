@@ -125,6 +125,11 @@ export default function ReportsPage() {
   const [clients, setClients] = useState<{ id: string; name: string }[]>([])
   const [games, setGames] = useState<{ id: string; name: string }[]>([])
   const [selectedClient, setSelectedClient] = useState(() => searchParams.get('client') || '')
+
+  useEffect(() => {
+    const clientParam = searchParams.get('client')
+    if (clientParam) setSelectedClient(clientParam)
+  }, [searchParams])
   const [selectedGame, setSelectedGame] = useState('')
   const [datePreset, setDatePreset] = useState('last30')
   const [dateFrom, setDateFrom] = useState('')

@@ -46,6 +46,11 @@ export default function AnalyticsPage() {
   const [selectedDatePreset, setSelectedDatePreset] = useState<string>('60d')
   const [selectedProduct, setSelectedProduct] = useState<string>('all')
   const [selectedClient, setSelectedClient] = useState<string>(() => searchParams.get('client') || 'all')
+
+  useEffect(() => {
+    const clientParam = searchParams.get('client')
+    if (clientParam) setSelectedClient(clientParam)
+  }, [searchParams])
   const [selectedRegion, setSelectedRegion] = useState<string>('all')
   const [selectedPlatform, setSelectedPlatform] = useState<string>('all')
   const [hoveredPieSlice, setHoveredPieSlice] = useState<number | null>(null)
