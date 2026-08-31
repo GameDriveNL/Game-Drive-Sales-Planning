@@ -49,7 +49,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { title, description, item_type, status, priority, tags, reporter, code_refs } = body
+    const { title, description, item_type, status, priority, tags, reporter, code_refs, image_url } = body
 
     if (!title || !title.trim()) {
       return NextResponse.json({ error: 'title is required' }, { status: 400 })
@@ -66,6 +66,7 @@ export async function POST(request: Request) {
         tags: Array.isArray(tags) ? tags : [],
         reporter: reporter?.trim() || null,
         code_refs: code_refs?.trim() || null,
+        image_url: image_url || null,
         source: 'in-app',
       })
       .select('*, comments:feedback_comments(*)')
@@ -96,7 +97,7 @@ export async function PATCH(request: Request) {
     const allowed = [
       'title', 'description', 'item_type', 'status', 'priority',
       'tags', 'archived', 'answer', 'answered', 'reporter', 'code_refs', 'sort_order',
-      'needs_clarification',
+      'needs_clarification', 'image_url',
     ]
     const updates: Record<string, unknown> = {}
     for (const key of allowed) {

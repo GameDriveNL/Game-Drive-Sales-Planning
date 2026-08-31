@@ -2,11 +2,34 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { Sidebar } from '../components/Sidebar'
+import { supabase } from '@/lib/supabase'
 import styles from './feedback.module.css'
 import {
   FeedbackItem, FeedbackType, FeedbackStatus, FeedbackPriority,
   STATUS_COLUMNS, TYPE_META, PRIORITY_META, AREA_TAGS, tagColor, tagLabel, refCode,
 } from './types'
+
+// ─── Image attachments (Supabase Storage) ───────────────────────────────────
+
+async function uploadFeedbackImage(file: File): Promise<string> {
+  const ext = file.name.split('.').pop() || 'png'
+  const path = `${crypto.randomUUID()}.${ext}`
+  const { error } = await supabase.storage.from('feedback-images').upload(path, file, { upsert: false })
+  if (error) throw error
+  return supabase.storage.from('feedback-images').getPublicUrl(path).data.publicUrl
+}
+
+function feedbackImagePath(url: string): string | null {
+  const marker = '/feedback-images/'
+  const idx = url.indexOf(marker)
+  return idx === -1 ? null : url.slice(idx + marker.length)
+}
+
+async function deleteFeedbackImage(url: string) {
+  const path = feedbackImagePath(url)
+  if (!path) return
+  await supabase.storage.from('feedback-images').remove([path])
+}
 
 type View = 'board' | 'wishlist' | 'questions' | 'archive'
 
@@ -146,6 +169,12 @@ export default function FeedbackPage() {
     [items, matchesFilters]
   )
 
+  // Wishlist: same Kanban shape, just wishlist-typed items
+  const wishlistBoardItems = useMemo(
+    () => items.filter(i => !i.archived && i.item_type === 'wishlist' && matchesFilters(i)),
+    [items, matchesFilters]
+  )
+
   return (
     <div className={styles.layout}>
       <Sidebar />
@@ -218,54 +247,33 @@ export default function FeedbackPage() {
         {loading ? (
           <div className={styles.empty}>Loading…</div>
         ) : view === 'board' ? (
-          <div className={styles.board}>
-            {STATUS_COLUMNS.map(col => {
-              const colItems = boardItems
-                .filter(i => i.status === col.key)
-                .sort((a, b) => a.sort_order - b.sort_order)
-              return (
-                <div
-                  key={col.key}
-                  className={dragOverCol === col.key ? styles.columnDragOver : styles.column}
-                  onDragOver={e => { e.preventDefault(); setDragOverCol(col.key) }}
-                  onDragLeave={() => setDragOverCol(null)}
-                  onDrop={() => {
-                    if (draggedId) patchItem(draggedId, { status: col.key })
-                    setDraggedId(null)
-                    setDragOverCol(null)
-                  }}
-                >
-                  <div className={styles.columnHead}>
-                    <span className={styles.columnLabel}>{col.label}</span>
-                    <span className={styles.columnCount}>{colItems.length}</span>
-                  </div>
-                  <div className={styles.columnHint}>{col.hint}</div>
-                  <div className={styles.cards}>
-                    {colItems.map(it => (
-                      <Card
-                        key={it.id}
-                        item={it}
-                        onClick={() => setDetailId(it.id)}
-                        onDragStart={() => setDraggedId(it.id)}
-                        onArchive={col.key === 'fix_verified' ? () => patchItem(it.id, { archived: true }) : undefined}
-                      />
-                    ))}
-                    {colItems.length === 0 && <div className={styles.colEmpty}>Drop items here</div>}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+          <KanbanBoard
+            items={boardItems}
+            draggedId={draggedId}
+            setDraggedId={setDraggedId}
+            dragOverCol={dragOverCol}
+            setDragOverCol={setDragOverCol}
+            onOpen={setDetailId}
+            onPatch={patchItem}
+          />
         ) : view === 'questions' ? (
           <QuestionList
             items={items.filter(i => i.item_type === 'question' && !i.archived && matchesFilters(i))}
             onOpen={setDetailId}
           />
         ) : view === 'wishlist' ? (
-          <WishlistGrid
-            items={items.filter(i => i.item_type === 'wishlist' && !i.archived && matchesFilters(i))}
-            onOpen={setDetailId}
-          />
+          <>
+            <p className={styles.viewNote}>🌟 Wishlist ideas — tracked the same way as bugs/features, just kept off the main board.</p>
+            <KanbanBoard
+              items={wishlistBoardItems}
+              draggedId={draggedId}
+              setDraggedId={setDraggedId}
+              dragOverCol={dragOverCol}
+              setDragOverCol={setDragOverCol}
+              onOpen={setDetailId}
+              onPatch={patchItem}
+            />
+          </>
         ) : (
           <ArchiveList
             items={items.filter(i => i.archived && matchesFilters(i))}
@@ -324,6 +332,7 @@ function Card({ item, onClick, onDragStart, onArchive }: {
       )}
       <div className={styles.cardFoot}>
         {item.reporter && <span className={styles.reporter}>{item.reporter}</span>}
+        {item.image_url && <span className={styles.commentCount} title="Has a screenshot">🖼️</span>}
         {(item.comments?.length ?? 0) > 0 && <span className={styles.commentCount}>💬 {item.comments!.length}</span>}
         {onArchive && (
           <button
@@ -361,26 +370,54 @@ function QuestionList({ items, onOpen }: { items: FeedbackItem[]; onOpen: (id: s
   )
 }
 
-// ─── Wishlist view ────────────────────────────────────────────────────────────
-function WishlistGrid({ items, onOpen }: { items: FeedbackItem[]; onOpen: (id: string) => void }) {
-  if (items.length === 0) return <div className={styles.empty}>No wishlist items.</div>
+// ─── Kanban board (used by both the Board view and the Wishlist view) ───────
+function KanbanBoard({ items, draggedId, setDraggedId, dragOverCol, setDragOverCol, onOpen, onPatch }: {
+  items: FeedbackItem[]
+  draggedId: string | null
+  setDraggedId: (id: string | null) => void
+  dragOverCol: FeedbackStatus | null
+  setDragOverCol: (s: FeedbackStatus | null) => void
+  onOpen: (id: string) => void
+  onPatch: (id: string, u: Partial<FeedbackItem>) => void
+}) {
   return (
-    <div>
-      <p className={styles.viewNote}>🌟 Out-of-scope ideas for a future focused sprint. Not on the active board.</p>
-      <div className={styles.wishGrid}>
-        {items.map(w => (
-          <div key={w.id} className={styles.wishCard} onClick={() => onOpen(w.id)}>
-            <span className={styles.refCode}>{refCode(w.seq)}</span>
-            <div className={styles.wishTitle}>{w.title}</div>
-            {w.description && <div className={styles.wishDesc}>{w.description}</div>}
-            {w.tags.length > 0 && (
-              <div className={styles.cardTags}>
-                {w.tags.map(t => <span key={t} className={styles.miniTag} style={{ background: tagColor(t) }}>{tagLabel(t)}</span>)}
-              </div>
-            )}
+    <div className={styles.board}>
+      {STATUS_COLUMNS.map(col => {
+        const colItems = items
+          .filter(i => i.status === col.key)
+          .sort((a, b) => a.sort_order - b.sort_order)
+        return (
+          <div
+            key={col.key}
+            className={dragOverCol === col.key ? styles.columnDragOver : styles.column}
+            onDragOver={e => { e.preventDefault(); setDragOverCol(col.key) }}
+            onDragLeave={() => setDragOverCol(null)}
+            onDrop={() => {
+              if (draggedId) onPatch(draggedId, { status: col.key })
+              setDraggedId(null)
+              setDragOverCol(null)
+            }}
+          >
+            <div className={styles.columnHead}>
+              <span className={styles.columnLabel}>{col.label}</span>
+              <span className={styles.columnCount}>{colItems.length}</span>
+            </div>
+            <div className={styles.columnHint}>{col.hint}</div>
+            <div className={styles.cards}>
+              {colItems.map(it => (
+                <Card
+                  key={it.id}
+                  item={it}
+                  onClick={() => onOpen(it.id)}
+                  onDragStart={() => setDraggedId(it.id)}
+                  onArchive={col.key === 'fix_verified' ? () => onPatch(it.id, { archived: true }) : undefined}
+                />
+              ))}
+              {colItems.length === 0 && <div className={styles.colEmpty}>Drop items here</div>}
+            </div>
           </div>
-        ))}
-      </div>
+        )
+      })}
     </div>
   )
 }
@@ -420,8 +457,32 @@ function NewItemModal({ onClose, onCreate, defaultType }: {
   const [priority, setPriority] = useState<FeedbackPriority>('medium')
   const [tags, setTags] = useState<string[]>([])
   const [reporter, setReporter] = useState('')
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
 
   const toggleTag = (t: string) => setTags(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])
+
+  const pickImage = (file: File | null) => {
+    setImageFile(file)
+    setImagePreviewUrl(prev => {
+      if (prev) URL.revokeObjectURL(prev)
+      return file ? URL.createObjectURL(file) : null
+    })
+  }
+
+  const handleCreate = async () => {
+    setCreating(true)
+    try {
+      const image_url = imageFile ? await uploadFeedbackImage(imageFile) : undefined
+      onCreate({ title, description, item_type: itemType, priority, tags, reporter, ...(image_url ? { image_url } : {}) })
+    } catch {
+      alert('Image upload failed — creating the item without it.')
+      onCreate({ title, description, item_type: itemType, priority, tags, reporter })
+    } finally {
+      setCreating(false)
+    }
+  }
 
   return (
     <div className={styles.overlay} onClick={onClose}>
@@ -470,13 +531,23 @@ function NewItemModal({ onClose, onCreate, defaultType }: {
         <label className={styles.label}>Your name (optional)</label>
         <input className={styles.input} value={reporter} onChange={e => setReporter(e.target.value)} placeholder="e.g. Alisa" />
 
+        <label className={styles.label}>Screenshot (optional)</label>
+        {imagePreviewUrl ? (
+          <div className={styles.imagePreviewWrap}>
+            <img src={imagePreviewUrl} alt="Attached screenshot" className={styles.imagePreview} />
+            <button type="button" className={styles.imageRemoveBtn} onClick={() => pickImage(null)}>Remove</button>
+          </div>
+        ) : (
+          <input type="file" accept="image/*" className={styles.input} onChange={e => pickImage(e.target.files?.[0] || null)} />
+        )}
+
         <div className={styles.modalActions}>
           <button className={styles.cancelBtn} onClick={onClose}>Cancel</button>
           <button
             className={styles.saveBtn}
-            disabled={!title.trim()}
-            onClick={() => onCreate({ title, description, item_type: itemType, priority, tags, reporter })}
-          >Create</button>
+            disabled={!title.trim() || creating}
+            onClick={handleCreate}
+          >{creating ? 'Uploading…' : 'Create'}</button>
         </div>
       </div>
     </div>
@@ -494,7 +565,26 @@ function DetailModal({ item, onClose, onPatch, onDelete, onComment }: {
   const [answer, setAnswer] = useState(item.answer || '')
   const [comment, setComment] = useState('')
   const [author, setAuthor] = useState('')
+  const [uploadingImage, setUploadingImage] = useState(false)
   const tm = TYPE_META[item.item_type]
+
+  const handleImagePick = async (file: File | null) => {
+    if (!file) return
+    setUploadingImage(true)
+    try {
+      const image_url = await uploadFeedbackImage(file)
+      onPatch(item.id, { image_url })
+    } catch {
+      alert('Image upload failed.')
+    } finally {
+      setUploadingImage(false)
+    }
+  }
+
+  const handleImageRemove = async () => {
+    if (item.image_url) await deleteFeedbackImage(item.image_url)
+    onPatch(item.id, { image_url: null })
+  }
 
   return (
     <div className={styles.overlay} onClick={onClose}>
@@ -514,9 +604,21 @@ function DetailModal({ item, onClose, onPatch, onDelete, onComment }: {
         {item.description && <p className={styles.detailDesc}>{item.description}</p>}
         {item.code_refs && <div className={styles.codeRefs}><strong>Code:</strong> {item.code_refs}</div>}
 
+        <label className={styles.label}>Screenshot</label>
+        {item.image_url ? (
+          <div className={styles.imagePreviewWrap}>
+            <a href={item.image_url} target="_blank" rel="noreferrer">
+              <img src={item.image_url} alt="Attached screenshot" className={styles.imagePreview} />
+            </a>
+            <button type="button" className={styles.imageRemoveBtn} onClick={handleImageRemove}>Remove</button>
+          </div>
+        ) : (
+          <input type="file" accept="image/*" className={styles.input} disabled={uploadingImage} onChange={e => handleImagePick(e.target.files?.[0] || null)} />
+        )}
+
         <div className={styles.detailMeta}>
-          {/* Status mover (bug/feature only) */}
-          {(item.item_type === 'bug' || item.item_type === 'feature') && (
+          {/* Status mover (Kanban-tracked types only — not questions) */}
+          {(item.item_type === 'bug' || item.item_type === 'feature' || item.item_type === 'wishlist') && (
             <div className={styles.field}>
               <label className={styles.label}>Status</label>
               <select className={styles.input} value={item.status} onChange={e => onPatch(item.id, { status: e.target.value as FeedbackStatus })}>

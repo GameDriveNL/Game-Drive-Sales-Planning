@@ -35,6 +35,7 @@ export interface FeedbackItem {
   reporter: string | null
   source: string
   code_refs: string | null
+  image_url: string | null
   sort_order: number
   created_at: string
   updated_at: string
