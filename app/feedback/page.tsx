@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useMemo, useState, useCallback } from 'react'
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { Sidebar } from '../components/Sidebar'
-import { supabase } from '@/lib/supabase'
 import styles from './feedback.module.css'
 import {
   FeedbackItem, FeedbackType, FeedbackStatus, FeedbackPriority,
@@ -10,13 +10,17 @@ import {
 } from './types'
 
 // ─── Image attachments (Supabase Storage) ───────────────────────────────────
+// Storage RLS requires an authenticated session, so this needs the cookie-aware
+// client (same one every other page uses) — the plain lib/supabase.ts client
+// carries no session and uploads as anon, which RLS correctly rejects.
+const storageClient = createClientComponentClient()
 
 async function uploadFeedbackImage(file: File): Promise<string> {
   const ext = file.name.split('.').pop() || 'png'
   const path = `${crypto.randomUUID()}.${ext}`
-  const { error } = await supabase.storage.from('feedback-images').upload(path, file, { upsert: false })
+  const { error } = await storageClient.storage.from('feedback-images').upload(path, file, { upsert: false })
   if (error) throw error
-  return supabase.storage.from('feedback-images').getPublicUrl(path).data.publicUrl
+  return storageClient.storage.from('feedback-images').getPublicUrl(path).data.publicUrl
 }
 
 function feedbackImagePath(url: string): string | null {
@@ -28,7 +32,7 @@ function feedbackImagePath(url: string): string | null {
 async function deleteFeedbackImage(url: string) {
   const path = feedbackImagePath(url)
   if (!path) return
-  await supabase.storage.from('feedback-images').remove([path])
+  await storageClient.storage.from('feedback-images').remove([path])
 }
 
 type View = 'board' | 'wishlist' | 'questions' | 'archive'
