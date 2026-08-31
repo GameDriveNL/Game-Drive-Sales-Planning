@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import Link from 'next/link'
-import { Sidebar } from '../components/Sidebar'
+import { Sidebar } from './components/Sidebar'
 
 interface NameValue { name: string; value: number }
 interface CoverageHighlight { id: string; title: string; url: string; publish_date: string; coverage_type: string; monthly_unique_visitors: number; review_score: number | null; outlet: { name: string; tier: string } | null }
@@ -288,7 +288,7 @@ export default function DashboardPage() {
           <div style={cardStyle}>
             <div style={sectionTitle}>Quick Navigation</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
-              <Link href={selectedClient ? `/?client=${selectedClient}` : '/'} style={quickLink}>
+              <Link href={selectedClient ? `/timeline?client=${selectedClient}` : '/timeline'} style={quickLink}>
                 <span>&#128197;</span> Sales Timeline
               </Link>
               <Link href={selectedClient ? `/analytics?client=${selectedClient}` : '/analytics'} style={quickLink}>

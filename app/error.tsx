@@ -41,7 +41,7 @@ export default function GlobalError({
         Try again
       </button>
       <button
-        onClick={() => (window.location.href = '/dashboard')}
+        onClick={() => (window.location.href = '/')}
         style={{
           padding: '10px 20px',
           background: 'white',

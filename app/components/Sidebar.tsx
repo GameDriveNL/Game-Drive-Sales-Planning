@@ -33,7 +33,7 @@ export function Sidebar() {
   const navItems: { name: string; href: string; icon: React.ReactNode; description: string; feature: FeatureKey }[] = [
     {
       name: 'Dashboard',
-      href: '/dashboard',
+      href: '/',
       feature: 'analytics',
       icon: (
         <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -44,7 +44,7 @@ export function Sidebar() {
     },
     {
       name: 'Sales Timeline',
-      href: '/',
+      href: '/timeline',
       feature: 'sales_timeline',
       icon: (
         <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">

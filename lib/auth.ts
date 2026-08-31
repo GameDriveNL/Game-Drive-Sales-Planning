@@ -121,8 +121,8 @@ export async function getUserAuth(supabase: SupabaseClient): Promise<{
  * Map route paths to feature keys for sidebar visibility.
  */
 export const ROUTE_FEATURE_MAP: Record<string, FeatureKey> = {
-  '/dashboard': 'analytics',
-  '/': 'sales_timeline',
+  '/': 'analytics',
+  '/timeline': 'sales_timeline',
   '/planning': 'sales_timeline',
   '/analytics': 'analytics',
   '/coverage': 'pr_coverage',
