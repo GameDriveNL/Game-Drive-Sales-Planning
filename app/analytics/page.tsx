@@ -2398,7 +2398,7 @@ export default function AnalyticsPage() {
     return (
       <div className={styles.chartCard}>
         <h3 className={styles.chartTitle}>{widget.title}</h3>
-        <div style={{ padding: '16px' }}>
+        <div style={{ padding: '16px', maxHeight: '260px', overflowY: 'auto' }}>
           {countryRevenueData.map((country, i) => {
             const percentage = (country.value / maxRevenue) * 100
             return (
