@@ -30,6 +30,13 @@ function feedbackImagePath(url: string): string | null {
 }
 
 async function deleteFeedbackImage(url: string) {
+  // Best-effort: this project's storage.objects table has a protect_delete()
+  // trigger that blocks row deletion unless storage.allow_delete_query is set
+  // for the connection, which the Storage API doesn't do here — so this
+  // currently no-ops (verified: request succeeds, object stays). Clearing
+  // image_url on the item is what actually matters for the UI; the old blob
+  // is just an orphan in the bucket until someone removes the trigger or
+  // cleans it up by hand.
   const path = feedbackImagePath(url)
   if (!path) return
   await storageClient.storage.from('feedback-images').remove([path])
