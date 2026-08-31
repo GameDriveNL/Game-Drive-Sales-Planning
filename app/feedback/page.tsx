@@ -613,7 +613,11 @@ function DetailModal({ item, onClose, onPatch, onDelete, onComment }: {
 
         <h2 className={styles.detailTitle}>{item.title}</h2>
         {item.description && <p className={styles.detailDesc}>{item.description}</p>}
-        {item.code_refs && <div className={styles.codeRefs}><strong>Code:</strong> {item.code_refs}</div>}
+        {item.code_refs && (
+          <div className={styles.codeRefs}>
+            <strong>{item.status === 'clarification_needed' ? 'Notes:' : 'Code:'}</strong> {item.code_refs}
+          </div>
+        )}
 
         <label className={styles.label}>Screenshot</label>
         {item.image_url ? (

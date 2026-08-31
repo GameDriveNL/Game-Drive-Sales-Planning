@@ -459,6 +459,7 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   margin-bottom: 12px;
   word-break: break-word;
+  white-space: pre-wrap;
 }
 .detailMeta { display: flex; gap: 12px; flex-wrap: wrap; }
 .answerBox { margin-top: 16px; background: #fffbf0; border-radius: 10px; padding: 14px; }
