@@ -40,14 +40,16 @@ function formatCompact(val: number): string {
 export default function DashboardPage() {
   const supabase = createClientComponentClient()
   const [clients, setClients] = useState<{ id: string; name: string }[]>([])
-  const [selectedClient, setSelectedClient] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('gd-dashboard-client') || ''
-    }
-    return ''
-  })
+  // Starts empty on both server and client render so hydration matches;
+  // the stored value (if any) is applied after mount in the effect below.
+  const [selectedClient, setSelectedClient] = useState('')
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<DashboardData | null>(null)
+
+  useEffect(() => {
+    const stored = localStorage.getItem('gd-dashboard-client')
+    if (stored) setSelectedClient(stored)
+  }, [])
 
   useEffect(() => {
     supabase.from('clients').select('id, name').order('name').then(({ data }) => {
