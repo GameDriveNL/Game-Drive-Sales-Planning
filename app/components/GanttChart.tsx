@@ -1309,7 +1309,18 @@ export default function GanttChart(props: GanttChartProps) {
   }, [todayIndex, dayWidth, containerWidth, hasInitialScrolled, hasReceivedMeasurement, products.length])
   
   useEffect(() => {
-    const handleWindowMouseMove = (e: MouseEvent) => {
+    // Coalesce mousemove bursts to one state update per animation frame —
+    // without this, rapid mousemove events each trigger a full re-render,
+    // which is what made dragging feel laggy right as a drag starts.
+    let rafId: number | null = null
+    let pendingEvent: MouseEvent | null = null
+
+    const flushPendingMove = () => {
+      rafId = null
+      const e = pendingEvent
+      if (!e) return
+      pendingEvent = null
+
       if (scrollGrabRef.current) {
         handleScrollGrabMove(e)
         return
@@ -1322,8 +1333,21 @@ export default function GanttChart(props: GanttChartProps) {
         handleLaunchDragMove(e)
       }
     }
-    
+
+    const handleWindowMouseMove = (e: MouseEvent) => {
+      pendingEvent = e
+      if (rafId === null) {
+        rafId = requestAnimationFrame(flushPendingMove)
+      }
+    }
+
     const handleWindowMouseUp = () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId)
+        rafId = null
+        pendingEvent = null
+      }
+
       if (scrollGrabRef.current) {
         handleScrollGrabEnd()
         return
@@ -1349,6 +1373,7 @@ export default function GanttChart(props: GanttChartProps) {
     window.addEventListener('mouseup', handleWindowMouseUp, { capture: true })
     
     return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId)
       window.removeEventListener('mousemove', handleWindowMouseMove)
       window.removeEventListener('mouseup', handleWindowMouseUp, { capture: true })
     }
@@ -1675,7 +1700,7 @@ export default function GanttChart(props: GanttChartProps) {
   
   return (
     <div 
-      className={`${styles.container} ${draggedSale ? styles.dragging : ''}`}
+      className={`${styles.container} ${(draggedSale || launchDateDrag || launchSaleResize) ? styles.dragging : ''}`}
       onMouseLeave={handleMouseLeave}
       ref={containerRef}
     >

@@ -762,7 +762,11 @@
 .pieChart {
   width: 100%;
   flex: 1;
-  min-height: 240px;
+  /* Was 240px, which forced this taller than the 350px chart card once the
+     title and legend also take their share — the legend bled ~60px past
+     the card's bottom edge on every render. flex:1 already sizes this to
+     whatever's left; this is just a floor for the empty/near-empty case. */
+  min-height: 100px;
   position: relative;
   display: flex;
   align-items: flex-start;
