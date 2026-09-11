@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { serverSupabase as supabase } from '@/lib/supabase';
 import { matchProducts, ExternalProduct } from '@/lib/product-matching';
+import { checkSteamFinancialKey, describeKeyFailure } from '@/lib/steam-key-check';
 
 // Steam Partner API endpoint for financial data
 const STEAM_PARTNER_API = 'https://partner.steam-api.com';
@@ -332,16 +333,23 @@ export async function GET(request: Request) {
       });
     }
 
-    // Test the Financial API key
+    // Test the Financial API key — two probes so we can say WHICH kind of 403 this is
     const financialApiKey = keyData.publisher_key || keyData.api_key;
-    const testResult = await testFinancialApiKey(financialApiKey);
+    const check = await checkSteamFinancialKey(financialApiKey);
 
     return NextResponse.json({
-      valid: testResult.valid,
-      message: testResult.message,
+      valid: check.ok,
+      status: check.status,
+      message: check.message,
+      fix: check.fix,
+      fingerprint: check.fingerprint,
       lastSync: keyData.last_sync_date,
       hasFinancialKey: !!keyData.publisher_key,
-      debug: testResult.debug
+      debug: {
+        ...check.debug,
+        dateCount: check.dateCount,
+        sampleHighwatermark: check.highwatermark,
+      }
     });
 
   } catch (error) {
@@ -373,9 +381,10 @@ async function getChangedDatesForPartner(
 
     if (!response.ok) {
       if (response.status === 403) {
+        const check = await checkSteamFinancialKey(apiKey);
         return {
           success: false,
-          error: 'Access denied (403). Make sure you are using a Financial Web API Key from a Financial API Group in Steamworks.',
+          error: describeKeyFailure(check),
           rawResponse: responseText
         };
       }
@@ -671,60 +680,3 @@ async function storeBundleData(
   return { imported: upsertRows.length }
 }
 
-// Test if the Financial API key is valid
-async function testFinancialApiKey(apiKey: string): Promise<{ valid: boolean; message: string; debug?: unknown }> {
-  try {
-    // Try to get changed dates with highwatermark 0 - this will confirm API access
-    const url = `${STEAM_PARTNER_API}/IPartnerFinancialsService/GetChangedDatesForPartner/v001/?key=${apiKey}&highwatermark=0`;
-    
-    console.log(`[Steam API Test] Calling: ${url.replace(apiKey, 'REDACTED')}`);
-    
-    const response = await fetch(url);
-    const responseText = await response.text();
-    
-    console.log(`[Steam API Test] Status: ${response.status}, Body: ${responseText.substring(0, 200)}`);
-    
-    if (response.ok) {
-      let data: ChangedDatesResponse;
-      try {
-        data = JSON.parse(responseText);
-      } catch (e) {
-        return {
-          valid: false,
-          message: `Steam API returned invalid JSON: ${responseText.substring(0, 100)}`,
-          debug: { status: response.status, body: responseText }
-        };
-      }
-      
-      const dateCount = data.response?.dates?.length || 0;
-      return {
-        valid: true,
-        message: `Financial API connected! ${dateCount} date(s) with sales data available.`,
-        debug: {
-          status: response.status,
-          dateCount,
-          sampleDates: data.response?.dates?.slice(0, 3),
-          highwatermark: data.response?.result_highwatermark
-        }
-      };
-    } else if (response.status === 403) {
-      return {
-        valid: false,
-        message: 'Access denied (403). This key may not have Financial API access. Create a Financial API Group in Steamworks and use that key.',
-        debug: { status: response.status, body: responseText }
-      };
-    } else {
-      return {
-        valid: false,
-        message: `Steam API returned status ${response.status}`,
-        debug: { status: response.status, body: responseText }
-      };
-    }
-  } catch (error) {
-    return {
-      valid: false,
-      message: `Could not connect to Steam Partner API: ${error instanceof Error ? error.message : String(error)}`,
-      debug: { error: String(error) }
-    };
-  }
-}

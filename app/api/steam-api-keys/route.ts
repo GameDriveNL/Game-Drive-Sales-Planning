@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { serverSupabase as supabase } from '@/lib/supabase';
+import { checkSteamFinancialKey, normalizeSteamKey } from '@/lib/steam-key-check';
 
 // GET - Fetch all Steam API keys with client info
 export async function GET() {
@@ -31,12 +32,27 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { client_id, api_key, publisher_key, app_ids } = body;
+    const { client_id, app_ids, force } = body;
+    // Strip stray whitespace / zero-width chars that come along with copy-paste.
+    const publisher_key = normalizeSteamKey(body.publisher_key) || null;
+    const api_key = normalizeSteamKey(body.api_key) || null;
 
     if (!client_id || !publisher_key) {
       return NextResponse.json(
         { error: 'Client ID and Financial Web API key are required' },
         { status: 400 }
+      );
+    }
+
+    // Validate against Steam before storing. A key that fails here will fail
+    // every sync, so refuse it with a precise reason instead of letting the
+    // user discover a bare "403" hours later in a cron job.
+    const check = await checkSteamFinancialKey(publisher_key);
+    const hardFailure = check.status === 'unknown_key' || check.status === 'no_financial_permission' || check.status === 'malformed';
+    if (hardFailure && !force) {
+      return NextResponse.json(
+        { error: check.message, fix: check.fix, check },
+        { status: 422 }
       );
     }
 
@@ -82,7 +98,7 @@ export async function POST(request: Request) {
       result = data;
     }
 
-    return NextResponse.json(result);
+    return NextResponse.json({ ...result, check });
   } catch (error) {
     console.error('Error saving Steam API key:', error);
     return NextResponse.json(

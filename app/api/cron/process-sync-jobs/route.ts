@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { serverSupabase as supabase } from '@/lib/supabase';
 import { verifyCronAuth } from '@/lib/cron-auth';
+import { checkSteamFinancialKey, describeKeyFailure } from '@/lib/steam-key-check';
 
 const STEAM_PARTNER_API = 'https://partner.steam-api.com';
 const DOMO_AUTH_URL = 'https://api.domo.com/oauth/token';
@@ -264,6 +265,13 @@ async function getChangedDatesForPartner(
     const response = await fetch(url);
 
     if (!response.ok) {
+      if (response.status === 403) {
+        // Say WHICH kind of 403: key unknown to Steam (regenerated / mis-copied /
+        // IP-locked) vs. valid key without Financial API Group permission.
+        const check = await checkSteamFinancialKey(apiKey);
+        console.error(`[Cron] Steam 403 for key ${check.fingerprint}: ${check.status}`);
+        return { success: false, error: describeKeyFailure(check) };
+      }
       return {
         success: false,
         error: `Steam API returned status ${response.status}`

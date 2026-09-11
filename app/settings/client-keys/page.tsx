@@ -56,6 +56,16 @@ interface SyncDebugInfo {
   rawResponse?: unknown;
 }
 
+// Result of POST /api/steam-api-keys/validate (see lib/steam-key-check.ts)
+interface KeyCheck {
+  status: 'ok' | 'unknown_key' | 'no_financial_permission' | 'malformed' | 'network_error';
+  ok: boolean;
+  message: string;
+  fix: string;
+  fingerprint: string;
+  dateCount?: number;
+}
+
 // Helper function to safely stringify debug info
 function formatDebugInfo(debug: SyncDebugInfo | undefined): string {
   if (!debug) return '';
@@ -89,7 +99,12 @@ export default function ClientKeysPage() {
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [selectedKey, setSelectedKey] = useState<SteamApiKey | null>(null);
   const [testingKey, setTestingKey] = useState<string | null>(null);
-  const [testResult, setTestResult] = useState<{valid: boolean; message: string; debug?: SyncDebugInfo} | null>(null);
+  const [testResult, setTestResult] = useState<{valid: boolean; message: string; fix?: string; status?: string; debug?: SyncDebugInfo} | null>(null);
+  // Pre-save validation inside the Add Key modal
+  const [addKeyCheck, setAddKeyCheck] = useState<KeyCheck | null>(null);
+  const [addKeyChecking, setAddKeyChecking] = useState(false);
+  const [saveFix, setSaveFix] = useState<string | null>(null);
+  const [saveBlockedByCheck, setSaveBlockedByCheck] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<{
     success: boolean;
@@ -188,8 +203,40 @@ export default function ClientKeysPage() {
     setLoading(false);
   };
 
-  const handleAddKey = async () => {
+  const resetAddModal = () => {
+    setShowAddModal(false);
+    setFormData({ client_id: '', api_key: '', publisher_key: '', app_ids: '' });
+    setAddKeyCheck(null);
     setSaveError(null);
+    setSaveFix(null);
+    setSaveBlockedByCheck(false);
+  };
+
+  // Ask Steam about the pasted key BEFORE saving it.
+  const handleValidateNewKey = async () => {
+    setAddKeyChecking(true);
+    setAddKeyCheck(null);
+    setSaveError(null);
+    setSaveFix(null);
+    setSaveBlockedByCheck(false);
+    try {
+      const res = await fetch('/api/steam-api-keys/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ publisher_key: formData.publisher_key })
+      });
+      const data = await res.json();
+      setAddKeyCheck(data as KeyCheck);
+    } catch {
+      setAddKeyCheck({ status: 'network_error', ok: false, message: 'Could not reach the validator.', fix: 'Retry in a minute.', fingerprint: '' });
+    }
+    setAddKeyChecking(false);
+  };
+
+  const handleAddKey = async (force = false) => {
+    setSaveError(null);
+    setSaveFix(null);
+    setSaveBlockedByCheck(false);
     try {
       const res = await fetch('/api/steam-api-keys', {
         method: 'POST',
@@ -198,17 +245,19 @@ export default function ClientKeysPage() {
           client_id: formData.client_id,
           api_key: formData.api_key,
           publisher_key: formData.publisher_key || null,
-          app_ids: formData.app_ids.split(',').map(s => s.trim()).filter(Boolean)
+          app_ids: formData.app_ids.split(',').map(s => s.trim()).filter(Boolean),
+          force
         })
       });
 
       if (res.ok) {
-        setShowAddModal(false);
-        setFormData({ client_id: '', api_key: '', publisher_key: '', app_ids: '' });
+        resetAddModal();
         fetchData();
       } else {
         const err = await res.json();
         setSaveError(err.error || 'Failed to save API key');
+        if (err.fix) setSaveFix(err.fix);
+        if (res.status === 422) setSaveBlockedByCheck(true);
       }
     } catch (error) {
       console.error('Error adding API key:', error);
@@ -222,7 +271,7 @@ export default function ClientKeysPage() {
     try {
       const res = await fetch(`/api/steam-sync?client_id=${clientId}`);
       const data = await res.json();
-      setTestResult({ valid: data.valid, message: data.message, debug: data.debug as SyncDebugInfo });
+      setTestResult({ valid: data.valid, message: data.message, fix: data.fix, status: data.status, debug: data.debug as SyncDebugInfo });
       console.log('Test result:', data);
     } catch (error) {
       setTestResult({ valid: false, message: 'Failed to test API key' });
@@ -734,7 +783,9 @@ export default function ClientKeysPage() {
                 <div className={styles.keyInfo}>
                   <span className={styles.clientBadge}>{key.clients?.name || 'Unknown Client'}</span>
                   <div className={styles.keyDetails}>
-                    <span className={styles.keyMasked}>{maskApiKey(key.api_key)}</span>
+                    <span className={styles.keyMasked} title="First and last 4 characters of the stored Financial key — compare with the key shown on the Financial API Group page in Steamworks">
+                      {maskApiKey(key.publisher_key || key.api_key)}
+                    </span>
                     <div className={styles.keyMeta}>
                       <span>{key.publisher_key ? '✓ Financial API Key' : '○ No Financial Key'}</span>
                       <span>{key.app_ids?.length || 0} App IDs</span>
@@ -793,9 +844,12 @@ export default function ClientKeysPage() {
                           <div style={{ marginBottom: '4px' }}>{syncHealth[key.client_id].error}</div>
                           {syncHealth[key.client_id].error?.includes('403') && (
                             <div style={{ marginTop: '6px', padding: '6px 8px', background: '#fff', borderRadius: '4px', border: '1px solid #fde8e8' }}>
-                              <strong>How to fix:</strong> Your Steam Financial API key may be expired or lack permissions.
-                              Go to <a href="https://partner.steamgames.com/pub/groups/" target="_blank" rel="noopener" style={{ color: '#1e40af', textDecoration: 'underline' }}>partner.steamgames.com/pub/groups/</a> and
-                              verify your Financial API Group is active, then re-copy the key.
+                              <strong>What a 403 means:</strong> Steam is rejecting the key itself — it is <em>not</em> a problem with our servers or their IP address.
+                              Either Steam no longer knows this key (regenerated, mis-copied, or the key has entries under &quot;Allowed IP addresses&quot;),
+                              or the key comes from a normal publisher group instead of the <strong>Financial API Group</strong>.
+                              Press <strong>Test</strong> on this card to see which one it is, then open{' '}
+                              <a href="https://partner.steamgames.com/pub/groups/" target="_blank" rel="noopener" style={{ color: '#1e40af', textDecoration: 'underline' }}>Manage Groups</a>,
+                              open the Financial API Group, compare its key with <code>{maskApiKey(key.publisher_key || key.api_key)}</code>, make sure the allowed-IP list is empty, and re-add the key here.
                             </div>
                           )}
                           {syncHealth[key.client_id].error?.includes('0 financial dates') && (
@@ -819,6 +873,11 @@ export default function ClientKeysPage() {
                     <div className={`${styles.statusBadge} ${testResult.valid ? styles.valid : styles.invalid}`}>
                       <strong>{testResult.valid ? '✓ Connected' : '✗ Failed'}</strong>
                       <span style={{ fontSize: '11px', display: 'block', marginTop: '2px' }}>{testResult.message}</span>
+                      {!testResult.valid && testResult.fix && (
+                        <span style={{ fontSize: '11px', display: 'block', marginTop: '6px', lineHeight: 1.4 }}>
+                          <strong>How to fix:</strong> {testResult.fix}
+                        </span>
+                      )}
                       {testResult.debug && (
                         <details style={{ marginTop: '8px', fontSize: '10px' }}>
                           <summary>Debug Info</summary>
@@ -1072,11 +1131,11 @@ export default function ClientKeysPage() {
 
       {/* Add API Key Modal */}
       {showAddModal && (
-        <div className={styles.modalOverlay} onClick={() => setShowAddModal(false)}>
+        <div className={styles.modalOverlay} onClick={resetAddModal}>
           <div className={styles.modal} onClick={e => e.stopPropagation()}>
             <div className={styles.modalHeader}>
               <h3>Add Steam API Key</h3>
-              <button className={styles.closeButton} onClick={() => setShowAddModal(false)}>
+              <button className={styles.closeButton} onClick={resetAddModal}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <line x1="18" y1="6" x2="6" y2="18"/>
                   <line x1="6" y1="6" x2="18" y2="18"/>
@@ -1086,7 +1145,21 @@ export default function ClientKeysPage() {
 
             {saveError && (
               <div style={{ padding: '12px', background: '#fef2f2', color: '#dc2626', borderRadius: '6px', marginBottom: '16px', fontSize: '14px' }}>
-                {saveError}
+                <div>{saveError}</div>
+                {saveFix && (
+                  <div style={{ marginTop: '8px', color: '#7f1d1d', fontSize: '12px', lineHeight: 1.45 }}>
+                    <strong>How to fix:</strong> {saveFix}
+                  </div>
+                )}
+                {saveBlockedByCheck && (
+                  <button
+                    type="button"
+                    onClick={() => handleAddKey(true)}
+                    style={{ marginTop: '10px', padding: '4px 10px', background: '#fff', color: '#991b1b', border: '1px solid #fca5a5', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+                  >
+                    Save anyway (syncs will keep failing until the key is fixed)
+                  </button>
+                )}
               </div>
             )}
 
@@ -1112,10 +1185,34 @@ export default function ClientKeysPage() {
                 type="text"
                 placeholder="Enter your Financial Web API key"
                 value={formData.publisher_key}
-                onChange={e => setFormData({...formData, publisher_key: e.target.value})}
+                onChange={e => { setFormData({...formData, publisher_key: e.target.value}); setAddKeyCheck(null); }}
                 style={{ fontFamily: 'monospace' }}
               />
-              <small>From Steamworks → Manage Groups → Financial API Group</small>
+              <small>From Steamworks → Manage Groups → Financial API Group (leave &quot;Allowed IP addresses&quot; empty)</small>
+              <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={handleValidateNewKey}
+                  disabled={addKeyChecking || formData.publisher_key.trim().length < 32}
+                  style={{ padding: '6px 12px', background: '#1b2838', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: addKeyChecking ? 'wait' : 'pointer', opacity: formData.publisher_key.trim().length < 32 ? 0.5 : 1 }}
+                >
+                  {addKeyChecking ? 'Asking Steam…' : 'Test key with Steam'}
+                </button>
+                <small style={{ margin: 0 }}>Checks the key before it is saved.</small>
+              </div>
+              {addKeyCheck && (
+                <div style={{
+                  marginTop: '8px', padding: '10px 12px', borderRadius: '6px', fontSize: '12px', lineHeight: 1.45,
+                  background: addKeyCheck.ok ? '#ecfdf5' : '#fef2f2',
+                  border: `1px solid ${addKeyCheck.ok ? '#a7f3d0' : '#fecaca'}`,
+                  color: addKeyCheck.ok ? '#065f46' : '#7f1d1d',
+                }}>
+                  <strong>{addKeyCheck.ok ? '✓ ' : '✗ '}{addKeyCheck.message}</strong>
+                  {!addKeyCheck.ok && addKeyCheck.fix && (
+                    <div style={{ marginTop: '6px' }}><strong>How to fix:</strong> {addKeyCheck.fix}</div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className={styles.formGroup}>
@@ -1142,12 +1239,12 @@ export default function ClientKeysPage() {
             </div>
 
             <div className={styles.modalActions}>
-              <button className={styles.cancelButton} onClick={() => setShowAddModal(false)}>
+              <button className={styles.cancelButton} onClick={resetAddModal}>
                 Cancel
               </button>
               <button
                 className={styles.saveButton}
-                onClick={handleAddKey}
+                onClick={() => handleAddKey(false)}
                 disabled={!formData.client_id || !formData.publisher_key}
               >
                 Save API Key
