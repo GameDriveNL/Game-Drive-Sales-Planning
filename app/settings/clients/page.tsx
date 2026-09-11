@@ -45,6 +45,7 @@ interface Client {
   email: string | null
   contact_person?: string | null
   steam_api_key: string | null
+  steam_partner_id?: string | null
   sales_planning_enabled: boolean
   pr_tracking_enabled: boolean
   created_at: string
@@ -75,7 +76,7 @@ export default function SettingsClientsPage() {
   const [actionMessage, setActionMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null)
 
   // Client form
-  const [clientForm, setClientForm] = useState({ name: '', email: '', contact_person: '', sales_planning_enabled: true, pr_tracking_enabled: false })
+  const [clientForm, setClientForm] = useState({ name: '', email: '', contact_person: '', steam_partner_id: '', sales_planning_enabled: true, pr_tracking_enabled: false })
 
   // Game form
   const [gameForm, setGameForm] = useState({ name: '', steam_app_id: '', client_id: '', sales_planning_enabled: true, pr_tracking_enabled: false, pr_coverage_until: '', auto_base_product: true, launch_date: '', auto_calendar: true })
@@ -129,7 +130,7 @@ export default function SettingsClientsPage() {
   // ── Client CRUD ──────────────────────────────────────────────
 
   const openAddClient = () => {
-    setClientForm({ name: '', email: '', contact_person: '', sales_planning_enabled: true, pr_tracking_enabled: false })
+    setClientForm({ name: '', email: '', contact_person: '', steam_partner_id: '', sales_planning_enabled: true, pr_tracking_enabled: false })
     setModalType('addClient')
   }
 
@@ -138,6 +139,7 @@ export default function SettingsClientsPage() {
       name: client.name,
       email: client.email || '',
       contact_person: client.contact_person || '',
+      steam_partner_id: client.steam_partner_id || '',
       sales_planning_enabled: client.sales_planning_enabled,
       pr_tracking_enabled: client.pr_tracking_enabled
     })
@@ -157,6 +159,7 @@ export default function SettingsClientsPage() {
             name: clientForm.name.trim(),
             email: clientForm.email.trim() || null,
             contact_person: clientForm.contact_person.trim() || null,
+            steam_partner_id: clientForm.steam_partner_id.trim() || null,
             sales_planning_enabled: clientForm.sales_planning_enabled,
             pr_tracking_enabled: clientForm.pr_tracking_enabled
           })
@@ -172,6 +175,7 @@ export default function SettingsClientsPage() {
             name: clientForm.name.trim(),
             email: clientForm.email.trim() || null,
             contact_person: clientForm.contact_person.trim() || null,
+            steam_partner_id: clientForm.steam_partner_id.trim() || null,
             sales_planning_enabled: clientForm.sales_planning_enabled,
             pr_tracking_enabled: clientForm.pr_tracking_enabled
           })
@@ -978,6 +982,14 @@ export default function SettingsClientsPage() {
             <div className={styles.formField}>
               <label>Contact Person (optional)</label>
               <input type="text" value={clientForm.contact_person} onChange={e => setClientForm({ ...clientForm, contact_person: e.target.value })} placeholder="John Doe" />
+            </div>
+            <div className={styles.formField}>
+              <label>Steam Partner ID (optional)</label>
+              <input type="text" inputMode="numeric" value={clientForm.steam_partner_id} onChange={e => setClientForm({ ...clientForm, steam_partner_id: e.target.value.replace(/[^0-9]/g, '') })} placeholder="e.g. 352871" />
+              <p className={styles.checkboxHint}>
+                The client&apos;s Steamworks partner number. Filled in automatically after the first sync with their own key.
+                Needed when the client shares its apps with Game Drive&apos;s Steamworks account instead of giving us a key: financial rows arrive tagged with this number and are routed here.
+              </p>
             </div>
             <div className={styles.checkboxField}>
               <label className={styles.checkboxLabel}>

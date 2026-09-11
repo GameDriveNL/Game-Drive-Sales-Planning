@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { serverSupabase as supabase } from '@/lib/supabase';
 import { verifyCronAuth } from '@/lib/cron-auth';
 import { checkSteamFinancialKey, describeKeyFailure } from '@/lib/steam-key-check';
+import { loadPartnerClientMap, clientForPartner, learnOwnPartnerId, type PartnerClientMap } from '@/lib/steam-partner-routing';
 
 const STEAM_PARTNER_API = 'https://partner.steam-api.com';
 const DOMO_AUTH_URL = 'https://api.domo.com/oauth/token';
@@ -191,16 +192,27 @@ async function processSingleJob(job: any): Promise<Record<string, unknown>> {
     let totalSkipped = job.rows_skipped || 0;
     const errors: string[] = [];
 
+    // Route rows by Steam partnerid so view-granted data (a client that shared
+    // its apps with Game Drive's own partner account) lands under that client.
+    const partnerMap = await loadPartnerClientMap(supabase);
+    const learnState = { done: Array.from(partnerMap.values()).includes(job.client_id) };
+    const unmappedPartners = new Set<string>();
+
     for (const dateStr of datesToProcess) {
       try {
-        const result = await processSingleDate(financialApiKey, dateStr, job.client_id);
+        const result = await processSingleDate(financialApiKey, dateStr, job.client_id, partnerMap, learnState);
         totalImported += result.imported;
         totalSkipped += result.skipped;
+        result.unmappedPartnerIds.forEach(p => unmappedPartners.add(p));
       } catch (error) {
         const errorMsg = `Error processing ${dateStr}: ${error instanceof Error ? error.message : String(error)}`;
         console.error(`[Cron] ${errorMsg}`);
         errors.push(errorMsg);
       }
+    }
+
+    if (unmappedPartners.size > 0) {
+      errors.push(`Unmapped Steam partner id(s) ${Array.from(unmappedPartners).join(', ')}: rows stored under this client. Set the Steam Partner ID on the owning client in Settings → Clients and re-sync.`);
     }
 
     const newDatesProcessed = alreadyProcessed + datesToProcess.length;
@@ -261,7 +273,7 @@ async function getChangedDatesForPartner(
   highwatermark: string
 ): Promise<{ success: boolean; dates?: string[]; highwatermark?: string; error?: string }> {
   try {
-    const url = `${STEAM_PARTNER_API}/IPartnerFinancialsService/GetChangedDatesForPartner/v001/?key=${apiKey}&highwatermark=${highwatermark}`;
+    const url = `${STEAM_PARTNER_API}/IPartnerFinancialsService/GetChangedDatesForPartner/v001/?key=${apiKey}&highwatermark=${highwatermark}&include_view_grants=1`;
     const response = await fetch(url);
 
     if (!response.ok) {
@@ -296,10 +308,13 @@ async function getChangedDatesForPartner(
 async function processSingleDate(
   apiKey: string,
   dateStr: string,
-  clientId: string
-): Promise<{ imported: number; skipped: number }> {
+  clientId: string,
+  partnerMap: PartnerClientMap,
+  learnState: { done: boolean }
+): Promise<{ imported: number; skipped: number; unmappedPartnerIds: Set<string> }> {
+  const unmappedPartnerIds = new Set<string>();
   // Use GetDetailedSales endpoint (same as the working sync route)
-  const url = `${STEAM_PARTNER_API}/IPartnerFinancialsService/GetDetailedSales/v001/?key=${apiKey}&date=${dateStr}&highwatermark_id=0`;
+  const url = `${STEAM_PARTNER_API}/IPartnerFinancialsService/GetDetailedSales/v001/?key=${apiKey}&date=${dateStr}&highwatermark_id=0&include_view_grants=1`;
   console.log(`[Cron] Fetching data for date: ${dateStr}`);
   console.log(`[Cron] API URL: ${url.replace(apiKey, 'REDACTED')}`);
   const response = await fetch(url);
@@ -314,6 +329,10 @@ async function processSingleDate(
   const data = await response.json();
   const results = data.response?.results || [];
   console.log(`[Cron] Date ${dateStr}: Found ${results.length} sales records`);
+
+  if (!learnState.done && results.length > 0) {
+    learnState.done = !!(await learnOwnPartnerId(supabase, clientId, results, partnerMap));
+  }
 
   // Create metadata maps from response
   const packages = new Map();
@@ -343,8 +362,13 @@ async function processSingleDate(
         ? `pkg_${result.packageid}`
         : null
 
+    const routed = clientForPartner(result.partnerid, partnerMap, clientId);
+    if (!routed.mapped && result.partnerid !== null && result.partnerid !== undefined) {
+      unmappedPartnerIds.add(String(result.partnerid));
+    }
+
     const salesData = {
-      client_id: clientId,
+      client_id: routed.clientId,
       sale_date: result.date.replace(/\//g, '-'),
       app_id: appIdKey,
       app_name: productName || null,
@@ -383,10 +407,10 @@ async function processSingleDate(
 
   if (error) {
     console.error(`[Cron] Error batch upserting:`, error);
-    return { imported: 0, skipped: results.length };
+    return { imported: 0, skipped: results.length, unmappedPartnerIds };
   }
 
-  return { imported: count || salesDataBatch.length, skipped: 0 };
+  return { imported: count || salesDataBatch.length, skipped: 0, unmappedPartnerIds };
 }
 
 // ============================================================

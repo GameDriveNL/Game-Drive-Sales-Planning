@@ -2,12 +2,15 @@ import { NextResponse } from 'next/server';
 import { serverSupabase as supabase } from '@/lib/supabase';
 import { matchProducts, ExternalProduct } from '@/lib/product-matching';
 import { checkSteamFinancialKey, describeKeyFailure } from '@/lib/steam-key-check';
+import { loadPartnerClientMap, partitionRowsByClient, learnOwnPartnerId } from '@/lib/steam-partner-routing';
 
 // Steam Partner API endpoint for financial data
 const STEAM_PARTNER_API = 'https://partner.steam-api.com';
 
 interface SteamDetailedSalesResult {
   partnerid: string;
+  /** Set only when this row is visible through a view grant from another partner. */
+  view_grant_partnerid?: string;
   date: string;
   line_item_type: string;
   packageid?: number;
@@ -183,72 +186,54 @@ export async function POST(request: Request) {
     let totalBundles = 0;
     const errors: string[] = [];
 
+    // Rows are routed by Steam partnerid: a key may return other partners'
+    // data through view grants (Application Management Sharing), and those
+    // rows belong to whichever client owns that partner id.
+    const partnerMap = await loadPartnerClientMap(supabase);
+    const touchedClients = new Set<string>([client_id]);
+    const unmappedPartners = new Set<string>();
+    let learnedOwnPartner = Array.from(partnerMap.values()).includes(client_id);
+
     for (const date of datesToSync) {
       const salesResult = await getDetailedSalesForDate(financialApiKey, date, app_id);
 
       if (salesResult.success && salesResult.results) {
-        // Store the sales data in our database
-        const storeResult = await storeSalesData(client_id, salesResult.results, salesResult.metadata);
-        totalImported += storeResult.imported;
-        totalSkipped += storeResult.skipped;
-        // Also extract and store any bundle line items into steam_bundles.
-        // Non-fatal: a bundle write failure must not abort the sales sync.
-        try {
-          const bundleResult = await storeBundleData(client_id, salesResult.results, salesResult.metadata);
-          totalBundles += bundleResult.imported;
-        } catch (bundleErr) {
-          errors.push(`${date} (bundles): ${bundleErr instanceof Error ? bundleErr.message : String(bundleErr)}`);
+        if (!learnedOwnPartner) {
+          learnedOwnPartner = !!(await learnOwnPartnerId(supabase, client_id, salesResult.results, partnerMap));
+        }
+        const { groups, unmappedPartnerIds } = partitionRowsByClient(salesResult.results, partnerMap, client_id);
+        unmappedPartnerIds.forEach(p => unmappedPartners.add(p));
+
+        for (const [targetClientId, rows] of Array.from(groups.entries())) {
+          touchedClients.add(targetClientId);
+          // Store the sales data in our database
+          const storeResult = await storeSalesData(targetClientId, rows, salesResult.metadata);
+          totalImported += storeResult.imported;
+          totalSkipped += storeResult.skipped;
+          // Also extract and store any bundle line items into steam_bundles.
+          // Non-fatal: a bundle write failure must not abort the sales sync.
+          try {
+            const bundleResult = await storeBundleData(targetClientId, rows, salesResult.metadata);
+            totalBundles += bundleResult.imported;
+          } catch (bundleErr) {
+            errors.push(`${date} (bundles): ${bundleErr instanceof Error ? bundleErr.message : String(bundleErr)}`);
+          }
         }
       } else if (salesResult.error) {
         errors.push(`${date}: ${salesResult.error}`);
       }
     }
 
-    // Run product matching on synced data
+    if (unmappedPartners.size > 0) {
+      const list = Array.from(unmappedPartners).join(', ');
+      console.warn(`[Steam Sync] Rows for unmapped Steam partner id(s) ${list} were stored under ${clientData?.name}. Set "Steam Partner ID" on the owning client in Settings → Clients.`);
+      errors.push(`Unmapped Steam partner id(s) ${list}: rows stored under ${clientData?.name}. Set the Steam Partner ID on the owning client in Settings → Clients and re-sync.`);
+    }
+
+    // Run product matching on synced data for every client that received rows
     let newUnmatched = 0;
-    try {
-      // Collect unique product names from performance_metrics that don't have a product_id yet
-      const { data: unmatchedRows } = await supabase
-        .from('performance_metrics')
-        .select('product_name, steam_package_id, steam_app_id')
-        .eq('client_id', client_id)
-        .is('product_id', null)
-        .not('product_name', 'eq', 'Unknown');
-
-      if (unmatchedRows && unmatchedRows.length > 0) {
-        // Deduplicate by product_name
-        const seen = new Set<string>();
-        const externalProducts: ExternalProduct[] = [];
-        for (const row of unmatchedRows) {
-          if (!seen.has(row.product_name)) {
-            seen.add(row.product_name);
-            externalProducts.push({
-              platform: 'steam',
-              external_product_name: row.product_name,
-              steam_package_id: row.steam_package_id || undefined,
-              steam_app_id: row.steam_app_id || undefined,
-              client_id,
-            });
-          }
-        }
-
-        const matchResults = await matchProducts(supabase, externalProducts);
-        newUnmatched = matchResults.filter(r => r.match_type === 'no_match' && r.is_new).length;
-
-        // For auto-confirmed matches, backfill the rows we just inserted
-        for (const result of matchResults) {
-          if (result.matched_product_id && result.match_type !== 'no_match') {
-            await supabase
-              .from('performance_metrics')
-              .update({ product_id: result.matched_product_id, game_id: result.matched_game_id })
-              .eq('client_id', client_id)
-              .eq('product_name', result.external_product.external_product_name)
-              .is('product_id', null);
-          }
-        }
-      }
-    } catch (matchError) {
-      console.error('[Steam Sync] Product matching error (non-fatal):', matchError);
+    for (const touched of Array.from(touchedClients)) {
+      newUnmatched += await runProductMatching(touched);
     }
 
     // Update highwatermark for next sync
@@ -290,6 +275,8 @@ export async function POST(request: Request) {
       newUnmatched,
       errors: errors.length > 0 ? errors : undefined,
       clientName: clientData?.name,
+      clientsUpdated: touchedClients.size,
+      unmappedPartnerIds: unmappedPartners.size > 0 ? Array.from(unmappedPartners) : undefined,
       debug: {
         apiCalled: true,
         totalDatesFromApi,
@@ -361,13 +348,66 @@ export async function GET(request: Request) {
   }
 }
 
+// Match freshly imported performance_metrics rows to products for one client.
+// Returns how many external products were newly created as unmatched.
+async function runProductMatching(clientId: string): Promise<number> {
+  try {
+    // Collect unique product names from performance_metrics that don't have a product_id yet
+    const { data: unmatchedRows } = await supabase
+      .from('performance_metrics')
+      .select('product_name, steam_package_id, steam_app_id')
+      .eq('client_id', clientId)
+      .is('product_id', null)
+      .not('product_name', 'eq', 'Unknown');
+
+    if (!unmatchedRows || unmatchedRows.length === 0) return 0;
+
+    // Deduplicate by product_name
+    const seen = new Set<string>();
+    const externalProducts: ExternalProduct[] = [];
+    for (const row of unmatchedRows) {
+      if (!seen.has(row.product_name)) {
+        seen.add(row.product_name);
+        externalProducts.push({
+          platform: 'steam',
+          external_product_name: row.product_name,
+          steam_package_id: row.steam_package_id || undefined,
+          steam_app_id: row.steam_app_id || undefined,
+          client_id: clientId,
+        });
+      }
+    }
+
+    const matchResults = await matchProducts(supabase, externalProducts);
+
+    // For auto-confirmed matches, backfill the rows we just inserted
+    for (const result of matchResults) {
+      if (result.matched_product_id && result.match_type !== 'no_match') {
+        await supabase
+          .from('performance_metrics')
+          .update({ product_id: result.matched_product_id, game_id: result.matched_game_id })
+          .eq('client_id', clientId)
+          .eq('product_name', result.external_product.external_product_name)
+          .is('product_id', null);
+      }
+    }
+
+    return matchResults.filter(r => r.match_type === 'no_match' && r.is_new).length;
+  } catch (matchError) {
+    console.error('[Steam Sync] Product matching error (non-fatal):', matchError);
+    return 0;
+  }
+}
+
 // Get changed dates from IPartnerFinancialsService
 async function getChangedDatesForPartner(
   apiKey: string,
   highwatermark: string
 ): Promise<{ success: boolean; dates?: string[]; highwatermark?: string; error?: string; rawResponse?: unknown }> {
   try {
-    const url = `${STEAM_PARTNER_API}/IPartnerFinancialsService/GetChangedDatesForPartner/v001/?key=${apiKey}&highwatermark=${highwatermark}`;
+    // include_view_grants=1: also return dates for partners that shared their
+    // apps with this key's partner account (harmless for a client's own key).
+    const url = `${STEAM_PARTNER_API}/IPartnerFinancialsService/GetChangedDatesForPartner/v001/?key=${apiKey}&highwatermark=${highwatermark}&include_view_grants=1`;
 
     console.log(`[Steam API] Calling: ${url.replace(apiKey, 'REDACTED')}`);
 
@@ -460,8 +500,8 @@ async function getDetailedSalesForDate(
 
     // Paginate through all results for this date
     while (hasMoreData) {
-      const url = `${STEAM_PARTNER_API}/IPartnerFinancialsService/GetDetailedSales/v001/?key=${apiKey}&date=${date}&highwatermark_id=${highwatermarkId}`;
-      
+      const url = `${STEAM_PARTNER_API}/IPartnerFinancialsService/GetDetailedSales/v001/?key=${apiKey}&date=${date}&highwatermark_id=${highwatermarkId}&include_view_grants=1`;
+
       const response = await fetch(url);
       
       if (!response.ok) {

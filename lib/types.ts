@@ -80,6 +80,8 @@ export interface Client {
   email?: string
   contact_person?: string
   steam_api_key?: string
+  /** Steamworks partner (publisher account) ID — used to route view-granted financial rows. */
+  steam_partner_id?: string | null
   sales_planning_enabled: boolean
   pr_tracking_enabled: boolean
   created_at: string

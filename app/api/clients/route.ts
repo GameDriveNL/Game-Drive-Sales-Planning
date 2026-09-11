@@ -7,7 +7,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const include = searchParams.get('include');
 
-    let selectQuery = 'id, name, email, contact_person, steam_api_key, sales_planning_enabled, pr_tracking_enabled, created_at';
+    let selectQuery = 'id, name, email, contact_person, steam_api_key, steam_partner_id, sales_planning_enabled, pr_tracking_enabled, created_at';
     if (include === 'nested') {
       // Include product_platforms so the settings page can show each product's
       // assigned platforms — without this nested join it always renders
@@ -36,7 +36,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { name, email, contact_person, sales_planning_enabled, pr_tracking_enabled } = body;
+    const { name, email, contact_person, steam_partner_id, sales_planning_enabled, pr_tracking_enabled } = body;
 
     if (!name) {
       return NextResponse.json(
@@ -51,6 +51,7 @@ export async function POST(request: Request) {
         name,
         email: email || null,
         contact_person: contact_person || null,
+        steam_partner_id: steam_partner_id ? String(steam_partner_id).trim() : null,
         sales_planning_enabled: sales_planning_enabled ?? true,
         pr_tracking_enabled: pr_tracking_enabled ?? false
       })
@@ -77,6 +78,11 @@ export async function PUT(request: Request) {
 
     if (!id) {
       return NextResponse.json({ error: 'Client id is required' }, { status: 400 });
+    }
+
+    if ('steam_partner_id' in updates) {
+      const v = updates.steam_partner_id;
+      updates.steam_partner_id = v === null || v === undefined || String(v).trim() === '' ? null : String(v).trim();
     }
 
     const { data, error } = await supabase
