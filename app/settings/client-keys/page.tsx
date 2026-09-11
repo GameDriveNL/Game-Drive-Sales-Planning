@@ -956,7 +956,8 @@ export default function ClientKeysPage() {
           <li>Click <strong>&quot;Create Financial API Group&quot;</strong> (or select existing one)</li>
           <li>The <strong>Financial Web API Key</strong> will be displayed on the group page</li>
           <li>Copy this key and paste it in the &quot;Financial Web API Key&quot; field above</li>
-          <li>Optional: Add whitelisted IPs for extra security</li>
+          <li><strong>Do not</strong> add anything under &quot;Allowed IP addresses&quot; on the key. Adding even one address blocks every other caller with a 403, and our servers have no fixed address. If a client already added one, it must be removed.</li>
+          <li>Click <strong>Test key with Steam</strong> in the Add Key form — it tells you immediately whether Steam accepts the key and whether it has financial access.</li>
         </ol>
         <p style={{ marginTop: '16px', padding: '12px', background: '#dbeafe', borderRadius: '6px', fontSize: '14px' }}>
           <strong>New in June 2025:</strong> Steam now offers the <a href="https://steamcommunity.com/groups/steamworks/announcements/detail/532096678169150062" target="_blank" rel="noopener noreferrer" style={{ color: '#1b2838' }}>IPartnerFinancialsService API</a> for programmatic access to sales data including revenue, units, and regional breakdown.
