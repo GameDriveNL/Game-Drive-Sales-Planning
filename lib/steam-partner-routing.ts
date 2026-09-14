@@ -104,3 +104,79 @@ export async function learnOwnPartnerId(
   console.log(`[Steam] Learned Steam partner id ${partnerId} for client ${clientId}`)
   return partnerId
 }
+
+/**
+ * Identify unmapped partner ids from our own game catalog instead of asking a
+ * human to type them into Settings → Clients. Every financial row carries an
+ * app id alongside its partner id; if that app id is already recorded on
+ * exactly one client's game, that client must own the partner id. Learns at
+ * most once per partner id per call, never overwrites an existing
+ * `steam_partner_id`, and never assigns a partner id to a client whose
+ * catalog matches ambiguously (rows for that partner id stay unmapped and
+ * keep surfacing in the "unmapped partner id" warning until resolved).
+ */
+export async function learnPartnerIdsFromCatalog(
+  supabase: SupabaseClient,
+  rows: Array<{
+    partnerid?: string | number | null
+    appid?: string | number | null
+    primary_appid?: string | number | null
+  }>,
+  map: PartnerClientMap
+): Promise<string[]> {
+  const candidatesByPartner = new Map<string, Set<string>>()
+  for (const r of rows) {
+    if (r.partnerid === null || r.partnerid === undefined) continue
+    const partnerId = String(r.partnerid)
+    if (map.has(partnerId)) continue
+    const appId = r.primary_appid ?? r.appid
+    if (appId === null || appId === undefined) continue
+    if (!candidatesByPartner.has(partnerId)) candidatesByPartner.set(partnerId, new Set())
+    candidatesByPartner.get(partnerId)!.add(String(appId))
+  }
+  if (candidatesByPartner.size === 0) return []
+
+  const allAppIds = Array.from(new Set(Array.from(candidatesByPartner.values()).flatMap(s => Array.from(s))))
+  const { data: games } = await supabase
+    .from('games')
+    .select('client_id, steam_app_id')
+    .in('steam_app_id', allAppIds)
+  const clientByAppId = new Map<string, string>()
+  for (const g of games || []) {
+    if (g.steam_app_id) clientByAppId.set(String(g.steam_app_id), g.client_id)
+  }
+
+  const mappedClientIds = new Set(map.values())
+  const learned: string[] = []
+  for (const [partnerId, appIds] of Array.from(candidatesByPartner.entries())) {
+    const matchedClients = new Set<string>()
+    for (const appId of Array.from(appIds)) {
+      const clientId = clientByAppId.get(appId)
+      if (clientId) matchedClients.add(clientId)
+    }
+    if (matchedClients.size !== 1) continue // no catalog match, or the app id is ambiguous
+    const clientId = Array.from(matchedClients)[0]
+    if (mappedClientIds.has(clientId)) continue // client already owns a different partner id — don't double-assign
+
+    const { data: client } = await supabase
+      .from('clients')
+      .select('steam_partner_id')
+      .eq('id', clientId)
+      .single()
+    if (client?.steam_partner_id) continue // set since the map was loaded — don't overwrite
+
+    const { error } = await supabase
+      .from('clients')
+      .update({ steam_partner_id: partnerId })
+      .eq('id', clientId)
+    if (error) {
+      console.warn(`[Steam] Could not record partner id ${partnerId} for client ${clientId}: ${error.message}`)
+      continue
+    }
+    map.set(partnerId, clientId)
+    mappedClientIds.add(clientId)
+    learned.push(partnerId)
+    console.log(`[Steam] Learned Steam partner id ${partnerId} for client ${clientId} from game catalog match`)
+  }
+  return learned
+}

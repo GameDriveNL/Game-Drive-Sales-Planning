@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { serverSupabase as supabase } from '@/lib/supabase';
 import { matchProducts, ExternalProduct } from '@/lib/product-matching';
 import { checkSteamFinancialKey, describeKeyFailure } from '@/lib/steam-key-check';
-import { loadPartnerClientMap, partitionRowsByClient, learnOwnPartnerId } from '@/lib/steam-partner-routing';
+import { loadPartnerClientMap, partitionRowsByClient, learnOwnPartnerId, learnPartnerIdsFromCatalog } from '@/lib/steam-partner-routing';
 
 // Steam Partner API endpoint for financial data
 const STEAM_PARTNER_API = 'https://partner.steam-api.com';
@@ -201,6 +201,7 @@ export async function POST(request: Request) {
         if (!learnedOwnPartner) {
           learnedOwnPartner = !!(await learnOwnPartnerId(supabase, client_id, salesResult.results, partnerMap));
         }
+        await learnPartnerIdsFromCatalog(supabase, salesResult.results, partnerMap);
         const { groups, unmappedPartnerIds } = partitionRowsByClient(salesResult.results, partnerMap, client_id);
         unmappedPartnerIds.forEach(p => unmappedPartners.add(p));
 

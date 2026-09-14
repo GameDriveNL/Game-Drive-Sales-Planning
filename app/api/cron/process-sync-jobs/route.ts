@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { serverSupabase as supabase } from '@/lib/supabase';
 import { verifyCronAuth } from '@/lib/cron-auth';
 import { checkSteamFinancialKey, describeKeyFailure } from '@/lib/steam-key-check';
-import { loadPartnerClientMap, clientForPartner, learnOwnPartnerId, type PartnerClientMap } from '@/lib/steam-partner-routing';
+import { loadPartnerClientMap, clientForPartner, learnOwnPartnerId, learnPartnerIdsFromCatalog, type PartnerClientMap } from '@/lib/steam-partner-routing';
 
 const STEAM_PARTNER_API = 'https://partner.steam-api.com';
 const DOMO_AUTH_URL = 'https://api.domo.com/oauth/token';
@@ -333,6 +333,7 @@ async function processSingleDate(
   if (!learnState.done && results.length > 0) {
     learnState.done = !!(await learnOwnPartnerId(supabase, clientId, results, partnerMap));
   }
+  await learnPartnerIdsFromCatalog(supabase, results, partnerMap);
 
   // Create metadata maps from response
   const packages = new Map();
