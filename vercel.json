@@ -107,6 +107,10 @@
     {
       "path": "/api/cron/audience-enrich",
       "schedule": "30 */4 * * *"
+    },
+    {
+      "path": "/api/cron/steam-wishlist-sync-daily",
+      "schedule": "30 5 * * *"
     }
   ],
   "buildCommand": "next build"
