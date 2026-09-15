@@ -3,6 +3,32 @@ import { getServerSupabase } from '@/lib/supabase'
 
 const STEAM_PARTNER_API = 'https://partner.steam-api.com'
 
+// Game Drive's own Steamworks partner account (see lib/steam-partner-routing.ts).
+// Clients can share "financial view rights" with this account so wishlist data can
+// be pulled without ever needing (or trusting) the client's own key.
+const AGENCY_STEAM_PARTNER_ID = '352871'
+
+async function resolveAgencyApiKey(
+  supabase: ReturnType<typeof getServerSupabase>
+): Promise<string | null> {
+  const { data: agencyClient } = await supabase
+    .from('clients')
+    .select('id')
+    .eq('steam_partner_id', AGENCY_STEAM_PARTNER_ID)
+    .maybeSingle()
+  if (!agencyClient) return null
+
+  const { data: agencyKeyData } = await supabase
+    .from('steam_api_keys')
+    .select('api_key, publisher_key')
+    .eq('client_id', agencyClient.id)
+    .eq('is_active', true)
+    .single()
+  if (!agencyKeyData) return null
+
+  return agencyKeyData.publisher_key || agencyKeyData.api_key || null
+}
+
 interface WishlistReportResponse {
   response: {
     appid: number
@@ -44,26 +70,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'client_id is required' }, { status: 400 })
     }
 
-    // Get the client's Steam Financial API key
-    const { data: keyData, error: keyError } = await supabase
+    // Get the client's own Steam Financial API key, if any — no longer fatal if
+    // missing or broken, since we can fall back to Game Drive's agency key below.
+    const { data: keyData } = await supabase
       .from('steam_api_keys')
       .select('api_key, publisher_key')
       .eq('client_id', client_id)
       .eq('is_active', true)
       .single()
 
-    if (keyError || !keyData) {
+    const ownApiKey = keyData ? (keyData.publisher_key || keyData.api_key || null) : null
+    const agencyApiKey = await resolveAgencyApiKey(supabase)
+
+    if (!ownApiKey && !agencyApiKey) {
       return NextResponse.json({
-        error: 'No active Steam API key found for this client. Configure one in Settings > Steam API.',
+        error: 'No active Steam API key found for this client, and no Game Drive agency key is configured as a fallback. Configure one in Settings > Steam API, or have the client share Steamworks financial view rights with Game Drive’s partner account.',
       }, { status: 404 })
     }
 
-    const apiKey = keyData.publisher_key || keyData.api_key
-    if (!apiKey) {
-      return NextResponse.json({
-        error: 'No Financial Web API Key configured. This is needed for wishlist data.',
-      }, { status: 400 })
-    }
+    // Prefer the client's own key; GetAppWishlistReporting is queried per app id
+    // (not partner-wide), so it falls back to the agency key transparently on a 403
+    // below without needing clients.steam_partner_id to be set at all.
+    let apiKey = ownApiKey || agencyApiKey!
 
     // Get games to sync — either a specific game or all games for this client with steam_app_id
     let gamesToSync: { id: string; name: string; steam_app_id: string }[] = []
@@ -136,13 +164,22 @@ export async function POST(request: NextRequest) {
 
       for (const date of datesToSync) {
         try {
-          const url = `${STEAM_PARTNER_API}/IPartnerFinancialsService/GetAppWishlistReporting/v001/?key=${apiKey}&date=${date}&appid=${game.steam_app_id}`
+          const fetchWishlist = (key: string) =>
+            fetch(`${STEAM_PARTNER_API}/IPartnerFinancialsService/GetAppWishlistReporting/v001/?key=${key}&date=${date}&appid=${game.steam_app_id}`)
 
-          const response = await fetch(url)
+          let response = await fetchWishlist(apiKey)
+
+          if (response.status === 403 && agencyApiKey && apiKey !== agencyApiKey) {
+            // The active key can't see this app (broken, revoked, no financial group,
+            // etc). Switch to Game Drive's agency key for the rest of this sync — it
+            // sees any app the client has shared Steamworks financial view rights with.
+            apiKey = agencyApiKey
+            response = await fetchWishlist(apiKey)
+          }
 
           if (!response.ok) {
             if (response.status === 403) {
-              errors.push(`${game.name}: Access denied (403). Financial API key may not have wishlist access.`)
+              errors.push(`${game.name}: Access denied (403), even via Game Drive's agency key. The client needs to share Steamworks financial view rights with Game Drive's partner account (${AGENCY_STEAM_PARTNER_ID}).`)
               break // No point trying more dates for this game
             }
             // Skip individual date errors silently (e.g. no data for that date)
@@ -256,13 +293,10 @@ export async function GET(request: NextRequest) {
       .eq('is_active', true)
       .single()
 
-    if (!keyData) {
-      return NextResponse.json({ available: false, reason: 'No Steam API key configured' })
-    }
-
-    const apiKey = keyData.publisher_key || keyData.api_key
+    const agencyApiKey = await resolveAgencyApiKey(supabase)
+    let apiKey = (keyData && (keyData.publisher_key || keyData.api_key)) || agencyApiKey
     if (!apiKey) {
-      return NextResponse.json({ available: false, reason: 'No Financial Web API Key configured' })
+      return NextResponse.json({ available: false, reason: 'No Financial Web API Key configured, and no Game Drive agency key available as a fallback' })
     }
 
     // Get a game with steam_app_id to test
@@ -282,8 +316,14 @@ export async function GET(request: NextRequest) {
     yesterday.setDate(yesterday.getDate() - 1)
     const testDate = yesterday.toISOString().split('T')[0]
 
-    const url = `${STEAM_PARTNER_API}/IPartnerFinancialsService/GetAppWishlistReporting/v001/?key=${apiKey}&date=${testDate}&appid=${games[0].steam_app_id}`
-    const response = await fetch(url)
+    const testUrl = (key: string) =>
+      `${STEAM_PARTNER_API}/IPartnerFinancialsService/GetAppWishlistReporting/v001/?key=${key}&date=${testDate}&appid=${games[0].steam_app_id}`
+    let response = await fetch(testUrl(apiKey))
+
+    if (response.status === 403 && agencyApiKey && apiKey !== agencyApiKey) {
+      apiKey = agencyApiKey
+      response = await fetch(testUrl(apiKey))
+    }
 
     if (response.ok) {
       return NextResponse.json({ available: true, message: 'Wishlist API is accessible' })
