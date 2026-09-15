@@ -159,25 +159,33 @@ export async function runWishlistSync(
           fetch(`${STEAM_PARTNER_API}/IPartnerFinancialsService/GetAppWishlistReporting/v001/?key=${key}&date=${date}&appid=${game.steam_app_id}`)
 
         let response = await fetchWishlist(apiKey)
+        let data: WishlistReportResponse | null = response.ok ? await response.json() : null
+        // Steam doesn't 403 an app the key can't see on this endpoint — it returns
+        // 200 with an empty `{"response":{}}` body instead. Treat that as "no
+        // access" too, or a permission gap silently looks like "no wishlist data".
+        let noAccess = response.status === 403 || (response.ok && !data?.response?.appid)
 
-        if (response.status === 403 && agencyApiKey && apiKey !== agencyApiKey) {
+        if (noAccess && agencyApiKey && apiKey !== agencyApiKey) {
           // The active key can't see this app (broken, revoked, no financial group,
-          // etc). Switch to Game Drive's agency key for the rest of this sync — it
-          // sees any app the client has shared Steamworks financial view rights with.
+          // no shared view rights, etc). Switch to Game Drive's agency key for the
+          // rest of this sync — it sees any app the client has shared Steamworks
+          // financial view rights with.
           apiKey = agencyApiKey
           response = await fetchWishlist(apiKey)
+          data = response.ok ? await response.json() : null
+          noAccess = response.status === 403 || (response.ok && !data?.response?.appid)
         }
 
-        if (!response.ok) {
-          if (response.status === 403) {
-            errors.push(`${game.name}: Access denied (403), even via Game Drive's agency key. The client needs to share Steamworks financial view rights with Game Drive's partner account (${AGENCY_STEAM_PARTNER_ID}).`)
-            break // No point trying more dates for this game
-          }
+        if (noAccess) {
+          errors.push(`${game.name}: No wishlist access, even via Game Drive's agency key (status ${response.status}). The client needs to share Steamworks financial view rights with Game Drive's partner account (${AGENCY_STEAM_PARTNER_ID}).`)
+          break // No point trying more dates for this game
+        }
+
+        if (!response.ok || !data) {
           // Skip individual date errors silently (e.g. no data for that date)
           continue
         }
 
-        const data: WishlistReportResponse = await response.json()
         const summary = data.response?.wishlist_summary
 
         // Capture app_min_date — the earliest date Steam has wishlist data for this app.
