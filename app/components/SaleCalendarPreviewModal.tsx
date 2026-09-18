@@ -53,7 +53,7 @@ export default function SaleCalendarPreviewModal({
   const [preSelectedStrategy, setPreSelectedStrategy] = useState(0) // 0 = Maximize, 1 = Events Only
 
   // Preferred start day (0=Sun, 1=Mon, ... 4=Thu, 6=Sat)
-  const [preferredStartDay, setPreferredStartDay] = useState(4) // Default: Thursday
+  const [preferredStartDay, setPreferredStartDay] = useState<number | undefined>(undefined) // Default: no preference — assume as few gaps as possible
 
   // Timeframe options
   type TimeframeMode = 'months' | 'custom'
@@ -424,12 +424,14 @@ export default function SaleCalendarPreviewModal({
                 <h3>Preferred Start Day</h3>
                 <p className={styles.startDayHint}>
                   Custom sales will start on this day of the week. Event sales keep their fixed dates.
+                  Leave as "No preference" to pack sales with as few gaps as possible.
                 </p>
                 <select
-                  value={preferredStartDay}
-                  onChange={(e) => setPreferredStartDay(Number(e.target.value))}
+                  value={preferredStartDay === undefined ? '' : preferredStartDay}
+                  onChange={(e) => setPreferredStartDay(e.target.value === '' ? undefined : Number(e.target.value))}
                   className={styles.startDaySelect}
                 >
+                  <option value="">No preference (fewest gaps)</option>
                   {dayNames.map(day => (
                     <option key={day.value} value={day.value}>{day.label}</option>
                   ))}
