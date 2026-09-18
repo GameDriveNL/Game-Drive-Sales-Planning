@@ -1067,6 +1067,9 @@ ${social && social.total_posts > 0 ? `
                 {reportData?.wishlist && reportData.wishlist.total_additions > 0 && (
                   <div style={breakCard}>
                     <div style={breakTitle}>Wishlist Performance</div>
+                    <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '8px', lineHeight: 1.4 }}>
+                      Steam only reports wishlist counts at the game level, not per individual DLC/edition — figures below are game-wide.
+                    </div>
                     <div style={breakItem}>
                       <span style={{ color: '#475569' }}>Additions</span>
                       <span style={{ fontWeight: 600, color: '#16a34a' }}>+{formatNumber(reportData.wishlist.total_additions)}</span>
