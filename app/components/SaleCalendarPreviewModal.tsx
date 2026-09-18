@@ -86,7 +86,7 @@ export default function SaleCalendarPreviewModal({
       setStep('config')
       setVariations([])
       setPreSelectedStrategy(0)
-      setPreferredStartDay(4) // Reset to Thursday
+      setPreferredStartDay(undefined) // Reset to no preference (fewest gaps)
       setTimeframeMode('months')
       setMonthCount(12)
       setCustomEndDate('')
