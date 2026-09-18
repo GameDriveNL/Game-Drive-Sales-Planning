@@ -54,9 +54,10 @@ interface WishlistData {
   game_breakdown: { name: string; additions: number; deletions: number; purchases: number }[]
 }
 
+interface EventAnnotation { id: string; game_id: string; event_type: string; event_date: string; outlet_or_source: string | null; notes: string | null }
 interface ReportData {
   sales?: SalesData; coverage?: CoverageData; social?: SocialData; wishlist?: WishlistData
-  annotations: Annotation[]; client: { id: string; name: string } | null
+  annotations: Annotation[]; eventAnnotations?: EventAnnotation[]; client: { id: string; name: string } | null
   game?: { id: string; name: string } | null
 }
 
@@ -942,14 +943,25 @@ ${social && social.total_posts > 0 ? `
                 }
                 const hasPR = Object.keys(coverageDates).length > 0
 
+                // Build event-annotation date map (sale start, trailer release, etc.)
+                const eventDates: Record<string, EventAnnotation[]> = {}
+                for (const ev of (reportData?.eventAnnotations || [])) {
+                  if (!ev.event_date) continue
+                  const d = String(ev.event_date).split('T')[0]
+                  if (!eventDates[d]) eventDates[d] = []
+                  eventDates[d].push(ev)
+                }
+                const hasEvents = Object.keys(eventDates).length > 0
+
                 return (
                   <div style={{ ...cardStyle, marginBottom: '24px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                       <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#334155' }}>Revenue Over Period</h3>
-                      {hasPR && (
+                      {(hasPR || hasEvents) && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#64748b' }}>
                           <span style={{ display: 'inline-block', width: '10px', height: '2px', background: '#d22939', verticalAlign: 'middle' }}></span> Revenue
-                          <span style={{ marginLeft: '8px', display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', background: '#3b82f6', verticalAlign: 'middle' }}></span> PR Coverage
+                          {hasPR && <><span style={{ marginLeft: '8px', display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', background: '#3b82f6', verticalAlign: 'middle' }}></span> PR Coverage</>}
+                          {hasEvents && <><span style={{ marginLeft: '8px', display: 'inline-block', width: '9px', height: '9px', background: '#16a34a', transform: 'rotate(45deg)', verticalAlign: 'middle' }}></span> Annotations</>}
                         </div>
                       )}
                     </div>
@@ -990,6 +1002,20 @@ ${social && social.total_posts > 0 ? `
                             r="4" fill="#3b82f6" opacity="0.8">
                             <title>{count} PR item{count !== 1 ? 's' : ''} on {d.date}</title>
                           </circle>
+                        )
+                      })}
+                      {/* Event annotations (sale start, trailer release, etc.) */}
+                      {data.map((d, i) => {
+                        const evs = eventDates[d.date]
+                        if (!evs || evs.length === 0) return null
+                        const x = xScale(i)
+                        return (
+                          <rect key={`ann-${d.date}`} x={x - 4} y={PAD.top - 4} width="8" height="8"
+                            fill="#16a34a" opacity="0.9" transform={`rotate(45 ${x} ${PAD.top})`}>
+                            <title>
+                              {evs.map(e => `${e.event_type}${e.outlet_or_source ? ` — ${e.outlet_or_source}` : ''}${e.notes ? `: ${e.notes}` : ''}`).join('\n')}
+                            </title>
+                          </rect>
                         )
                       })}
                       {data.map((d, i) => {

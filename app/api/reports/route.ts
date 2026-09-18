@@ -560,6 +560,23 @@ export async function GET(request: NextRequest) {
     const { data: annotations } = await annQuery
     result.annotations = annotations || []
 
+    // --- Event annotations (sale start, trailer release, etc. — distinct from the
+    // free-text editorial notes above, which share the confusingly similar name
+    // "annotations" but live in the same report_annotations table under different
+    // columns). These come from pr_annotations, shown on the Revenue Over Period
+    // chart. See feedback card de5900a8. ---
+    let eventAnnQuery = supabase
+      .from('pr_annotations')
+      .select('id, game_id, event_type, event_date, outlet_or_source, notes')
+      .eq('client_id', clientId)
+
+    if (gameId) eventAnnQuery = eventAnnQuery.eq('game_id', gameId)
+    if (dateFrom) eventAnnQuery = eventAnnQuery.gte('event_date', dateFrom)
+    if (dateTo) eventAnnQuery = eventAnnQuery.lte('event_date', dateTo)
+
+    const { data: eventAnnotations } = await eventAnnQuery
+    result.eventAnnotations = eventAnnotations || []
+
     // --- Client & game info ---
     const { data: clientData } = await supabase
       .from('clients')

@@ -515,6 +515,13 @@ export default function CoverageFeedPage() {
                 >
                   + Add Item
                 </button>
+                <button
+                  onClick={() => { setSelectedCandidate(null); setShowAnnotationSidebar(true) }}
+                  title="Mark a date-tied event (sale start, trailer release, etc.) so it shows on the Sales Timeline's annotation lane and this report's charts"
+                  style={{ padding: '8px 18px', backgroundColor: '#fff', color: '#b8232f', border: '1px solid #b8232f', borderRadius: '8px', fontSize: '14px', fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  + Add Annotation
+                </button>
               </div>
             )}
           </div>
