@@ -1436,7 +1436,7 @@ export default function GanttChart(props: GanttChartProps) {
     const left = visibleStartIdx * dayWidth
     const width = (visibleEndIdx - visibleStartIdx + 1) * dayWidth
 
-    const conflicts = getLaunchSaleConflicts(product.launch_date, duration)
+    const conflicts = product.launch_conflict_acknowledged ? [] : getLaunchSaleConflicts(product.launch_date, duration)
 
     const isResizing = launchSaleResize && launchSaleResize.productId === product.id
 

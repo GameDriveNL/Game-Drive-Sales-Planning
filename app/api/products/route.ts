@@ -90,7 +90,7 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   try {
     const body = await request.json()
-    const { id, name, product_type, steam_product_id, launch_date, product_aliases, platform_ids } = body
+    const { id, name, product_type, steam_product_id, launch_date, launch_conflict_acknowledged, product_aliases, platform_ids } = body
 
     if (!id) {
       return NextResponse.json({ error: 'id is required' }, { status: 400 })
@@ -102,6 +102,7 @@ export async function PUT(request: Request) {
     if (product_type !== undefined) updates.product_type = product_type
     if (steam_product_id !== undefined) updates.steam_product_id = steam_product_id || null
     if (launch_date !== undefined) updates.launch_date = launch_date || null
+    if (launch_conflict_acknowledged !== undefined) updates.launch_conflict_acknowledged = !!launch_conflict_acknowledged
     if (product_aliases !== undefined) {
       updates.product_aliases = Array.isArray(product_aliases) ? product_aliases : []
     }

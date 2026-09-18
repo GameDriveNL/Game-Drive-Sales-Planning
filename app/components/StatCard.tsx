@@ -8,6 +8,8 @@ interface TooltipItem {
   sublabel?: string
   color?: string
   warning?: boolean
+  actionLabel?: string
+  onAction?: () => void
 }
 
 interface StatCardProps {
@@ -101,6 +103,15 @@ export default function StatCard({
                       <span className={styles.tooltipSublabel}>{item.sublabel}</span>
                     )}
                   </div>
+                  {item.onAction && (
+                    <button
+                      type="button"
+                      className={styles.tooltipAction}
+                      onClick={(e) => { e.stopPropagation(); item.onAction!() }}
+                    >
+                      {item.actionLabel || 'Acknowledge'}
+                    </button>
+                  )}
                 </div>
               ))}
               {tooltipItems.length > 5 && (

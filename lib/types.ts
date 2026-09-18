@@ -44,6 +44,7 @@ export interface Product {
   steam_product_id?: string
   launch_date?: string | null
   launch_sale_duration?: number | null  // Duration in days for launch sale (7-14 typical)
+  launch_conflict_acknowledged?: boolean  // Client consciously chose to overlap a Steam seasonal event; suppresses the CONFLICTS warning
   product_aliases?: string[]  // Alternate names for import matching
   created_at: string
   game?: Game

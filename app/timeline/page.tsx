@@ -40,7 +40,7 @@ interface CalendarGenerationState { productId: string; productName: string; laun
 interface ClearSalesState { productId: string; productName: string }
 interface EditLaunchDateState { productId: string; productName: string; currentLaunchDate: string; currentLaunchSaleDuration?: number }
 type SaleStatus = 'planned' | 'submitted' | 'confirmed' | 'live' | 'ended'
-interface ConflictInfo { productName: string; eventName: string; overlapDays: number }
+interface ConflictInfo { productId: string; productName: string; eventName: string; overlapDays: number }
 
 export default function GameDriveDashboard() {
   const supabase = createClientComponentClient()
@@ -500,6 +500,7 @@ export default function GameDriveDashboard() {
   async function handleClientUpdate(clientId: string, updates: Partial<Client>) { try { const { error } = await supabase.from('clients').update(updates).eq('id', clientId); if (error) throw error; setClients(prev => prev.map(c => c.id === clientId ? { ...c, ...updates } : c).sort((a, b) => a.name.localeCompare(b.name))); if (updates.name) { setGames(prev => prev.map(g => g.client_id === clientId ? { ...g, client: { ...g.client, ...updates } } : g)); setProducts(prev => prev.map(p => p.game?.client_id === clientId ? { ...p, game: { ...p.game, client: { ...p.game.client, ...updates } } } : p)) } } catch (err: unknown) { console.error('Error updating client:', err); throw err } }
   async function handleGameUpdate(gameId: string, updates: Partial<Game>) { try { const { data, error } = await supabase.from('games').update(updates).eq('id', gameId).select(`*, client:clients(*)`).single(); if (error) throw error; if (data) { setGames(prev => prev.map(g => g.id === gameId ? data : g).sort((a, b) => a.name.localeCompare(b.name))); setProducts(prev => prev.map(p => p.game_id === gameId ? { ...p, game: data } : p)); if (updates.pr_tracking_enabled === true) { try { await fetch('/api/coverage-keywords', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ client_id: data.client_id, game_id: gameId, keyword: data.name, keyword_type: 'whitelist' }) }); } catch (kwErr) { console.error('Failed to auto-create keyword:', kwErr) } } } } catch (err: unknown) { console.error('Error updating game:', err); throw err } }
   async function handleProductUpdate(productId: string, updates: Partial<Product>, platformIds?: string[]) { try { const { data, error } = await supabase.from('products').update(updates).eq('id', productId).select(`*, game:games(*, client:clients(*))`).single(); if (error) throw error; if (data) { if (platformIds) { await supabase.from('product_platforms').delete().eq('product_id', productId); if (platformIds.length > 0) { const pp = platformIds.map(pid => ({ product_id: productId, platform_id: pid })); await supabase.from('product_platforms').insert(pp) } } setProducts(prev => prev.map(p => p.id === productId ? data : p).sort((a, b) => a.name.localeCompare(b.name))) } } catch (err: unknown) { console.error('Error updating product:', err); throw err } }
+  async function handleAcknowledgeConflict(productId: string) { try { await handleProductUpdate(productId, { launch_conflict_acknowledged: true }) } catch (err: unknown) { console.error('Error acknowledging conflict:', err) } }
 
   async function handleClientDelete(clientId: string) {
     try {
@@ -603,11 +604,11 @@ export default function GameDriveDashboard() {
     if (steamPlatformIds.length === 0) { return { conflicts: 0, conflictDetails: [] } }
     const steamSeasonalEvents = platformEvents.filter(e => steamPlatformIds.includes(e.platform_id) && e.event_type === 'seasonal')
     for (const product of filteredProducts) {
-      if (!product.launch_date) continue
+      if (!product.launch_date || product.launch_conflict_acknowledged) continue
       const duration = product.launch_sale_duration || 7; const launchStart = normalizeToLocalDate(product.launch_date); const launchEnd = addDays(launchStart, duration - 1)
       for (const event of steamSeasonalEvents) {
         const eventStart = normalizeToLocalDate(event.start_date); const eventEnd = normalizeToLocalDate(event.end_date)
-        if (launchStart <= eventEnd && launchEnd >= eventStart) { const overlapStart = launchStart > eventStart ? launchStart : eventStart; const overlapEnd = launchEnd < eventEnd ? launchEnd : eventEnd; const overlapDays = Math.round((overlapEnd.getTime() - overlapStart.getTime()) / (1000 * 60 * 60 * 24)) + 1; conflictList.push({ productName: product.name, eventName: event.name, overlapDays }) }
+        if (launchStart <= eventEnd && launchEnd >= eventStart) { const overlapStart = launchStart > eventStart ? launchStart : eventStart; const overlapEnd = launchEnd < eventEnd ? launchEnd : eventEnd; const overlapDays = Math.round((overlapEnd.getTime() - overlapStart.getTime()) / (1000 * 60 * 60 * 24)) + 1; conflictList.push({ productId: product.id, productName: product.name, eventName: event.name, overlapDays }) }
       }
     }
     return { conflicts: conflictList.length, conflictDetails: conflictList }
@@ -688,7 +689,7 @@ export default function GameDriveDashboard() {
         <StatCard icon="📊" iconColor="#10b981" title="TOTAL SALES" value={filteredSales.length} subtitle={upcomingSalesDetails.length > 0 ? `${upcomingSalesDetails.length} upcoming in 30 days` : 'Across all platforms'} tooltipTitle="Sales by Platform" tooltipItems={salesByPlatformDetails} tooltipEmptyMessage="No sales scheduled" />
         <StatCard icon="🎮" iconColor="#d22939" title="PRODUCTS" value={filteredProducts.length} subtitle="Games and DLCs" tooltipTitle="Products by Type" tooltipItems={productsByTypeDetails} tooltipEmptyMessage="No products configured" />
         <StatCard icon="📅" iconColor="#8b5cf6" title="PLATFORM EVENTS" value={upcomingEventsCount} subtitle="Upcoming sales events" tooltipTitle="Upcoming Platform Events" tooltipItems={upcomingEventDetails} tooltipEmptyMessage="No upcoming platform events" />
-        <StatCard icon={conflicts > 0 ? '⚠️' : '✅'} iconColor={conflicts > 0 ? '#ef4444' : '#22c55e'} title="CONFLICTS" value={conflicts} subtitle={conflicts === 0 ? 'All platforms clear' : conflictDetails.length > 0 ? `${conflictDetails[0].productName} during ${conflictDetails[0].eventName}${conflicts > 1 ? ` +${conflicts - 1} more` : ''}` : 'Needs attention'} warning={conflicts > 0} tooltipTitle="Launch sale overlaps a platform event" tooltipItems={conflictDetails.map(c => ({ label: c.productName, sublabel: `Launch sale overlaps ${c.eventName} by ${c.overlapDays} day${c.overlapDays === 1 ? '' : 's'}`, warning: true }))} tooltipEmptyMessage="No conflicts detected" />
+        <StatCard icon={conflicts > 0 ? '⚠️' : '✅'} iconColor={conflicts > 0 ? '#ef4444' : '#22c55e'} title="CONFLICTS" value={conflicts} subtitle={conflicts === 0 ? 'All platforms clear' : conflictDetails.length > 0 ? `${conflictDetails[0].productName} during ${conflictDetails[0].eventName}${conflicts > 1 ? ` +${conflicts - 1} more` : ''}` : 'Needs attention'} warning={conflicts > 0} tooltipTitle="Launch sale overlaps a platform event" tooltipItems={conflictDetails.map(c => ({ label: c.productName, sublabel: `Launch sale overlaps ${c.eventName} by ${c.overlapDays} day${c.overlapDays === 1 ? '' : 's'}`, warning: true, actionLabel: 'Acknowledge', onAction: () => handleAcknowledgeConflict(c.productId) }))} tooltipEmptyMessage="No conflicts detected" />
       </div>
 
       <GapAnalysis sales={filteredSales} products={filteredProducts} platforms={platforms} timelineStart={timelineStart} monthCount={monthCount} />
