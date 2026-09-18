@@ -83,6 +83,14 @@ export default function SaleBlock({
   const displayName = sale.sale_name || 'Custom Sale'
   const discountText = sale.discount_percentage ? `-${sale.discount_percentage}%` : ''
 
+  // D10: flag sales dragged/resized longer than the platform's recommended max —
+  // previously this warning only surfaced inside the Edit modal, so a resize
+  // done straight on the timeline could exceed it with no visible sign.
+  // exclusiveDays matches the "Excel-style" count used in Add/Edit Sale's own check.
+  const inclusiveDays = differenceInDays(endDate, startDate) + 1
+  const exclusiveDays = inclusiveDays - 1
+  const exceedsMaxDays = !!sale.platform?.max_sale_days && exclusiveDays > sale.platform.max_sale_days
+
   // Compute temporal status based on current date (not stored status)
   const temporalStatus = computeSaleTemporalStatus(sale.start_date, sale.end_date)
   const temporalStatusLabel = getTemporalStatusLabel(temporalStatus)
@@ -254,11 +262,11 @@ export default function SaleBlock({
     <>
       <div
         ref={setNodeRef}
-        className={`${styles.saleBlock} ${isDragging ? styles.dragging : ''} ${isResizing ? styles.resizing : ''} ${isSelected ? styles.selected : ''}`}
+        className={`${styles.saleBlock} ${isDragging ? styles.dragging : ''} ${isResizing ? styles.resizing : ''} ${isSelected ? styles.selected : ''} ${exceedsMaxDays ? styles.exceedsMaxDays : ''}`}
         style={style}
         onClick={handleClick}
         onContextMenu={handleContextMenu}
-        title={`${displayName}\n${format(startDate, 'MMM d')} - ${format(endDate, 'MMM d, yyyy')}\n${sale.platform?.name || 'Unknown Platform'}\n${discountText}\nClick to edit • Ctrl/⌘+Click to select • Right-click for menu`}
+        title={`${displayName}\n${format(startDate, 'MMM d')} - ${format(endDate, 'MMM d, yyyy')}\n${sale.platform?.name || 'Unknown Platform'}\n${discountText}${exceedsMaxDays ? `\n⚠️ Exceeds ${sale.platform?.name}'s recommended max of ${sale.platform?.max_sale_days} days (${exclusiveDays} days)` : ''}\nClick to edit • Ctrl/⌘+Click to select • Right-click for menu`}
       >
         {/* Left resize handle */}
         {onResize && (
@@ -274,6 +282,7 @@ export default function SaleBlock({
           {...attributes}
         >
           <span className={styles.saleName}>
+            {exceedsMaxDays && <span className={styles.maxDaysWarningIcon}>⚠️</span>}
             {displayName} {discountText}
           </span>
           

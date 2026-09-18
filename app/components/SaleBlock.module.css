@@ -38,6 +38,12 @@
   cursor: ew-resize;
 }
 
+/* Longer than the platform's recommended max sale length */
+.saleBlock.exceedsMaxDays {
+  outline: 2px dashed #fbbf24;
+  outline-offset: -2px;
+}
+
 .dragHandle {
   display: flex;
   align-items: center;
@@ -57,6 +63,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.maxDaysWarningIcon {
+  margin-right: 3px;
 }
 
 .statusBadge {
