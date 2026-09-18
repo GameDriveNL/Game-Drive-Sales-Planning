@@ -1742,6 +1742,40 @@
   transform: skewX(8deg);
 }
 
+/* Launch cooldown band: the full 30-day (platform-configured) lock counted
+   from launch date. Sits behind .launchSaleBlock (z-index 3), which covers
+   the exception period where the launch discount itself is allowed. */
+.launchCooldownBlock {
+  position: absolute;
+  top: 4px;
+  height: calc(100% - 8px);
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(34, 197, 94, 0.08),
+    rgba(34, 197, 94, 0.08) 4px,
+    rgba(34, 197, 94, 0.16) 4px,
+    rgba(34, 197, 94, 0.16) 8px
+  );
+  border: 1px dashed rgba(34, 197, 94, 0.4);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  z-index: 2;
+  pointer-events: none;
+  transform: skewX(-8deg);
+}
+
+.launchCooldownBlock span {
+  font-size: 0.5625rem;
+  font-weight: 600;
+  color: #16a34a;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transform: skewX(8deg);
+}
+
 /* Drag Overlay - also slanted for consistency */
 .dragOverlay {
   height: 32px;

@@ -1451,6 +1451,42 @@ export default function GanttChart(props: GanttChartProps) {
       isResizing
     }
   }, [getDayIndexForDate, days, dayWidth, getLaunchSaleConflicts, launchSaleResize])
+
+  // D9: Steam gives a game a single "launch discount" window, but then locks
+  // out any OTHER discount for a fixed period counted from the LAUNCH DATE
+  // itself — not from whenever the launch discount sale ends. Renders that
+  // full window as a background band so it's obvious it outlasts the launch
+  // sale bar. See feedback card 90475aa8.
+  const launchCooldownDays = useMemo(() => {
+    const steamCooldowns = platforms
+      .filter(p => steamPlatformIds.includes(p.id))
+      .map(p => p.cooldown_days || 0)
+      .filter(d => d > 0)
+    return steamCooldowns.length > 0 ? Math.max(...steamCooldowns) : 30
+  }, [platforms, steamPlatformIds])
+
+  const getLaunchCooldownBlock = useCallback((product: Product) => {
+    if (!product.launch_date) return null
+
+    const launchStart = normalizeToLocalDate(product.launch_date)
+    const cooldownEnd = addDays(launchStart, launchCooldownDays - 1)
+
+    const startDayIndex = getDayIndexForDate(launchStart)
+    const endDayIndex = getDayIndexForDate(cooldownEnd)
+
+    if (endDayIndex < 0 || startDayIndex >= days.length) return null
+
+    const visibleStartIdx = Math.max(0, startDayIndex)
+    const visibleEndIdx = Math.min(days.length - 1, endDayIndex)
+
+    return {
+      left: visibleStartIdx * dayWidth,
+      width: (visibleEndIdx - visibleStartIdx + 1) * dayWidth,
+      startDate: launchStart,
+      endDate: cooldownEnd,
+      cooldownDays: launchCooldownDays
+    }
+  }, [getDayIndexForDate, days, dayWidth, launchCooldownDays])
   
   const scrollThumbStyle = useMemo(() => {
     // B14: derive thumb width from the SAME measurements the native scrollbar uses
@@ -2102,6 +2138,7 @@ export default function GanttChart(props: GanttChartProps) {
                     const saleCount = getSaleCount(product.id)
                     const launchPosition = getLaunchDatePosition(product)
                     const launchSaleBlock = getLaunchSaleBlock(product)
+                    const launchCooldownBlock = getLaunchCooldownBlock(product)
                     
                     return (
                       <div key={product.id} className={styles.productGroup}>
@@ -2154,6 +2191,19 @@ export default function GanttChart(props: GanttChartProps) {
                               )
                             })}
                             
+                            {launchCooldownBlock && (
+                              <div
+                                className={styles.launchCooldownBlock}
+                                style={{
+                                  left: launchCooldownBlock.left,
+                                  width: launchCooldownBlock.width
+                                }}
+                                title={`Launch cooldown: no other discount until ${format(launchCooldownBlock.endDate, 'MMM d, yyyy')} (${launchCooldownBlock.cooldownDays}d from launch, per Steam's launch discount rules)`}
+                              >
+                                <span>LAUNCH COOLDOWN</span>
+                              </div>
+                            )}
+
                             {launchSaleBlock && (
                               <div
                                 data-launch-sale-block
