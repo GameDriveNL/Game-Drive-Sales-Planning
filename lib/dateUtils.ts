@@ -98,9 +98,20 @@ export function getDaysBetween(start: Date | string, end: Date | string): number
   return differenceInDays(endDate, startDate) + 1 // Include both start and end days
 }
 
+/**
+ * First date a new sale may legally start after this sale's cooldown.
+ *
+ * The stored end_date is the last INCLUSIVE day of the discount (duration
+ * convention), but platform sale cycles change over at a fixed clock time
+ * rather than local midnight (e.g. Steam's ~7PM CEST), so the sale's real
+ * last touched calendar day is end_date + 1. Cooldown must be counted from
+ * that day, or the computed window comes out one day short. Confirmed with
+ * Game Drive on feedback card 3deb3317 (14-day sale from Aug 3 actually
+ * touches Aug 3-17, not Aug 3-16).
+ */
 export function calculateCooldownEnd(saleEndDate: Date | string, cooldownDays: number): Date {
   const endDate = typeof saleEndDate === 'string' ? normalizeToLocalDate(saleEndDate) : saleEndDate
-  return addDays(endDate, cooldownDays)
+  return addDays(endDate, cooldownDays + 1)
 }
 
 export function isDateInRange(date: Date, start: Date | string, end: Date | string): boolean {

@@ -1,5 +1,6 @@
 import { addDays, addMonths, differenceInDays, parseISO, format, isAfter, isBefore } from 'date-fns'
 import { Platform, PlatformEvent, SaleWithDetails } from '@/lib/types'
+import { calculateCooldownEnd } from '@/lib/dateUtils'
 
 export interface GeneratedSale {
   id: string // temporary ID for preview
@@ -124,7 +125,7 @@ function hasConflict(
     // 10 AM rule: Last day of cooldown IS valid for new sale to start
     // So we use < not <= for the cooldown check
     if (saleCooldownDays > 0) {
-      const saleCooldownEnd = addDays(saleEnd, saleCooldownDays)
+      const saleCooldownEnd = calculateCooldownEnd(saleEnd, saleCooldownDays)
       // startDate must be AFTER saleEnd but BEFORE cooldownEnd (exclusive)
       if (isAfter(startDate, saleEnd) && isBefore(startDate, saleCooldownEnd)) {
         return true
@@ -134,7 +135,7 @@ function hasConflict(
     // Check 3: Existing sale starts during new sale's cooldown
     // Same 10 AM rule applies
     if (newSaleCooldownDays > 0) {
-      const newSaleCooldownEnd = addDays(endDate, newSaleCooldownDays)
+      const newSaleCooldownEnd = calculateCooldownEnd(endDate, newSaleCooldownDays)
       // existingStart must be AFTER newEnd but BEFORE newCooldownEnd (exclusive)
       if (isAfter(saleStart, endDate) && isBefore(saleStart, newSaleCooldownEnd)) {
         return true
@@ -202,7 +203,7 @@ function findNextAvailableDate(
     for (const sale of samePlatformSales) {
       const saleEnd = parseISO(sale.end_date)
       const saleCooldownDays = sale.cooldown_days || 0
-      const saleCooldownEnd = addDays(saleEnd, saleCooldownDays)
+      const saleCooldownEnd = calculateCooldownEnd(saleEnd, saleCooldownDays)
 
       if (candidate <= saleCooldownEnd) {
         // Jump to the cooldown end day (which IS valid to start a new sale)

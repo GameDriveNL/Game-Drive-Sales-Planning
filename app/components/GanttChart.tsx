@@ -5,7 +5,7 @@ import { DndContext, DragEndEvent, DragStartEvent, useSensor, useSensors, Pointe
 import { format, addDays, differenceInDays, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isToday, startOfQuarter, endOfQuarter, eachQuarterOfInterval, addMonths, subMonths } from 'date-fns'
 import { Sale, Platform, Product, Game, Client, SaleWithDetails, PlatformEvent, LaunchConflict } from '@/lib/types'
 import { validateSale } from '@/lib/validation'
-import { normalizeToLocalDate, clampDayOffset } from '@/lib/dateUtils'
+import { normalizeToLocalDate, clampDayOffset, calculateCooldownEnd } from '@/lib/dateUtils'
 import SaleBlock from './SaleBlock'
 import styles from './GanttChart.module.css'
 
@@ -459,8 +459,8 @@ export default function GanttChart(props: GanttChartProps) {
             if (sale.saleType === 'special') continue
             
             const cooldownStart = addDays(sale.end, 1)
-            const cooldownEnd = addDays(sale.end, cooldownDays)
-            
+            const cooldownEnd = calculateCooldownEnd(sale.end, cooldownDays)
+
             if (cooldownEnd >= quarterStart && cooldownStart <= quarterEnd) {
               const overlapStart = cooldownStart < quarterStart ? quarterStart : cooldownStart
               const overlapEnd = cooldownEnd > quarterEnd ? quarterEnd : cooldownEnd
@@ -932,8 +932,8 @@ export default function GanttChart(props: GanttChartProps) {
     
     const saleEnd = normalizeToLocalDate(sale.end_date)
     const cooldownStart = addDays(saleEnd, 1)
-    const cooldownEnd = addDays(saleEnd, cooldownDays)
-    
+    const cooldownEnd = calculateCooldownEnd(saleEnd, cooldownDays)
+
     return {
       start: cooldownStart,
       end: cooldownEnd,
@@ -958,8 +958,8 @@ export default function GanttChart(props: GanttChartProps) {
     
     if (otherSales.length === 0) return shifts
     
-    let currentCooldownEnd = addDays(newEnd, cooldownDays)
-    
+    let currentCooldownEnd = calculateCooldownEnd(newEnd, cooldownDays)
+
     for (const sale of otherSales) {
       const saleStart = normalizeToLocalDate(sale.start_date)
       const saleEnd = normalizeToLocalDate(sale.end_date)
@@ -978,21 +978,21 @@ export default function GanttChart(props: GanttChartProps) {
           newEnd: format(newSaleEnd, 'yyyy-MM-dd')
         })
         
-        currentCooldownEnd = addDays(newSaleEnd, cooldownDays)
+        currentCooldownEnd = calculateCooldownEnd(newSaleEnd, cooldownDays)
       } else {
-        currentCooldownEnd = addDays(saleEnd, cooldownDays)
+        currentCooldownEnd = calculateCooldownEnd(saleEnd, cooldownDays)
       }
     }
-    
+
     const salesBeforeMoved = otherSales.filter(s => normalizeToLocalDate(s.end_date) < newStart)
-    
+
     for (const sale of salesBeforeMoved) {
       if (shifts.some(s => s.saleId === sale.id)) continue
-      
+
       const saleStart = normalizeToLocalDate(sale.start_date)
       const saleEnd = normalizeToLocalDate(sale.end_date)
       const saleDuration = differenceInDays(saleEnd, saleStart)
-      const saleCooldownEnd = addDays(saleEnd, cooldownDays)
+      const saleCooldownEnd = calculateCooldownEnd(saleEnd, cooldownDays)
       
       if (saleCooldownEnd > newStart) {
         const overlapDays = differenceInDays(saleCooldownEnd, newStart) + 1
@@ -1522,8 +1522,7 @@ export default function GanttChart(props: GanttChartProps) {
         )
         for (const n of neighbors) {
           const nEnd = normalizeToLocalDate(n.end_date)
-          const cooldownEndDate = addDays(nEnd, cooldownDays)
-          const snapStart = addDays(cooldownEndDate, 1)
+          const snapStart = calculateCooldownEnd(nEnd, cooldownDays)
           const diff = Math.abs(Math.round((newStart.getTime() - snapStart.getTime()) / 86400000))
           if (diff <= SNAP_THRESHOLD_DAYS) {
             newStart = snapStart

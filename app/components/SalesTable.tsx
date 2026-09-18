@@ -3,6 +3,7 @@
 import { useState, useMemo, useCallback } from 'react'
 import { format, parseISO, differenceInDays, addDays } from 'date-fns'
 import { Sale, SaleWithDetails, Platform } from '@/lib/types'
+import { calculateCooldownEnd } from '@/lib/dateUtils'
 import styles from './SalesTable.module.css'
 import * as XLSX from 'xlsx'
 
@@ -114,7 +115,7 @@ export default function SalesTable({ sales, platforms, onDelete, onEdit, onUpdat
     const platform = platforms.find(p => p.id === platformId)
     if (!platform || platform.cooldown_days === 0) return '-'
     
-    const cooldownEnd = addDays(parseISO(endDate), platform.cooldown_days)
+    const cooldownEnd = calculateCooldownEnd(parseISO(endDate), platform.cooldown_days)
     return format(cooldownEnd, 'dd/MM/yyyy')
   }
   

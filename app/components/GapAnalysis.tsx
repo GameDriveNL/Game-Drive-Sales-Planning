@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { format, startOfQuarter, endOfQuarter, eachQuarterOfInterval, differenceInDays, addDays } from 'date-fns'
 import { SaleWithDetails, Product, Game, Client, Platform } from '@/lib/types'
-import { normalizeToLocalDate } from '@/lib/dateUtils'
+import { normalizeToLocalDate, calculateCooldownEnd } from '@/lib/dateUtils'
 import styles from './GapAnalysis.module.css'
 
 interface GapAnalysisProps {
@@ -164,7 +164,7 @@ export default function GapAnalysis({ sales, products, platforms, timelineStart,
           
           // Cooldown starts the day after sale ends
           const cooldownStart = addDays(sale.end, 1)
-          const cooldownEnd = addDays(sale.end, cooldownDays)
+          const cooldownEnd = calculateCooldownEnd(sale.end, cooldownDays)
           
           if (cooldownEnd >= quarterStart && cooldownStart <= quarterEnd) {
             const overlapStart = cooldownStart < quarterStart ? quarterStart : cooldownStart

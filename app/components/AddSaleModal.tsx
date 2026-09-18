@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { format, addDays, differenceInDays } from 'date-fns'
-import { normalizeToLocalDate } from '@/lib/dateUtils'
+import { normalizeToLocalDate, calculateCooldownEnd } from '@/lib/dateUtils'
 
 // B3/B4: alias to normalizeToLocalDate so dates parse at local midnight,
 // preventing the "7PM CEST off-by-one" issue when format() reads them back
@@ -94,7 +94,7 @@ export default function AddSaleModal({
 
   // Calculate cooldown end date
   const cooldownEndDate = endDate && selectedPlatform
-    ? format(addDays(parseISO(endDate), selectedPlatform.cooldown_days), 'yyyy-MM-dd')
+    ? format(calculateCooldownEnd(parseISO(endDate), selectedPlatform.cooldown_days), 'yyyy-MM-dd')
     : ''
 
   // Find previous sale end date for this product/platform
@@ -225,7 +225,7 @@ export default function AddSaleModal({
 
   const resetFormForNext = () => {
     // Keep product & platform selection for quick re-entry, reset the rest
-    const newStart = format(addDays(parseISO(endDate), selectedPlatform?.cooldown_days || 30), 'yyyy-MM-dd')
+    const newStart = format(calculateCooldownEnd(parseISO(endDate), selectedPlatform?.cooldown_days || 30), 'yyyy-MM-dd')
     const newEnd = format(addDays(parseISO(newStart), 6), 'yyyy-MM-dd')
     setStartDate(newStart)
     setEndDate(newEnd)

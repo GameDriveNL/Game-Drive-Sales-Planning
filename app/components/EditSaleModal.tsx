@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { format, addDays, differenceInDays } from 'date-fns'
 import { Sale, Platform, Product, Game, Client, SaleWithDetails } from '@/lib/types'
 import { validateSale } from '@/lib/validation'
-import { normalizeToLocalDate } from '@/lib/dateUtils'
+import { normalizeToLocalDate, calculateCooldownEnd } from '@/lib/dateUtils'
 
 // B3/B4: use normalizeToLocalDate everywhere so dates stay in the user's
 // local timezone instead of shifting to UTC midnight (which causes the
@@ -68,7 +68,7 @@ export default function EditSaleModal({
 
   // Calculate cooldown end date
   const cooldownEndDate = endDate && selectedPlatform
-    ? format(addDays(parseISO(endDate), selectedPlatform.cooldown_days), 'yyyy-MM-dd')
+    ? format(calculateCooldownEnd(parseISO(endDate), selectedPlatform.cooldown_days), 'yyyy-MM-dd')
     : ''
 
   // Find previous sale end date for this product/platform

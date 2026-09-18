@@ -1,6 +1,6 @@
 import { Sale, Platform, ValidationResult } from './types'
 import { addDays, isBefore, isAfter } from 'date-fns'
-import { normalizeToLocalDate } from './dateUtils'
+import { normalizeToLocalDate, calculateCooldownEnd } from './dateUtils'
 
 export function validateSale(
   newSale: {
@@ -52,18 +52,18 @@ export function validateSale(
     // So if cooldown is 30 days, new sale can start on day 30 (but not days 1-29)
     if (cooldownDays > 0) {
       // existingCooldownEnd = the first day a new sale CAN start after existing sale
-      const existingCooldownEnd = addDays(existingEnd, cooldownDays)
-      
+      const existingCooldownEnd = calculateCooldownEnd(existingEnd, cooldownDays)
+
       // If new sale starts after existing ends but before cooldown ends - CONFLICT
       if (isAfter(newStart, existingEnd) && isBefore(newStart, existingCooldownEnd)) {
         conflicts.push(existingSale)
         continue
       }
     }
-    
+
     // Check 3: Existing sale starts during new sale's cooldown (reverse check)
     if (cooldownDays > 0) {
-      const newCooldownEnd = addDays(newEnd, cooldownDays)
+      const newCooldownEnd = calculateCooldownEnd(newEnd, cooldownDays)
       
       // If existing sale starts after new sale ends but before new cooldown ends - CONFLICT
       if (isAfter(existingStart, newEnd) && isBefore(existingStart, newCooldownEnd)) {
@@ -73,8 +73,8 @@ export function validateSale(
     }
   }
   
-  const cooldownEnd = addDays(newEnd, cooldownDays)
-  
+  const cooldownEnd = calculateCooldownEnd(newEnd, cooldownDays)
+
   return {
     valid: conflicts.length === 0,
     conflicts,
@@ -95,7 +95,7 @@ export function calculateCooldownPeriod(
 ): { start: string; end: string } {
   const endDate = normalizeToLocalDate(saleEndDate)
   const cooldownStart = addDays(endDate, 1)
-  const cooldownEnd = addDays(endDate, cooldownDays)
+  const cooldownEnd = calculateCooldownEnd(endDate, cooldownDays)
 
   // Use local date format directly — avoids the toISOString().split('T')[0]
   // pattern which can shift the date by one day in negative-UTC timezones
