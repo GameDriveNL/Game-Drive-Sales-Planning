@@ -1371,7 +1371,9 @@
 }
 
 .weekendCell {
-  background: #fafafa;
+  /* Bumped from #fafafa — Alisa/Luuk flagged weekdays vs. weekends as too
+     hard to tell apart at that shade. Feedback card 5bf681e3. */
+  background: #e9ebf1;
 }
 
 /* Selection Preview for click-to-create */

@@ -314,7 +314,10 @@ export default function GanttChart(props: GanttChartProps) {
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8,
+        // Lowered from 8px per Luuk's feedback on card bbdfcb96 — the cursor
+        // has to travel this far before a drag activates (vs. opening the
+        // sale on click), so a smaller distance feels less sluggish to start.
+        distance: 4,
       },
     })
   )
