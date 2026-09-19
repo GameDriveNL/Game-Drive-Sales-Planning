@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth-context'
 import { CoverageNav } from '../components/CoverageNav'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import ScannerHealthPanel from '../components/ScannerHealthPanel'
+import { CoverageImporter } from '../components/CoverageImporter'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -120,6 +121,7 @@ export default function DashboardPage() {
   // Reference data
   const [clients, setClients] = useState<ClientOption[]>([])
   const [games, setGames] = useState<GameOption[]>([])
+  const [showImporter, setShowImporter] = useState(false)
 
   // Filters
   const [clientFilter, setClientFilter] = useState(() => searchParams.get('client') || '')
@@ -352,11 +354,19 @@ export default function DashboardPage() {
       <div style={{ flex: 1, padding: '32px', overflow: 'auto' }}>
         <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
           {/* Header */}
-          <div style={{ marginBottom: '16px' }}>
-            <h1 style={{ fontSize: '28px', fontWeight: 700, color: '#1e293b', margin: 0 }}>Coverage Dashboard</h1>
-            <p style={{ fontSize: '14px', color: '#64748b', margin: '4px 0 0 0' }}>
-              PR performance summary and analytics
-            </p>
+          <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <h1 style={{ fontSize: '28px', fontWeight: 700, color: '#1e293b', margin: 0 }}>Coverage Dashboard</h1>
+              <p style={{ fontSize: '14px', color: '#64748b', margin: '4px 0 0 0' }}>
+                PR performance summary and analytics
+              </p>
+            </div>
+            <button
+              onClick={() => setShowImporter(true)}
+              style={{ padding: '8px 18px', backgroundColor: '#22223a', color: '#e0e0e8', border: '1px solid #2a2a3e', borderRadius: '8px', fontSize: '14px', fontWeight: 500, cursor: 'pointer' }}
+            >
+              Import CSV
+            </button>
           </div>
 
           <CoverageNav />
@@ -538,6 +548,15 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* CSV Import Modal — per Luuk's ask on card 4b0e6367 to have this on the Dashboard too, not just Feed */}
+      <CoverageImporter
+        isOpen={showImporter}
+        onClose={() => setShowImporter(false)}
+        clients={clients}
+        games={games}
+        onImportComplete={fetchItems}
+      />
     </div>
   )
 }
