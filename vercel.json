@@ -111,6 +111,10 @@
     {
       "path": "/api/cron/steam-wishlist-sync-daily",
       "schedule": "30 5 * * *"
+    },
+    {
+      "path": "/api/cron/creator-watch-scan",
+      "schedule": "0 */4 * * *"
     }
   ],
   "buildCommand": "next build"
