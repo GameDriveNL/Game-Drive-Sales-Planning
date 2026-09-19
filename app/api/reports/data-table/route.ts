@@ -88,6 +88,10 @@ export async function GET(request: NextRequest) {
       chargebacks: number
       vat: number
       row_count: number
+      // D12: weighted sum of base_price_usd * net_units, used to derive a
+      // discount-adjusted "margin" figure (net_revenue as a % of what full
+      // price would have earned). See feedback card 3f279c46.
+      full_price_revenue: number
     }
 
     const aggregated: Record<string, AggRow> = {}
@@ -120,7 +124,7 @@ export async function GET(request: NextRequest) {
         const parts = key.split('|')
         const base: AggRow = {
           gross_revenue: 0, net_revenue: 0, gross_units: 0, net_units: 0,
-          chargebacks: 0, vat: 0, row_count: 0,
+          chargebacks: 0, vat: 0, row_count: 0, full_price_revenue: 0,
         }
 
         switch (drillLevel) {
@@ -155,6 +159,7 @@ export async function GET(request: NextRequest) {
       agg.net_units += Number(row.net_units_sold || 0)
       agg.chargebacks += Number(row.chargebacks_returns || 0)
       agg.vat += Number(row.vat_tax_usd || 0)
+      agg.full_price_revenue += Number(row.base_price_usd || 0) * Number(row.net_units_sold || 0)
       agg.row_count++
     }
 
@@ -164,6 +169,10 @@ export async function GET(request: NextRequest) {
     for (const row of rows) {
       row.avg_price = row.net_units > 0 ? row.net_revenue / row.net_units : 0
       row.refund_rate = row.gross_units > 0 ? (row.chargebacks / row.gross_units * 100) : 0
+      // % of full-price value actually captured — 100% means no discounting,
+      // lower means discounts ate into revenue. null when we have no base
+      // price to compare against (avoids a misleading 0%).
+      row.margin_pct = row.full_price_revenue > 0 ? (row.net_revenue / row.full_price_revenue * 100) : null
     }
 
     // Apply search filter

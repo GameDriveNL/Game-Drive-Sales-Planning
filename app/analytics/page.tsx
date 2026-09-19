@@ -93,6 +93,8 @@ export default function AnalyticsPage() {
     avg_price: number
     refund_rate: number
     row_count: number
+    full_price_revenue: number
+    margin_pct: number | null
   }>>([])
   const [propositionSortKey, setPropositionSortKey] = useState<string>('net_revenue')
   const [propositionSortDir, setPropositionSortDir] = useState<'asc' | 'desc'>('desc')
@@ -3341,10 +3343,12 @@ export default function AnalyticsPage() {
                       { key: 'net_units', label: 'Net Units', align: 'right' },
                       { key: 'net_revenue', label: 'Net Revenue', align: 'right' },
                       { key: 'avg_price', label: 'Avg Price', align: 'right' },
+                      { key: 'margin_pct', label: 'Margin', align: 'right' },
                       { key: 'refund_rate', label: 'Refund Rate', align: 'right' },
                     ].map(col => (
                       <th
                         key={col.key}
+                        title={col.key === 'margin_pct' ? '% of full price actually captured, after discounts. Lower = more discount drag. Not full accounting margin (no cost-of-goods data).' : undefined}
                         onClick={() => {
                           if (propositionSortKey === col.key) {
                             setPropositionSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -3408,6 +3412,9 @@ export default function AnalyticsPage() {
                           <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', color: '#475569' }}>
                             ${row.avg_price.toFixed(2)}
                           </td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', color: row.margin_pct === null ? '#94a3b8' : row.margin_pct < 70 ? '#dc2626' : '#475569' }}>
+                            {row.margin_pct === null ? '—' : `${row.margin_pct.toFixed(0)}%`}
+                          </td>
                           <td style={{ padding: '10px 12px', textAlign: 'right', color: row.refund_rate > 5 ? '#dc2626' : '#475569' }}>
                             {row.refund_rate.toFixed(1)}%
                           </td>
@@ -3426,6 +3433,16 @@ export default function AnalyticsPage() {
                       ${propositionRows.reduce((s, r) => s + r.net_revenue, 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                     </td>
                     <td />
+                    {(() => {
+                      const totalFullPrice = propositionRows.reduce((s, r) => s + r.full_price_revenue, 0)
+                      const totalNet = propositionRows.reduce((s, r) => s + r.net_revenue, 0)
+                      const overallMargin = totalFullPrice > 0 ? (totalNet / totalFullPrice * 100) : null
+                      return (
+                        <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#475569' }}>
+                          {overallMargin === null ? '—' : `${overallMargin.toFixed(0)}%`}
+                        </td>
+                      )
+                    })()}
                     <td />
                   </tr>
                 </tfoot>
