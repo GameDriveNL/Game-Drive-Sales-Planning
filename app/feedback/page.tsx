@@ -126,6 +126,7 @@ export default function FeedbackPage() {
       const created = await res.json()
       setItems(prev => [...prev, created])
       setShowNew(false)
+      try { localStorage.removeItem(NEW_ITEM_DRAFT_KEY) } catch { /* ignore */ }
     } catch (err) {
       console.error('Create failed', err)
       alert('Could not create item. Please try again.')
@@ -457,20 +458,56 @@ function ArchiveList({ items, onOpen, onRestore }: {
 }
 
 // ─── New item modal ───────────────────────────────────────────────────────────
+// D13: an accidental click on the overlay (outside the modal box) closes it
+// immediately with no confirmation, discarding everything typed — the modal
+// itself doesn't distinguish "meant to cancel" from "missed a click". Rather
+// than change that interaction (risk of new friction elsewhere), the form
+// draft is persisted to localStorage as you type and restored if the modal
+// reopens, so an accidental close is recoverable instead of a full retype.
+// See feedback card feebcca7.
+const NEW_ITEM_DRAFT_KEY = 'gd_feedback_new_item_draft'
+
+interface NewItemDraft {
+  title: string
+  description: string
+  itemType: FeedbackType
+  priority: FeedbackPriority
+  tags: string[]
+  reporter: string
+}
+
+function loadNewItemDraft(): NewItemDraft | null {
+  try {
+    const raw = localStorage.getItem(NEW_ITEM_DRAFT_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
 function NewItemModal({ onClose, onCreate, defaultType }: {
   onClose: () => void
   onCreate: (p: Partial<FeedbackItem>) => void
   defaultType: FeedbackType
 }) {
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
-  const [itemType, setItemType] = useState<FeedbackType>(defaultType)
-  const [priority, setPriority] = useState<FeedbackPriority>('medium')
-  const [tags, setTags] = useState<string[]>([])
-  const [reporter, setReporter] = useState('')
+  const draft = useState(() => loadNewItemDraft())[0]
+  const [title, setTitle] = useState(draft?.title ?? '')
+  const [description, setDescription] = useState(draft?.description ?? '')
+  const [itemType, setItemType] = useState<FeedbackType>(draft?.itemType ?? defaultType)
+  const [priority, setPriority] = useState<FeedbackPriority>(draft?.priority ?? 'medium')
+  const [tags, setTags] = useState<string[]>(draft?.tags ?? [])
+  const [reporter, setReporter] = useState(draft?.reporter ?? '')
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+
+  // Screenshots aren't persisted (can't serialize a File to localStorage) —
+  // everything else survives an accidental close.
+  useEffect(() => {
+    try {
+      localStorage.setItem(NEW_ITEM_DRAFT_KEY, JSON.stringify({ title, description, itemType, priority, tags, reporter }))
+    } catch { /* private browsing / storage blocked — draft just won't persist */ }
+  }, [title, description, itemType, priority, tags, reporter])
 
   const toggleTag = (t: string) => setTags(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])
 
