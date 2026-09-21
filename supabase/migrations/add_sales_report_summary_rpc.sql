@@ -9,14 +9,22 @@
 --
 -- Tried and measured against the 138k-row client before landing on this
 -- plain, unhinted shape:
---   - plain (non-materialized) CTE, SELECT *: ~8.1-8.2s — best result
+--   - plain (non-materialized) CTE, SELECT *: ~8.1-26s depending on cache
+--     state — consistently the best result of the shapes tried
 --   - MATERIALIZED CTE, SELECT *: ~9.2-9.9s, spills to disk (wide rows)
 --   - MATERIALIZED CTE, narrow 8-column SELECT: ~9.5s, still spills
 --   - plain CTE + SET work_mem = '256MB': ~17.2s — clearly worse
 -- Every attempt to hint the planner (materialize, widen work_mem) made this
 -- slower, not faster, so it's left as the planner's own default plan.
--- ~8s is a large improvement over the multi-minute hang / eventual
--- statement-timeout failure this replaces, even though it isn't instant.
+--
+-- Separately: PostgREST caps the `authenticated` role's statement_timeout at
+-- 8s project-wide (`anon` is 3s). This route calls Supabase with the service
+-- role key, but the effective role the query runs under still hit that ~8s
+-- ceiling in production, canceling the query outright (Postgres error 57014)
+-- whenever cold-cache execution ran past it — a real 500, not just slow.
+-- SET statement_timeout here raises the ceiling for this function's own
+-- duration only, without touching the project-wide role default that every
+-- other query depends on for runaway-query protection.
 CREATE OR REPLACE FUNCTION get_sales_report_summary(
   p_client_id uuid,
   p_date_from date DEFAULT NULL,
@@ -25,6 +33,7 @@ CREATE OR REPLACE FUNCTION get_sales_report_summary(
 RETURNS jsonb
 LANGUAGE sql
 STABLE
+SET statement_timeout = '30s'
 AS $$
   WITH rows AS (
     SELECT *
