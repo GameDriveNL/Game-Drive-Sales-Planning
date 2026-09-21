@@ -22,87 +22,42 @@ export async function GET(request: NextRequest) {
     const fmt = (d: Date) => d.toISOString().split('T')[0]
 
     // --- Sales metrics (last 30 days vs prior 30 days) ---
-    const salesCols = 'date,product_name,platform,net_units_sold,net_steam_sales_usd'
+    // Used to run two separate while(true)+.range() loops against
+    // unified_performance_view and sum in JS — same anti-pattern as the
+    // Reports/Analytics pages (see add_sales_report_summary_rpc.sql etc.),
+    // just bounded to a fixed 60-day window so it never hung, only ran
+    // slower than a landing page should (1.5-6s live-tested). This computes
+    // both windows in one query instead of up to ~10-20 round trips.
+    const { data: dashSales, error: dashSalesError } = await supabase.rpc('get_dashboard_sales_summary', {
+      p_client_id: clientId,
+      p_current_from: fmt(thirtyDaysAgo),
+      p_current_to: fmt(now),
+      p_prior_from: fmt(sixtyDaysAgo),
+      p_prior_to: fmt(thirtyDaysAgo),
+    })
+    if (dashSalesError) throw dashSalesError
 
-    // Last 30 days
-    let currentSales: Record<string, unknown>[] = []
-    let offset = 0
-    while (true) {
-      const { data } = await supabase
-        .from('unified_performance_view')
-        .select(salesCols)
-        .eq('client_id', clientId)
-        .gte('date', fmt(thirtyDaysAgo))
-        .lte('date', fmt(now))
-        .range(offset, offset + 999)
-      if (!data || data.length === 0) break
-      currentSales = currentSales.concat(data)
-      if (data.length < 1000) break
-      offset += 1000
+    const salesSummary = (dashSales || {}) as {
+      current_revenue?: number
+      current_units?: number
+      prior_revenue?: number
+      prior_units?: number
+      top_products?: { name: string; value: number }[]
+      platform_breakdown?: { name: string; value: number }[]
+      revenue_trend?: { date: string; value: number }[]
     }
 
-    // Prior 30 days (for comparison)
-    let priorSales: Record<string, unknown>[] = []
-    offset = 0
-    while (true) {
-      const { data } = await supabase
-        .from('unified_performance_view')
-        .select(salesCols)
-        .eq('client_id', clientId)
-        .gte('date', fmt(sixtyDaysAgo))
-        .lt('date', fmt(thirtyDaysAgo))
-        .range(offset, offset + 999)
-      if (!data || data.length === 0) break
-      priorSales = priorSales.concat(data)
-      if (data.length < 1000) break
-      offset += 1000
+    const current = {
+      revenue: Number(salesSummary.current_revenue || 0),
+      units: Number(salesSummary.current_units || 0),
     }
-
-    // Compute sales summaries
-    const sumSales = (rows: Record<string, unknown>[]) => {
-      let revenue = 0, units = 0
-      const byProduct: Record<string, number> = {}
-      const byPlatform: Record<string, number> = {}
-      const byDate: Record<string, number> = {}
-
-      for (const row of rows) {
-        const r = row as Record<string, unknown>
-        const rev = Number(r.net_steam_sales_usd || 0)
-        const u = Number(r.net_units_sold || 0)
-        revenue += rev
-        units += u
-
-        const product = String(r.product_name || 'Unknown')
-        byProduct[product] = (byProduct[product] || 0) + rev
-
-        const platform = String(r.platform || 'Unknown')
-        byPlatform[platform] = (byPlatform[platform] || 0) + rev
-
-        const date = String(r.date || '')
-        if (date) byDate[date] = (byDate[date] || 0) + rev
-      }
-
-      return { revenue, units, byProduct, byPlatform, byDate }
+    const prior = {
+      revenue: Number(salesSummary.prior_revenue || 0),
+      units: Number(salesSummary.prior_units || 0),
     }
-
-    const current = sumSales(currentSales)
-    const prior = sumSales(priorSales)
-
-    // Revenue trend (daily for last 30 days)
-    const revenueTrend = Object.entries(current.byDate)
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([date, value]) => ({ date, value }))
-
-    // Top products by revenue
-    const topProducts = Object.entries(current.byProduct)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([name, value]) => ({ name, value }))
-
-    // Revenue by platform
-    const platformBreakdown = Object.entries(current.byPlatform)
-      .sort((a, b) => b[1] - a[1])
-      .map(([name, value]) => ({ name, value }))
+    const revenueTrend = salesSummary.revenue_trend || []
+    const topProducts = salesSummary.top_products || []
+    const platformBreakdown = salesSummary.platform_breakdown || []
 
     // --- Coverage metrics ---
     const { data: covItems } = await supabase
