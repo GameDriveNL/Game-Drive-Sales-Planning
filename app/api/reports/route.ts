@@ -6,45 +6,6 @@ function getSupabase() {
   return getServerSupabase()
 }
 
-type SupabaseClient = ReturnType<typeof getServerSupabase>
-
-// Pages a table by row offset. Sequential pagination made "All Time" reports for
-// clients with years of history hang for a minute+ (one round trip per 1000 rows,
-// each awaited before the next starts). Fetching the total count up front and then
-// firing the page requests in parallel (bounded concurrency) turns N sequential
-// round trips into ~N/CONCURRENCY.
-async function fetchAllRowsPaged(
-  supabase: SupabaseClient,
-  buildQuery: (rangeFrom: number, rangeTo: number) => ReturnType<SupabaseClient['from']>,
-  buildCountQuery: () => ReturnType<SupabaseClient['from']>
-): Promise<Record<string, unknown>[]> {
-  const batchSize = 1000
-  const CONCURRENCY = 8
-
-  const { count, error: countError } = await (buildCountQuery() as unknown as PromiseLike<{ count: number | null; error: unknown }>)
-  if (countError) throw countError
-
-  const total = count || 0
-  if (total === 0) return []
-
-  const pageCount = Math.ceil(total / batchSize)
-  const pageResults: Record<string, unknown>[][] = new Array(pageCount)
-
-  let cursor = 0
-  async function worker() {
-    while (cursor < pageCount) {
-      const i = cursor++
-      const offset = i * batchSize
-      const { data, error } = await (buildQuery(offset, offset + batchSize - 1) as unknown as PromiseLike<{ data: Record<string, unknown>[] | null; error: unknown }>)
-      if (error) throw error
-      pageResults[i] = data || []
-    }
-  }
-
-  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, pageCount) }, () => worker()))
-  return pageResults.flat()
-}
-
 // GET /api/reports — Fetch combined sales + coverage data for a client report
 export async function GET(request: NextRequest) {
   const supabase = getSupabase()
@@ -74,85 +35,52 @@ export async function GET(request: NextRequest) {
     const wantsTwitch = !section || section === 'summary' || section === 'twitch_analytics'
 
     // --- Sales data (from unified_performance_view) ---
+    // Used to paginate through every matching row (1000 at a time, sequentially)
+    // and sum them in JS. For a client with years of history — e.g. 138k+ rows
+    // for tobspr Games — that meant ~139 round trips, each one costing more than
+    // the last (OFFSET pagination has to walk and discard every prior row), and
+    // it either hung for minutes or hit Postgres's statement timeout outright.
+    // get_sales_report_summary (migration add_sales_report_summary_rpc.sql) does
+    // the same grouping/summing as a single query in Postgres instead.
     if (wantsSales) {
       tasks.push((async () => {
-        const columns = 'date,product_name,platform,country_code,country,region,gross_units_sold,chargebacks_returns,net_units_sold,base_price_usd,sale_price_usd,net_steam_sales_usd'
+        const { data, error } = await supabase.rpc('get_sales_report_summary', {
+          p_client_id: clientId,
+          p_date_from: dateFrom || null,
+          p_date_to: dateTo || null,
+        })
+        if (error) throw error
 
-        const applyFilters = <T extends { eq: Function; gte: Function; lte: Function }>(q: T): T => {
-          let query: unknown = q.eq('client_id', clientId)
-          if (dateFrom) query = (query as T).gte('date', dateFrom)
-          if (dateTo) query = (query as T).lte('date', dateTo)
-          return query as T
+        const summary = (data || {}) as {
+          total_rows?: number
+          total_gross_revenue?: number
+          total_net_revenue?: number
+          total_gross_units?: number
+          total_net_units?: number
+          platform_revenue?: { name: string; value: number }[]
+          platform_units?: { name: string; value: number }[]
+          country_revenue?: { name: string; value: number }[]
+          product_revenue?: { name: string; value: number }[]
+          product_units?: { name: string; value: number }[]
+          daily_revenue?: { date: string; value: number }[]
         }
 
-        const allSalesRows = await fetchAllRowsPaged(
-          supabase,
-          (rangeFrom, rangeTo) =>
-            applyFilters(supabase.from('unified_performance_view').select(columns) as any)
-              .order('date', { ascending: true })
-              .range(rangeFrom, rangeTo),
-          () => applyFilters(supabase.from('unified_performance_view').select('*', { count: 'exact', head: true }) as any)
-        )
-
-        // Compute sales summary
-        let totalGrossRevenue = 0
-        let totalNetRevenue = 0
-        let totalGrossUnits = 0
-        let totalNetUnits = 0
-        const platformRevenue: Record<string, number> = {}
-        const platformUnits: Record<string, number> = {}
-        const countryRevenue: Record<string, number> = {}
-        const productRevenue: Record<string, number> = {}
-        const productUnits: Record<string, number> = {}
-        const dailyRevenue: Record<string, number> = {}
-
-        for (const row of allSalesRows) {
-          const r = row as Record<string, unknown>
-          const grossRev = Number(r.net_steam_sales_usd || 0)
-          const netRev = Number(r.net_steam_sales_usd || 0)
-          const grossUnits = Number(r.gross_units_sold || 0)
-          const netUnits = Number(r.net_units_sold || 0)
-          const platform = String(r.platform || 'Unknown')
-          const country = String(r.country_code || r.country || 'Unknown')
-          const product = String(r.product_name || 'Unknown')
-          const date = String(r.date || '')
-
-          totalGrossRevenue += grossRev
-          totalNetRevenue += netRev
-          totalGrossUnits += grossUnits
-          totalNetUnits += netUnits
-
-          platformRevenue[platform] = (platformRevenue[platform] || 0) + netRev
-          platformUnits[platform] = (platformUnits[platform] || 0) + netUnits
-          countryRevenue[country] = (countryRevenue[country] || 0) + netRev
-          productRevenue[product] = (productRevenue[product] || 0) + netRev
-          productUnits[product] = (productUnits[product] || 0) + netUnits
-
-          if (date) {
-            dailyRevenue[date] = (dailyRevenue[date] || 0) + netRev
-          }
-        }
-
-        // Sort breakdowns by value descending
-        const sortObj = (obj: Record<string, number>) =>
-          Object.entries(obj).sort((a, b) => b[1] - a[1]).map(([key, value]) => ({ name: key, value }))
+        const totalNetRevenue = Number(summary.total_net_revenue || 0)
+        const totalNetUnits = Number(summary.total_net_units || 0)
 
         result.sales = {
-          total_rows: allSalesRows.length,
-          total_gross_revenue: totalGrossRevenue,
+          total_rows: Number(summary.total_rows || 0),
+          total_gross_revenue: Number(summary.total_gross_revenue || 0),
           total_net_revenue: totalNetRevenue,
-          total_gross_units: totalGrossUnits,
+          total_gross_units: Number(summary.total_gross_units || 0),
           total_net_units: totalNetUnits,
           avg_price: totalNetUnits > 0 ? totalNetRevenue / totalNetUnits : 0,
-          platform_revenue: sortObj(platformRevenue),
-          platform_units: sortObj(platformUnits),
-          country_revenue: sortObj(countryRevenue).slice(0, 20),
-          product_revenue: sortObj(productRevenue),
-          product_units: sortObj(productUnits),
-          daily_revenue: Object.entries(dailyRevenue)
-            .sort((a, b) => a[0].localeCompare(b[0]))
-            .map(([date, value]) => ({ date, value })),
-          raw_rows: section === 'sales' ? allSalesRows : undefined,
+          platform_revenue: summary.platform_revenue || [],
+          platform_units: summary.platform_units || [],
+          country_revenue: summary.country_revenue || [],
+          product_revenue: summary.product_revenue || [],
+          product_units: summary.product_units || [],
+          daily_revenue: summary.daily_revenue || [],
         }
       })())
     }
@@ -656,8 +584,9 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(result)
   } catch (err: unknown) {
-    // TEMP: verbose error surfacing while debugging the All Time hang fix —
-    // narrow this back down once the real cause is confirmed live.
+    // PostgrestError-shaped rejections (and some Postgres errors surfaced through
+    // supabase-js) aren't always `instanceof Error`, so `err.message` alone was
+    // silently collapsing real causes (e.g. a statement timeout) into "Unknown error".
     let message: string
     if (err instanceof Error) {
       message = err.message
