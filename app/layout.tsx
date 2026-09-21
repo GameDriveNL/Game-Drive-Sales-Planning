@@ -10,15 +10,15 @@ export const dynamic = 'force-dynamic'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: {
-    // Per-route layout.tsx files set the page-specific part (e.g. "Wishlists"),
-    // which renders as "Wishlists · GD" — GD suffix shortened per feedback
-    // card c4433722 since "Game Drive" on every tab added no information.
-    // `default` (not run through the template) covers "/" itself, since
-    // app/page.tsx is a client component and can't export its own metadata.
-    template: '%s · GD',
-    default: 'Dashboard · GD',
-  },
+  // Per-route layout.tsx files set their own full title (e.g. "Wishlists ·
+  // GD") — tried Next's title.template mechanism first, but it doesn't
+  // reliably bubble up through more than one level of nested layout.tsx, so
+  // each route bakes the "· GD" suffix in directly instead. This root title
+  // is just the fallback for "/" (app/page.tsx is a client component and
+  // can't export its own metadata) and anything else left uncovered.
+  // GD suffix shortened per feedback card c4433722 — "Game Drive" on every
+  // tab added no information once you're already using the app.
+  title: 'Dashboard · GD',
   description: 'Game Drive: Professional game sales planning and PR coverage tracking across Steam, PlayStation, Xbox, Nintendo, and Epic',
 }
 

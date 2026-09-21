@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 
-export const metadata: Metadata = { title: 'Coverage Timeline' }
+export const metadata: Metadata = { title: 'Coverage Timeline · GD' }
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   return children

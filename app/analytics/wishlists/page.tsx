@@ -661,7 +661,11 @@ export default function WishlistsPage() {
   const cardStyle: React.CSSProperties = { backgroundColor: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', marginBottom: '16px' }
   const statCard: React.CSSProperties = { backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '16px', textAlign: 'center' }
   const inputStyle: React.CSSProperties = { padding: '8px 12px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '14px', width: '100%', boxSizing: 'border-box' }
-  const btnPrimary: React.CSSProperties = { padding: '8px 16px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontSize: '13px', cursor: 'pointer', fontWeight: 500 }
+  // lineHeight pinned explicitly — without it, the <button> elements here use
+  // the browser's UA-default button line-height while the file-upload
+  // <label> (styled to look identical) inherits the page's line-height
+  // instead, making it a few px taller than its neighbors. See card 5e79cbbf.
+  const btnPrimary: React.CSSProperties = { padding: '8px 16px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontSize: '13px', lineHeight: 1.2, cursor: 'pointer', fontWeight: 500 }
   const selectStyle: React.CSSProperties = { ...inputStyle, backgroundColor: 'white' }
 
   return (
