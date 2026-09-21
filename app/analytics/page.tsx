@@ -425,55 +425,29 @@ export default function AnalyticsPage() {
 
     setIsLoading(true)
     try {
-      // Only select the columns we actually need for better performance
-      const columns = 'date,product_name,platform,country_code,country,region,gross_units_sold,chargebacks_returns,net_units_sold,base_price_usd,sale_price_usd,net_steam_sales_usd,client_id'
+      // Used to paginate unified_performance_view via sequential OFFSET in
+      // the browser (1000 rows/request) and concatenate every batch — for a
+      // large client (e.g. tobspr Games, 138k+ rows) "All Time" never
+      // finished, since OFFSET cost grows with the offset. Confirmed live:
+      // the stat cards stayed on loading skeletons indefinitely. The zero-
+      // activity-row filter below was already here as a partial mitigation
+      // (see its comment) but didn't fix the underlying issue.
+      // get_analytics_performance_rows (add_analytics_performance_rows_rpc.sql)
+      // returns every matching row as one jsonb array in a single query
+      // instead — no pagination needed, since PostgREST's row-count cap only
+      // applies to table/view REST requests, not a single RPC call.
+      const { data, error } = await supabase.rpc('get_analytics_performance_rows', {
+        p_client_id: selectedClient,
+        p_date_from: dateRange.start ? dateRange.start.toISOString().split('T')[0] : null,
+        p_date_to: dateRange.end ? dateRange.end.toISOString().split('T')[0] : null,
+        p_product_name: selectedProduct !== 'all' ? selectedProduct : null,
+        p_region: selectedRegion !== 'all' ? selectedRegion : null,
+        p_platform: selectedPlatform !== 'all' ? selectedPlatform : null,
+      })
 
-      // Supabase has a hard 1000 row limit per query, so fetch in batches
-      let allData: PerformanceData[] = []
-      let hasMore = true
-      let offset = 0
-      const batchSize = 1000
+      if (error) throw error
 
-      while (hasMore) {
-        let query = supabase
-          .from('unified_performance_view')
-          .select(columns)
-          .order('date', { ascending: true })
-          .range(offset, offset + batchSize - 1)
-
-        if (dateRange.start) {
-          query = query.gte('date', dateRange.start.toISOString().split('T')[0])
-        }
-        if (dateRange.end) {
-          query = query.lte('date', dateRange.end.toISOString().split('T')[0])
-        }
-        if (selectedProduct !== 'all') {
-          query = query.eq('product_name', selectedProduct)
-        }
-        query = query.eq('client_id', selectedClient)
-        if (selectedRegion !== 'all') {
-          query = query.eq('region', selectedRegion)
-        }
-        if (selectedPlatform !== 'all') {
-          query = query.eq('platform', selectedPlatform)
-        }
-
-        // Exclude zero-activity rows. The view is ~95% dead rows (mostly
-        // duplicate demo entries) that contribute $0 / 0 units to every total
-        // but bloat the result ~22x. For a large client this made the batched
-        // fetch so slow it never finished — leaving the page showing partial,
-        // under-counted totals. Filtering them is lossless (zeros sum to zero)
-        // and lets the load complete in ~18 batches instead of ~384.
-        query = query.or('net_units_sold.neq.0,gross_units_sold.neq.0,net_steam_sales_usd.neq.0')
-
-        const { data, error } = await query
-
-        if (error) throw error
-
-        allData = allData.concat((data || []) as PerformanceData[])
-        hasMore = (data?.length || 0) === batchSize
-        offset += batchSize
-      }
+      const allData = (data || []) as PerformanceData[]
 
       setPerformanceData(allData)
       setDataAvailable(allData.length > 0)
