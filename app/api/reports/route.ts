@@ -656,7 +656,19 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(result)
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error'
+    // TEMP: verbose error surfacing while debugging the All Time hang fix —
+    // narrow this back down once the real cause is confirmed live.
+    let message: string
+    if (err instanceof Error) {
+      message = err.message
+    } else {
+      try {
+        message = JSON.stringify(err)
+      } catch {
+        message = String(err)
+      }
+    }
+    console.error('reports GET failed:', err)
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }
