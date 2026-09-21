@@ -36,49 +36,40 @@ export async function GET(request: NextRequest) {
       if (gameRow?.name) gameNameFilter = gameRow.name
     }
 
-    // Fetch all matching rows
-    const columns = 'date,product_name,product_type,platform,country_code,country,region,gross_units_sold,chargebacks_returns,net_units_sold,base_price_usd,sale_price_usd,gross_steam_sales_usd,net_steam_sales_usd,vat_tax_usd'
+    // Used to paginate unified_performance_view via sequential OFFSET and
+    // aggregate every raw row in JS — the same anti-pattern fixed in
+    // get_sales_report_summary (see add_sales_report_summary_rpc.sql):
+    // OFFSET cost grows with offset, so a client with hundreds of thousands
+    // of rows (e.g. 138k+ for tobspr Games) never finished for "All Time".
+    // get_sales_data_table (add_sales_data_table_rpc.sql) does the same
+    // GROUP BY in one pass in Postgres instead.
+    const { data: tableData, error: tableError } = await supabase.rpc('get_sales_data_table', {
+      p_client_id: clientId,
+      p_date_from: dateFrom || null,
+      p_date_to: dateTo || null,
+      // gameNameFilter and filterProduct both narrow to a single product_name
+      // in the original query (`.eq('product_name', ...)` applied twice when
+      // both were set, which is just a redundant equal-value filter) — the
+      // RPC only takes one product_name param, so prefer whichever is set.
+      p_product_name: gameNameFilter || filterProduct || null,
+      p_platform: filterPlatform || null,
+      p_country_code: filterCountry || null,
+      p_drill: drillLevel,
+    })
+    if (tableError) throw tableError
 
-    let allRows: Record<string, unknown>[] = []
-    let offset = 0
-    const batchSize = 1000
-
-    while (true) {
-      let query = supabase
-        .from('unified_performance_view')
-        .select(columns)
-        .eq('client_id', clientId)
-        .range(offset, offset + batchSize - 1)
-
-      if (dateFrom) query = query.gte('date', dateFrom)
-      if (dateTo) query = query.lte('date', dateTo)
-      if (gameNameFilter) query = query.eq('product_name', gameNameFilter)
-      if (filterProduct) query = query.eq('product_name', filterProduct)
-      if (filterPlatform) query = query.eq('platform', filterPlatform)
-      if (filterCountry) query = query.eq('country_code', filterCountry)
-
-      const { data, error } = await query
-      if (error) throw error
-      if (!data || data.length === 0) break
-
-      allRows = allRows.concat(data)
-      if (data.length < batchSize) break
-      offset += batchSize
+    const summary = (tableData || {}) as {
+      rows?: Record<string, unknown>[]
+      products?: string[]
+      platforms?: string[]
+      countries?: string[]
+      raw_row_count?: number
     }
 
-    // Collect filter options
-    const productSet = new Set<string>()
-    const platformSet = new Set<string>()
-    const countrySet = new Set<string>()
+    const productSet = new Set(summary.products || [])
+    const platformSet = new Set(summary.platforms || [])
+    const countrySet = new Set(summary.countries || [])
 
-    for (const r of allRows) {
-      const row = r as Record<string, unknown>
-      if (row.product_name) productSet.add(String(row.product_name))
-      if (row.platform) platformSet.add(String(row.platform))
-      if (row.country_code) countrySet.add(String(row.country_code))
-    }
-
-    // Aggregate based on drill level
     interface AggRow {
       [key: string]: unknown
       gross_revenue: number
@@ -94,76 +85,17 @@ export async function GET(request: NextRequest) {
       full_price_revenue: number
     }
 
-    const aggregated: Record<string, AggRow> = {}
-
-    for (const r of allRows) {
-      const row = r as Record<string, unknown>
-      let key = ''
-
-      switch (drillLevel) {
-        case 'game':
-          key = String(row.product_name || 'Unknown')
-          break
-        case 'product':
-          key = `${row.product_name || 'Unknown'}|${row.platform || 'Unknown'}`
-          break
-        case 'platform':
-          key = String(row.platform || 'Unknown')
-          break
-        case 'country':
-          key = `${row.country_code || 'Unknown'}|${row.country || 'Unknown'}`
-          break
-        case 'daily':
-          key = String(row.date || 'Unknown')
-          break
-        default:
-          key = `${row.product_name || 'Unknown'}|${row.platform || 'Unknown'}`
-      }
-
-      if (!aggregated[key]) {
-        const parts = key.split('|')
-        const base: AggRow = {
-          gross_revenue: 0, net_revenue: 0, gross_units: 0, net_units: 0,
-          chargebacks: 0, vat: 0, row_count: 0, full_price_revenue: 0,
-        }
-
-        switch (drillLevel) {
-          case 'game':
-            base.product_name = parts[0]
-            base.product_type = row.product_type || null
-            break
-          case 'product':
-            base.product_name = parts[0]
-            base.platform = parts[1]
-            base.product_type = row.product_type || null
-            break
-          case 'platform':
-            base.platform = parts[0]
-            break
-          case 'country':
-            base.country_code = parts[0]
-            base.country = parts[1]
-            break
-          case 'daily':
-            base.date = parts[0]
-            break
-        }
-
-        aggregated[key] = base
-      }
-
-      const agg = aggregated[key]
-      agg.gross_revenue += Number(row.gross_steam_sales_usd || 0)
-      agg.net_revenue += Number(row.net_steam_sales_usd || 0)
-      agg.gross_units += Number(row.gross_units_sold || 0)
-      agg.net_units += Number(row.net_units_sold || 0)
-      agg.chargebacks += Number(row.chargebacks_returns || 0)
-      agg.vat += Number(row.vat_tax_usd || 0)
-      agg.full_price_revenue += Number(row.base_price_usd || 0) * Number(row.net_units_sold || 0)
-      agg.row_count++
-    }
-
-    let rows = Object.values(aggregated)
+    let rows: AggRow[] = (summary.rows || []).map(r => ({
+      ...r,
+      gross_revenue: Number(r.gross_revenue || 0),
+      net_revenue: Number(r.net_revenue || 0),
+      gross_units: Number(r.gross_units || 0),
+      net_units: Number(r.net_units || 0),
+      chargebacks: Number(r.chargebacks || 0),
+      vat: Number(r.vat || 0),
+      full_price_revenue: Number(r.full_price_revenue || 0),
+      row_count: Number(r.row_count || 0),
+    }))
 
     // Compute avg price for each row
     for (const row of rows) {
@@ -223,7 +155,7 @@ export async function GET(request: NextRequest) {
         platforms: Array.from(platformSet).sort(),
         countries: Array.from(countrySet).sort(),
       },
-      raw_row_count: allRows.length,
+      raw_row_count: Number(summary.raw_row_count || 0),
     })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error'
