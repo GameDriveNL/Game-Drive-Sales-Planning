@@ -10,7 +10,15 @@ export const dynamic = 'force-dynamic'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Game Drive — Sales Planning & PR Coverage',
+  title: {
+    // Per-route layout.tsx files set the page-specific part (e.g. "Wishlists"),
+    // which renders as "Wishlists · GD" — GD suffix shortened per feedback
+    // card c4433722 since "Game Drive" on every tab added no information.
+    // `default` (not run through the template) covers "/" itself, since
+    // app/page.tsx is a client component and can't export its own metadata.
+    template: '%s · GD',
+    default: 'Dashboard · GD',
+  },
   description: 'Game Drive: Professional game sales planning and PR coverage tracking across Steam, PlayStation, Xbox, Nintendo, and Epic',
 }
 
