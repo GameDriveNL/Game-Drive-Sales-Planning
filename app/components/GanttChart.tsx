@@ -1474,7 +1474,21 @@ export default function GanttChart(props: GanttChartProps) {
     const launchStart = normalizeToLocalDate(product.launch_date)
     const cooldownEnd = addDays(launchStart, launchCooldownDays - 1)
 
-    const startDayIndex = getDayIndexForDate(launchStart)
+    // Follow-up on card 90475aa8: the band used to start at launchStart, the
+    // same day the launch sale block starts, so their transparent layers
+    // stacked for the whole sale duration and became unreadable. The sale
+    // block already communicates that period on its own — the band only
+    // needs to show the part of the cooldown that OUTLASTS it, so start it
+    // the day after the launch sale ends instead.
+    const saleDuration = (launchSaleResize && launchSaleResize.productId === product.id)
+      ? launchSaleResize.currentDuration
+      : (product.launch_sale_duration || 7)
+    const saleEnd = addDays(launchStart, saleDuration - 1)
+    const bandStart = addDays(saleEnd, 1)
+
+    if (bandStart > cooldownEnd) return null // launch sale already covers the full cooldown window
+
+    const startDayIndex = getDayIndexForDate(bandStart)
     const endDayIndex = getDayIndexForDate(cooldownEnd)
 
     if (endDayIndex < 0 || startDayIndex >= days.length) return null
@@ -1485,11 +1499,11 @@ export default function GanttChart(props: GanttChartProps) {
     return {
       left: visibleStartIdx * dayWidth,
       width: (visibleEndIdx - visibleStartIdx + 1) * dayWidth,
-      startDate: launchStart,
+      startDate: bandStart,
       endDate: cooldownEnd,
       cooldownDays: launchCooldownDays
     }
-  }, [getDayIndexForDate, days, dayWidth, launchCooldownDays])
+  }, [getDayIndexForDate, days, dayWidth, launchCooldownDays, launchSaleResize])
   
   const scrollThumbStyle = useMemo(() => {
     // B14: derive thumb width from the SAME measurements the native scrollbar uses
