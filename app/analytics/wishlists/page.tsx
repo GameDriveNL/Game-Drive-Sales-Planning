@@ -825,7 +825,11 @@ export default function WishlistsPage() {
                           {wlSyncing ? 'Syncing...' : 'Sync from Steam API'}
                         </button>
                       )}
-                      <label style={{ ...btnPrimary, display: 'inline-flex', alignItems: 'center', gap: '6px', opacity: wlUploading ? 0.6 : 1, cursor: wlUploading ? 'not-allowed' : 'pointer' }}>
+                      {/* margin: 0 overrides the global `label { margin-bottom: 6px }` rule
+                          (app/globals.css) meant for real form labels — without it, this
+                          label sits ~3px higher than its sibling <button>s in the centered
+                          flex row despite matching heights (card 5e79cbbf follow-up). */}
+                      <label style={{ ...btnPrimary, display: 'inline-flex', alignItems: 'center', gap: '6px', margin: 0, opacity: wlUploading ? 0.6 : 1, cursor: wlUploading ? 'not-allowed' : 'pointer' }}>
                         {wlUploading ? 'Importing...' : 'Import CSV'}
                         <input type="file" accept=".csv" style={{ display: 'none' }} disabled={wlUploading} onChange={e => { const f = e.target.files?.[0]; if (f) handleWlUpload(f); e.target.value = '' }} />
                       </label>
@@ -1119,7 +1123,8 @@ export default function WishlistsPage() {
                   {/* Actions */}
                   {canEdit && (
                     <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-                      <label style={{ ...btnPrimary, display: 'inline-flex', alignItems: 'center', gap: '6px', opacity: blUploading ? 0.6 : 1, cursor: blUploading ? 'not-allowed' : 'pointer' }}>
+                      {/* margin: 0 overrides the global `label { margin-bottom: 6px }` rule — see wishlists tab above (card 5e79cbbf) */}
+                      <label style={{ ...btnPrimary, display: 'inline-flex', alignItems: 'center', gap: '6px', margin: 0, opacity: blUploading ? 0.6 : 1, cursor: blUploading ? 'not-allowed' : 'pointer' }}>
                         {blUploading ? 'Importing...' : 'Import CSV'}
                         <input type="file" accept=".csv" style={{ display: 'none' }} disabled={blUploading} onChange={e => { const f = e.target.files?.[0]; if (f) handleBlUpload(f); e.target.value = '' }} />
                       </label>
