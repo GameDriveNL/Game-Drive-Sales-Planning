@@ -164,7 +164,11 @@ export default function SourcesPage() {
   const [platformStats, setPlatformStats] = useState<Record<string, { total: number; lastSeen: string | null }>>({})
 
   // Retroactive search state
-  const [showRetroSearch, setShowRetroSearch] = useState(false)
+  // Card 7f792cb7: was collapsed and tucked inside the Web Monitoring tab, so
+  // Alisa never found it even after being told it existed. Now rendered as
+  // its own always-visible section (see renderRetroactiveSearch below) and
+  // open by default rather than requiring an extra click to discover.
+  const [showRetroSearch, setShowRetroSearch] = useState(true)
   const [retroGameId, setRetroGameId] = useState('')
   const [retroDateFrom, setRetroDateFrom] = useState('')
   const [retroDateTo, setRetroDateTo] = useState('')
@@ -1427,127 +1431,131 @@ export default function SourcesPage() {
             webSources.map(renderSourceCard)
           )}
         </div>
+      </div>
+    )
+  }
 
-        {/* Retroactive Search */}
-        <div style={{ marginTop: '24px', backgroundColor: 'white', borderRadius: '10px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-          <button
-            onClick={() => { setShowRetroSearch(r => !r); setRetroResult(null); setShowRetroLog(false) }}
-            style={{ width: '100%', padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
-          >
+  // Card 7f792cb7: previously nested inside renderWebTab (only visible under the
+  // Web Monitoring tab, collapsed by default) — moved to a standalone, always-visible
+  // section so it doesn't depend on which tab happens to be selected.
+  const renderRetroactiveSearch = () => (
+    <div style={{ marginTop: '24px', backgroundColor: 'white', borderRadius: '10px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+      <button
+        onClick={() => { setShowRetroSearch(r => !r); setRetroResult(null); setShowRetroLog(false) }}
+        style={{ width: '100%', padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+      >
+        <div>
+          <span style={{ fontSize: '15px', fontWeight: 600, color: '#1e293b' }}>🔍 Retroactive Search</span>
+          <span style={{ fontSize: '13px', color: '#64748b', marginLeft: '10px' }}>Search past coverage for a game across a date range</span>
+        </div>
+        <span style={{ fontSize: '16px', color: '#94a3b8' }}>{showRetroSearch ? '▲' : '▼'}</span>
+      </button>
+
+      {showRetroSearch && (
+        <div style={{ padding: '0 16px 16px 16px', borderTop: '1px solid #f1f5f9' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 80px', gap: '12px', alignItems: 'end', marginTop: '14px' }}>
             <div>
-              <span style={{ fontSize: '15px', fontWeight: 600, color: '#1e293b' }}>🔍 Retroactive Search</span>
-              <span style={{ fontSize: '13px', color: '#64748b', marginLeft: '10px' }}>Search past coverage for a game across a date range</span>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#374151', marginBottom: '4px' }}>Game *</label>
+              <select
+                value={retroGameId}
+                onChange={e => setRetroGameId(e.target.value)}
+                style={{ width: '100%', padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px', backgroundColor: 'white' }}
+              >
+                <option value="">Select game...</option>
+                {games.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
             </div>
-            <span style={{ fontSize: '16px', color: '#94a3b8' }}>{showRetroSearch ? '▲' : '▼'}</span>
-          </button>
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#374151', marginBottom: '4px' }}>From date</label>
+              <input
+                type="date"
+                value={retroDateFrom}
+                onChange={e => setRetroDateFrom(e.target.value)}
+                style={{ width: '100%', padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box' }}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#374151', marginBottom: '4px' }}>To date</label>
+              <input
+                type="date"
+                value={retroDateTo}
+                onChange={e => setRetroDateTo(e.target.value)}
+                style={{ width: '100%', padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box' }}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#374151', marginBottom: '4px' }}>Max queries</label>
+              <input
+                type="number"
+                min={5}
+                max={30}
+                value={retroMaxQueries}
+                onChange={e => setRetroMaxQueries(Math.min(30, Math.max(5, Number(e.target.value))))}
+                style={{ width: '100%', padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box' }}
+              />
+            </div>
+          </div>
 
-          {showRetroSearch && (
-            <div style={{ padding: '0 16px 16px 16px', borderTop: '1px solid #f1f5f9' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 80px', gap: '12px', alignItems: 'end', marginTop: '14px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#374151', marginBottom: '4px' }}>Game *</label>
-                  <select
-                    value={retroGameId}
-                    onChange={e => setRetroGameId(e.target.value)}
-                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px', backgroundColor: 'white' }}
-                  >
-                    <option value="">Select game...</option>
-                    {games.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#374151', marginBottom: '4px' }}>From date</label>
-                  <input
-                    type="date"
-                    value={retroDateFrom}
-                    onChange={e => setRetroDateFrom(e.target.value)}
-                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box' }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#374151', marginBottom: '4px' }}>To date</label>
-                  <input
-                    type="date"
-                    value={retroDateTo}
-                    onChange={e => setRetroDateTo(e.target.value)}
-                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box' }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#374151', marginBottom: '4px' }}>Max queries</label>
-                  <input
-                    type="number"
-                    min={5}
-                    max={30}
-                    value={retroMaxQueries}
-                    onChange={e => setRetroMaxQueries(Math.min(30, Math.max(5, Number(e.target.value))))}
-                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box' }}
-                  />
-                </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '12px' }}>
+            <button
+              onClick={handleRetroSearch}
+              disabled={!retroGameId || retroRunning}
+              style={{
+                padding: '8px 18px',
+                backgroundColor: !retroGameId || retroRunning ? '#f1f5f9' : '#3b82f6',
+                color: !retroGameId || retroRunning ? '#64748b' : 'white',
+                border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: 500,
+                cursor: !retroGameId || retroRunning ? 'not-allowed' : 'pointer',
+                opacity: !retroGameId || retroRunning ? 0.7 : 1
+              }}
+            >
+              {retroRunning ? 'Searching...' : 'Run Retroactive Search'}
+            </button>
+            {retroRunning && (
+              <span style={{ fontSize: '12px', color: '#64748b' }}>This can take up to 5 minutes...</span>
+            )}
+            <span style={{ fontSize: '12px', color: '#94a3b8', marginLeft: 'auto' }}>
+              ~${(retroMaxQueries * 0.02).toFixed(2)} estimated cost
+            </span>
+          </div>
+
+          {retroResult && (
+            <div style={{
+              marginTop: '12px', padding: '12px 14px', borderRadius: '8px',
+              backgroundColor: retroResult.message?.includes('error') || retroResult.message?.includes('failed') || retroResult.message?.includes('Error') ? '#fee2e2' : '#f0fdf4',
+              border: `1px solid ${retroResult.message?.includes('error') || retroResult.message?.includes('failed') || retroResult.message?.includes('Error') ? '#fecaca' : '#86efac'}`
+            }}>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: '#1e293b', marginBottom: '6px' }}>
+                {retroResult.game ? `${retroResult.game}: ` : ''}{retroResult.message}
               </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '12px' }}>
-                <button
-                  onClick={handleRetroSearch}
-                  disabled={!retroGameId || retroRunning}
-                  style={{
-                    padding: '8px 18px',
-                    backgroundColor: !retroGameId || retroRunning ? '#f1f5f9' : '#3b82f6',
-                    color: !retroGameId || retroRunning ? '#64748b' : 'white',
-                    border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: 500,
-                    cursor: !retroGameId || retroRunning ? 'not-allowed' : 'pointer',
-                    opacity: !retroGameId || retroRunning ? 0.7 : 1
-                  }}
-                >
-                  {retroRunning ? 'Searching...' : 'Run Retroactive Search'}
-                </button>
-                {retroRunning && (
-                  <span style={{ fontSize: '12px', color: '#64748b' }}>This can take up to 5 minutes...</span>
-                )}
-                <span style={{ fontSize: '12px', color: '#94a3b8', marginLeft: 'auto' }}>
-                  ~${(retroMaxQueries * 0.02).toFixed(2)} estimated cost
-                </span>
-              </div>
-
-              {retroResult && (
-                <div style={{
-                  marginTop: '12px', padding: '12px 14px', borderRadius: '8px',
-                  backgroundColor: retroResult.message?.includes('error') || retroResult.message?.includes('failed') || retroResult.message?.includes('Error') ? '#fee2e2' : '#f0fdf4',
-                  border: `1px solid ${retroResult.message?.includes('error') || retroResult.message?.includes('failed') || retroResult.message?.includes('Error') ? '#fecaca' : '#86efac'}`
-                }}>
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#1e293b', marginBottom: '6px' }}>
-                    {retroResult.game ? `${retroResult.game}: ` : ''}{retroResult.message}
-                  </div>
-                  {retroResult.inserted !== undefined && (
-                    <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: '#475569', flexWrap: 'wrap' }}>
-                      <span>New found: <strong>{retroResult.total_new_items}</strong></span>
-                      <span>Inserted: <strong>{retroResult.inserted}</strong></span>
-                      <span>Queries run: <strong>{retroResult.queries_executed}</strong></span>
-                      {retroResult.cost_estimate_usd !== undefined && (
-                        <span>Cost: <strong>${retroResult.cost_estimate_usd.toFixed(3)}</strong></span>
-                      )}
-                    </div>
+              {retroResult.inserted !== undefined && (
+                <div style={{ display: 'flex', gap: '16px', fontSize: '12px', color: '#475569', flexWrap: 'wrap' }}>
+                  <span>New found: <strong>{retroResult.total_new_items}</strong></span>
+                  <span>Inserted: <strong>{retroResult.inserted}</strong></span>
+                  <span>Queries run: <strong>{retroResult.queries_executed}</strong></span>
+                  {retroResult.cost_estimate_usd !== undefined && (
+                    <span>Cost: <strong>${retroResult.cost_estimate_usd.toFixed(3)}</strong></span>
                   )}
-                  {retroResult.query_details && retroResult.query_details.length > 0 && (
-                    <div style={{ marginTop: '8px' }}>
-                      <button
-                        onClick={() => setShowRetroLog(v => !v)}
-                        style={{ fontSize: '12px', color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-                      >
-                        {showRetroLog ? 'Hide' : 'Show'} query log ({retroResult.query_details.length} queries)
-                      </button>
-                      {showRetroLog && (
-                        <div style={{ marginTop: '6px', maxHeight: '200px', overflowY: 'auto', fontSize: '11px', fontFamily: 'monospace' }}>
-                          {retroResult.query_details.map((q, i) => (
-                            <div key={i} style={{ padding: '2px 0', borderBottom: '1px solid #f1f5f9', color: '#374151' }}>
-                              <span style={{ color: q.new_items > 0 ? '#16a34a' : '#94a3b8', display: 'inline-block', width: '28px' }}>
-                                {q.new_items > 0 ? `+${q.new_items}` : '0'}
-                              </span>
-                              {q.query}
-                            </div>
-                          ))}
+                </div>
+              )}
+              {retroResult.query_details && retroResult.query_details.length > 0 && (
+                <div style={{ marginTop: '8px' }}>
+                  <button
+                    onClick={() => setShowRetroLog(v => !v)}
+                    style={{ fontSize: '12px', color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                  >
+                    {showRetroLog ? 'Hide' : 'Show'} query log ({retroResult.query_details.length} queries)
+                  </button>
+                  {showRetroLog && (
+                    <div style={{ marginTop: '6px', maxHeight: '200px', overflowY: 'auto', fontSize: '11px', fontFamily: 'monospace' }}>
+                      {retroResult.query_details.map((q, i) => (
+                        <div key={i} style={{ padding: '2px 0', borderBottom: '1px solid #f1f5f9', color: '#374151' }}>
+                          <span style={{ color: q.new_items > 0 ? '#16a34a' : '#94a3b8', display: 'inline-block', width: '28px' }}>
+                            {q.new_items > 0 ? `+${q.new_items}` : '0'}
+                          </span>
+                          {q.query}
                         </div>
-                      )}
+                      ))}
                     </div>
                   )}
                 </div>
@@ -1555,9 +1563,9 @@ export default function SourcesPage() {
             </div>
           )}
         </div>
-      </div>
-    )
-  }
+      )}
+    </div>
+  )
 
   const renderApifyTab = () => {
     const ytSources = sources.filter(s => s.source_type === 'youtube')
@@ -1857,6 +1865,9 @@ export default function SourcesPage() {
               </button>
             ))}
           </div>
+
+          {/* Retroactive Search — always visible, not tied to which tab is active */}
+          {renderRetroactiveSearch()}
 
           {/* Tab content */}
           {activeTab === 'rss' && renderRSSTab()}
