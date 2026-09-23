@@ -209,8 +209,22 @@ const SECTIONS: Section[] = [
       { kind: 'p', text: 'Add, edit, and disable agency clients. Toggle Sales Planning / PR Tracking per client to control which features apply.' },
 
       { kind: 'h3', text: 'Client API Keys' },
-      { kind: 'p', text: 'Per-client Steam Partner API keys and PlayStation API keys. Without these, the corresponding analytics will not auto-sync. To set up Steam: the client creates a Financial API Key in Steamworks (Manage Groups → Financial API Group), copies it, pastes it here. Same idea for PlayStation.' },
-      { kind: 'warn', text: 'A Steam key only works if it was created inside a "Financial API Group" with the relevant apps assigned. If sync returns "403 Forbidden", the client needs to re-issue from the right group.' },
+      { kind: 'p', text: 'Per-client Steam Partner API keys and PlayStation API keys. Without these, the corresponding analytics will not auto-sync. There are two ways to connect a client\'s Steam data — pick whichever is easier for that client.' },
+
+      { kind: 'h3', text: 'Option A — client\'s own Financial API key' },
+      { kind: 'p', text: 'The client creates a Financial API Key in Steamworks (Partner site → Manage Groups → Financial API Group), assigns their app(s) to that group, copies the key, and pastes it into Settings → Client API Keys. Same idea for PlayStation.' },
+      { kind: 'warn', text: 'A Steam key only works if it was created inside a "Financial API Group" with the relevant apps assigned, and its "Allowed IP addresses" list must be left empty — never ask a client to whitelist an IP. If sync returns "403 Forbidden", the most common cause is the key not being from a Financial API Group at all, or having been regenerated/revoked on Steam\'s side without us being told. Use the Test button next to the key (or the sync error text) — it tells you which of these it is rather than a bare 403.' },
+
+      { kind: 'h3', text: 'Option B — share apps with Game Drive\'s Steamworks account (recommended when a client\'s own key keeps failing)' },
+      { kind: 'p', text: 'Game Drive has its own Steamworks partner account (used for our internal game, "Sprint City"). A client with Steamworks admin access can share their app\'s financial data with that account directly, and we pull their sales through our own key — no client-side key needed at all, and nothing that can silently expire or get revoked on their end.' },
+      { kind: 'steps', items: [
+        'In the client\'s Steamworks account: Application Management → find the app → Manage Sharing (or "Sharing Install/Editing Rights", depending on the Steamworks UI version).',
+        'Add Game Drive\'s Steamworks partner account as a collaborator, and tick "share financial view rights" (view-only is enough — do not grant edit rights).',
+        'In Settings → Clients, set that client\'s "Steam Partner ID" to their Steamworks partnerid. This is what routes the shared rows to the right client once they come in through Game Drive\'s key — without it, the sales land under the wrong client or get skipped.',
+        'No key entry needed for this client — the sync uses Game Drive\'s own key and picks up every client that has shared view rights with it.',
+      ]},
+      { kind: 'tip', text: 'This is the fix we used for Total Mayhem Games and BlackMill Games after both clients\' own Steam keys kept dying for reasons Steam never explained clearly (403s that looked like an IP problem but weren\'t). If a client\'s key has failed more than once with no clear cause, move them to Option B instead of chasing another re-issued key.' },
+      { kind: 'warn', text: 'Never suggest whitelisting an IP address to fix a Steam 403 — Vercel\'s outbound IP is dynamic, so an IP allowlist cannot work and was never the actual problem in any case we\'ve hit. Treat any 403 as either "wrong key type" or "key dead on Steam\'s side," not an IP issue.' },
 
       { kind: 'h3', text: 'System API Keys' },
       { kind: 'p', text: 'Agency-wide keys: Tavily (web search), Google Gemini (AI scoring), Apify (social scrapers), Discord webhooks (notifications). Configure these once, then PR Coverage can run.' },
@@ -266,7 +280,7 @@ const SECTIONS: Section[] = [
     title: 'Troubleshooting',
     blocks: [
       { kind: 'h3', text: 'Steam sync returns "403 Forbidden"' },
-      { kind: 'p', text: 'The API key is dead, revoked, or was not created from a Financial API Group. The client needs to issue a new key from Steamworks → Manage Groups → Financial API Group (with their app IDs assigned) and paste it into Settings → Client API Keys.' },
+      { kind: 'p', text: 'The API key is dead, revoked, or was not created from a Financial API Group. First try: the client issues a new key from Steamworks → Manage Groups → Financial API Group (with their app IDs assigned) and pastes it into Settings → Client API Keys. If a key for the same client has already failed once before, skip straight to Option B under Settings → Client API Keys instead of asking for a third key — see that section for why.' },
 
       { kind: 'h3', text: 'Steam sync succeeds but no data appears' },
       { kind: 'p', text: 'The key connected but Steam has no financial data to return. Most likely cause: the Financial API Group has no apps assigned. The client needs to add their apps in Steamworks.' },
