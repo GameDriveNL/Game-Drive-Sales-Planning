@@ -243,7 +243,10 @@ export default function GapAnalysis({ sales, products, platforms, timelineStart,
     })
 
     return gaps
-  }, [sales, products, platforms, quarters])
+    // platformOverrides is read inside via isGapAnalysisOnForPlatform (line 123) —
+    // without it here, toggling a platform's checkbox updated state but this memo
+    // never recomputed, so the gap list stayed stale (card fcbc4476).
+  }, [sales, products, platforms, quarters, platformOverrides])
 
   const filteredGaps = useMemo(() => {
     const today = new Date()
