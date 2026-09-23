@@ -485,6 +485,30 @@ function loadNewItemDraft(): NewItemDraft | null {
   }
 }
 
+// D13 follow-up: the detail modal's overlay closes the same way on an
+// outside click, and the comment box lost the same protection the New Item
+// form got. Comment text is drafted per-card (so switching between cards
+// doesn't mix up drafts); the name field is remembered globally so it isn't
+// retyped on every card. See feedback card feebcca7.
+const COMMENT_AUTHOR_KEY = 'gd_feedback_comment_author'
+const commentDraftKey = (itemId: string) => `gd_feedback_comment_draft_${itemId}`
+
+function loadCommentAuthor(): string {
+  try {
+    return localStorage.getItem(COMMENT_AUTHOR_KEY) || ''
+  } catch {
+    return ''
+  }
+}
+
+function loadCommentDraft(itemId: string): string {
+  try {
+    return localStorage.getItem(commentDraftKey(itemId)) || ''
+  } catch {
+    return ''
+  }
+}
+
 function NewItemModal({ onClose, onCreate, defaultType }: {
   onClose: () => void
   onCreate: (p: Partial<FeedbackItem>) => void
@@ -611,10 +635,30 @@ function DetailModal({ item, onClose, onPatch, onDelete, onComment }: {
   onComment: (id: string, body: string, author: string) => void
 }) {
   const [answer, setAnswer] = useState(item.answer || '')
-  const [comment, setComment] = useState('')
-  const [author, setAuthor] = useState('')
+  const [comment, setComment] = useState(() => loadCommentDraft(item.id))
+  const [author, setAuthor] = useState(() => loadCommentAuthor())
   const [uploadingImage, setUploadingImage] = useState(false)
   const tm = TYPE_META[item.item_type]
+
+  useEffect(() => {
+    try {
+      if (comment) localStorage.setItem(commentDraftKey(item.id), comment)
+      else localStorage.removeItem(commentDraftKey(item.id))
+    } catch { /* private browsing / storage blocked — draft just won't persist */ }
+  }, [comment, item.id])
+
+  useEffect(() => {
+    try {
+      if (author) localStorage.setItem(COMMENT_AUTHOR_KEY, author)
+    } catch { /* ignore */ }
+  }, [author])
+
+  const postComment = () => {
+    if (!comment.trim()) return
+    onComment(item.id, comment, author)
+    setComment('')
+    try { localStorage.removeItem(commentDraftKey(item.id)) } catch { /* ignore */ }
+  }
 
   const handleImagePick = async (file: File | null) => {
     if (!file) return
@@ -738,9 +782,9 @@ function DetailModal({ item, onClose, onPatch, onDelete, onComment }: {
               placeholder="Add a comment…"
               value={comment}
               onChange={e => setComment(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && comment.trim()) { onComment(item.id, comment, author); setComment('') } }}
+              onKeyDown={e => { if (e.key === 'Enter') postComment() }}
             />
-            <button className={styles.saveBtn} disabled={!comment.trim()} onClick={() => { onComment(item.id, comment, author); setComment('') }}>Post</button>
+            <button className={styles.saveBtn} disabled={!comment.trim()} onClick={postComment}>Post</button>
           </div>
         </div>
 
