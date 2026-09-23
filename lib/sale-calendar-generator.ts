@@ -291,7 +291,7 @@ function generatePlatformSales(
         launchStart = snapToPreferredDay(periodStart, preferredStartDay)
         if (launchStart > periodEnd) return newSales
       }
-      const saleEnd = addDays(launchStart, saleDuration - 1)
+      const saleEnd = addDays(launchStart, saleDuration)
 
       if (!hasConflict(launchStart, saleEnd, platformCooldownDays, allSales, platform.id)) {
         newSales.push({
@@ -333,7 +333,7 @@ function generatePlatformSales(
 
     if (!availableDate || availableDate > periodEnd) break
 
-    const potentialEnd = addDays(availableDate, saleDuration - 1)
+    const potentialEnd = addDays(availableDate, saleDuration)
     const actualEnd = potentialEnd > periodEnd ? periodEnd : potentialEnd
 
     if (!hasConflict(availableDate, actualEnd, platformCooldownDays, allSales, platform.id)) {

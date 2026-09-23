@@ -217,7 +217,9 @@ export default function TimelineExportModal({
             const salesToShow = monthSales.slice(0, maxRowsPerSlide)
             
             for (const sale of salesToShow) {
-              const days = differenceInDays(parseISO(sale.end_date), parseISO(sale.start_date)) + 1
+              // end_date is start_date + duration (feedback card 3deb3317), not
+              // duration - 1, so the nominal day count is the raw difference.
+              const days = differenceInDays(parseISO(sale.end_date), parseISO(sale.start_date))
               const platformInfo = getPlatformInfo(sale)
               const productName = getProductName(sale)
               

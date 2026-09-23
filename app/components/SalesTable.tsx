@@ -108,7 +108,8 @@ export default function SalesTable({ sales, platforms, onDelete, onEdit, onUpdat
   }, [sales])
   
   const calculateDays = (start: string, end: string): number => {
-    return differenceInDays(parseISO(end), parseISO(start)) + 1
+    // end_date is start_date + duration (card 3deb3317), not duration - 1
+    return differenceInDays(parseISO(end), parseISO(start))
   }
   
   const calculateCooldownUntil = (endDate: string, platformId: string): string => {

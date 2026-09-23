@@ -87,7 +87,9 @@ export default function SaleBlock({
   // previously this warning only surfaced inside the Edit modal, so a resize
   // done straight on the timeline could exceed it with no visible sign.
   // exclusiveDays matches the "Excel-style" count used in Add/Edit Sale's own check.
-  const inclusiveDays = differenceInDays(endDate, startDate) + 1
+  // inclusiveDays is the nominal duration: end_date is start_date + duration
+  // (card 3deb3317), not duration - 1, so no +1 is needed here.
+  const inclusiveDays = differenceInDays(endDate, startDate)
   const exclusiveDays = inclusiveDays - 1
   const exceedsMaxDays = !!sale.platform?.max_sale_days && exclusiveDays > sale.platform.max_sale_days
 
@@ -175,8 +177,9 @@ export default function SaleBlock({
     const daysDelta = Math.round(deltaX / dayWidth)
     const pixelOffset = daysDelta * dayWidth
     
-    // Prevent making sale shorter than 1 day
-    const currentDays = differenceInDays(parseISO(sale.end_date), parseISO(sale.start_date)) + 1
+    // Prevent making sale shorter than 1 day. end_date is start_date +
+    // duration (card 3deb3317), not duration - 1, so no +1 is needed here.
+    const currentDays = differenceInDays(parseISO(sale.end_date), parseISO(sale.start_date))
     
     if (isResizing === 'left') {
       // Left edge: positive delta shrinks sale, negative extends it

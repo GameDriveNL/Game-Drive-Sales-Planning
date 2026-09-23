@@ -661,8 +661,8 @@ export default function GanttChart(props: GanttChartProps) {
   const handleCopySale = useCallback((sale: SaleWithDetails) => {
     const startDate = normalizeToLocalDate(sale.start_date)
     const endDate = normalizeToLocalDate(sale.end_date)
-    const duration = differenceInDays(endDate, startDate) + 1
-    
+    const duration = differenceInDays(endDate, startDate)
+
     setClipboardSale({
       saleName: sale.sale_name ?? null,
       discountPercentage: sale.discount_percentage ?? null,
@@ -704,7 +704,7 @@ export default function GanttChart(props: GanttChartProps) {
     if (!clipboardSale || !onCreateSale || !contextMenu.visible) return
 
     const startDate = format(days[contextMenu.dayIndex], 'yyyy-MM-dd')
-    const endDate = format(addDays(days[contextMenu.dayIndex], clipboardSale.duration - 1), 'yyyy-MM-dd')
+    const endDate = format(addDays(days[contextMenu.dayIndex], clipboardSale.duration), 'yyyy-MM-dd')
 
     // Open AddSaleModal with prefilled data (no directCreate) so user can verify dates & validation runs
     onCreateSale({

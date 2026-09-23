@@ -55,7 +55,8 @@ export function useCalendarPredictions(): CalendarPredictionsReturn {
         sale_id: s.id,
         platform_id: s.platform_id,
         discount_percentage: s.discount_percentage,
-        duration_days: differenceInDays(parseISO(s.end_date), parseISO(s.start_date)) + 1,
+        // end_date is start_date + duration (card 3deb3317), not duration - 1
+        duration_days: differenceInDays(parseISO(s.end_date), parseISO(s.start_date)),
         start_date: s.start_date,
       }))
     }

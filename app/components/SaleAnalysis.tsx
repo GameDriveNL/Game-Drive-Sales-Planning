@@ -15,8 +15,9 @@ export default function SaleAnalysis({ sales, platforms }: SaleAnalysisProps) {
   const stats = useMemo(() => {
     if (sales.length === 0) return null
 
-    // Duration stats
-    const durations = sales.map(s => differenceInDays(parseISO(s.end_date), parseISO(s.start_date)) + 1)
+    // Duration stats — end_date is start_date + duration (card 3deb3317), not
+    // duration - 1, so the nominal day count is the raw difference.
+    const durations = sales.map(s => differenceInDays(parseISO(s.end_date), parseISO(s.start_date)))
     const avgDuration = durations.reduce((a, b) => a + b, 0) / durations.length
     const minDuration = Math.min(...durations)
     const maxDuration = Math.max(...durations)

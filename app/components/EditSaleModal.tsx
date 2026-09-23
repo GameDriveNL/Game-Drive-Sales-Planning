@@ -41,7 +41,7 @@ export default function EditSaleModal({
   const [platformId, setPlatformId] = useState(sale.platform_id)
   const [startDate, setStartDate] = useState(sale.start_date)
   const [duration, setDuration] = useState(
-    differenceInDays(parseISO(sale.end_date), parseISO(sale.start_date)) + 1
+    differenceInDays(parseISO(sale.end_date), parseISO(sale.start_date))
   )
   const [endDate, setEndDate] = useState(sale.end_date)
   const [discountPercentage, setDiscountPercentage] = useState(sale.discount_percentage || 50)
@@ -87,7 +87,7 @@ export default function EditSaleModal({
   const handleStartDateChange = (newStartDate: string) => {
     setStartDate(newStartDate)
     if (newStartDate) {
-      const newEndDate = format(addDays(parseISO(newStartDate), duration - 1), 'yyyy-MM-dd')
+      const newEndDate = format(addDays(parseISO(newStartDate), duration), 'yyyy-MM-dd')
       setEndDate(newEndDate)
     }
   }
@@ -97,7 +97,7 @@ export default function EditSaleModal({
     const clampedDuration = Math.max(1, newDuration)
     setDuration(clampedDuration)
     if (startDate) {
-      const newEndDate = format(addDays(parseISO(startDate), clampedDuration - 1), 'yyyy-MM-dd')
+      const newEndDate = format(addDays(parseISO(startDate), clampedDuration), 'yyyy-MM-dd')
       setEndDate(newEndDate)
     }
   }
@@ -106,7 +106,7 @@ export default function EditSaleModal({
   const handleEndDateChange = (newEndDate: string) => {
     setEndDate(newEndDate)
     if (startDate && newEndDate) {
-      const newDuration = differenceInDays(parseISO(newEndDate), parseISO(startDate)) + 1
+      const newDuration = differenceInDays(parseISO(newEndDate), parseISO(startDate))
       setDuration(Math.max(1, newDuration))
     }
   }
@@ -369,10 +369,10 @@ export default function EditSaleModal({
             </div>
           </div>
 
-          {/* Clarify the inclusive end date vs the Steam turn-off day (GD-014) */}
+          {/* End Date is the real-world day the discount turns off (accounts for the 7PM CEST changeover) — feedback card 3deb3317 */}
           {startDate && endDate && (
             <div style={{ display: 'block', marginTop: '-6px', marginBottom: '10px', fontSize: '12px', color: '#64748b' }}>
-              🟢 Live {format(parseISO(startDate), 'd MMM')} – {format(parseISO(endDate), 'd MMM yyyy')} ({duration} day{duration === 1 ? '' : 's'}, end date inclusive) · discount turns off {format(addDays(parseISO(endDate), 1), 'd MMM')}
+              🟢 Live {format(parseISO(startDate), 'd MMM')} – {format(parseISO(endDate), 'd MMM yyyy')} ({duration} day{duration === 1 ? '' : 's'}, discount turns off {format(parseISO(endDate), 'd MMM')})
             </div>
           )}
 

@@ -114,7 +114,8 @@ export default function CalendarExport({
               sale.sale_name,
               format(parseISO(sale.start_date), 'yyyy-MM-dd'),
               format(parseISO(sale.end_date), 'yyyy-MM-dd'),
-              differenceInDays(parseISO(sale.end_date), parseISO(sale.start_date)) + 1,
+              // end_date is start_date + duration (card 3deb3317), not duration - 1
+              differenceInDays(parseISO(sale.end_date), parseISO(sale.start_date)),
               sale.discount_percentage,
               sale.is_event ? 'Event' : 'Custom',
               sale.is_event ? 'Yes' : 'No',
@@ -227,7 +228,8 @@ export default function CalendarExport({
               sale.sale_name,
               format(parseISO(sale.start_date), 'yyyy-MM-dd'),
               format(parseISO(sale.end_date), 'yyyy-MM-dd'),
-              differenceInDays(parseISO(sale.end_date), parseISO(sale.start_date)) + 1,
+              // end_date is start_date + duration (card 3deb3317), not duration - 1
+              differenceInDays(parseISO(sale.end_date), parseISO(sale.start_date)),
               sale.discount_percentage,
               sale.is_event ? 'Event' : 'Custom',
               ...(hasPredictions ? [

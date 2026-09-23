@@ -48,7 +48,7 @@ export default function AddSaleModal({
 }: AddSaleModalProps) {
   // Calculate initial duration from start and end dates
   const initialDuration = initialDate && initialEndDate
-    ? differenceInDays(initialEndDate, initialDate) + 1
+    ? differenceInDays(initialEndDate, initialDate)
     : 7
 
   // Modal close guards: prevent close-on-mouse-drag (B8) and confirm if dirty (B9)
@@ -67,8 +67,8 @@ export default function AddSaleModal({
   const [duration, setDuration] = useState(initialDuration)
   const [endDate, setEndDate] = useState(
     initialEndDate ? format(initialEndDate, 'yyyy-MM-dd') :
-    initialDate ? format(addDays(initialDate, initialDuration - 1), 'yyyy-MM-dd') :
-    format(addDays(new Date(), 6), 'yyyy-MM-dd')
+    initialDate ? format(addDays(initialDate, initialDuration), 'yyyy-MM-dd') :
+    format(addDays(new Date(), 7), 'yyyy-MM-dd')
   )
   const [discountPercentage, setDiscountPercentage] = useState(initialDiscountPercentage ?? 50)
   const [saleName, setSaleName] = useState(initialSaleName || '')
@@ -112,7 +112,7 @@ export default function AddSaleModal({
   const handleStartDateChange = (newStartDate: string) => {
     setStartDate(newStartDate)
     if (newStartDate) {
-      const newEndDate = format(addDays(parseISO(newStartDate), duration - 1), 'yyyy-MM-dd')
+      const newEndDate = format(addDays(parseISO(newStartDate), duration), 'yyyy-MM-dd')
       setEndDate(newEndDate)
     }
   }
@@ -122,7 +122,7 @@ export default function AddSaleModal({
     const clampedDuration = Math.max(1, newDuration)
     setDuration(clampedDuration)
     if (startDate) {
-      const newEndDate = format(addDays(parseISO(startDate), clampedDuration - 1), 'yyyy-MM-dd')
+      const newEndDate = format(addDays(parseISO(startDate), clampedDuration), 'yyyy-MM-dd')
       setEndDate(newEndDate)
     }
   }
@@ -131,7 +131,7 @@ export default function AddSaleModal({
   const handleEndDateChange = (newEndDate: string) => {
     setEndDate(newEndDate)
     if (startDate && newEndDate) {
-      const newDuration = differenceInDays(parseISO(newEndDate), parseISO(startDate)) + 1
+      const newDuration = differenceInDays(parseISO(newEndDate), parseISO(startDate))
       setDuration(Math.max(1, newDuration))
     }
   }
@@ -413,10 +413,10 @@ export default function AddSaleModal({
             </div>
           </div>
 
-          {/* Clarify the inclusive end date vs the Steam turn-off day (GD-014) */}
+          {/* End Date is the real-world day the discount turns off (accounts for the 7PM CEST changeover) — feedback card 3deb3317 */}
           {startDate && endDate && (
             <div className={styles.hint} style={{ display: 'block', marginTop: '-6px', marginBottom: '10px', color: '#64748b' }}>
-              🟢 Live {format(parseISO(startDate), 'd MMM')} – {format(parseISO(endDate), 'd MMM yyyy')} ({duration} day{duration === 1 ? '' : 's'}, end date inclusive) · discount turns off {format(addDays(parseISO(endDate), 1), 'd MMM')}
+              🟢 Live {format(parseISO(startDate), 'd MMM')} – {format(parseISO(endDate), 'd MMM yyyy')} ({duration} day{duration === 1 ? '' : 's'}, discount turns off {format(parseISO(endDate), 'd MMM')})
             </div>
           )}
 

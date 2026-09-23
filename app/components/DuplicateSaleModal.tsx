@@ -5,6 +5,7 @@ import { format, addDays, parseISO, differenceInDays } from 'date-fns'
 import { Sale, Platform, Product, Game, Client, SaleWithDetails } from '@/lib/types'
 import { validateSale } from '@/lib/validation'
 import { useModalClose } from '@/lib/hooks/useModalClose'
+import { calculateCooldownEnd } from '@/lib/dateUtils'
 import styles from './DuplicateSaleModal.module.css'
 
 interface DuplicateSaleModalProps {
@@ -28,20 +29,20 @@ export default function DuplicateSaleModal({
 }: DuplicateSaleModalProps) {
   const [mode, setMode] = useState<DuplicateMode>('date')
   const [newStartDate, setNewStartDate] = useState(
-    format(addDays(parseISO(sale.end_date), (platforms.find(p => p.id === sale.platform_id)?.cooldown_days || 30) + 1), 'yyyy-MM-dd')
+    format(calculateCooldownEnd(parseISO(sale.end_date), platforms.find(p => p.id === sale.platform_id)?.cooldown_days || 30), 'yyyy-MM-dd')
   )
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([])
   const [selectedProducts, setSelectedProducts] = useState<string[]>([])
   const [duplicating, setDuplicating] = useState(false)
   const [keepSameDate, setKeepSameDate] = useState(true)
   const { overlayProps, modalProps, formProps, handleClose } = useModalClose(onClose)
-  
-  const saleDuration = differenceInDays(parseISO(sale.end_date), parseISO(sale.start_date)) + 1
-  
+
+  const saleDuration = differenceInDays(parseISO(sale.end_date), parseISO(sale.start_date))
+
   // Calculate new end date based on start date
   const newEndDate = useMemo(() => {
     if (!newStartDate) return ''
-    return format(addDays(parseISO(newStartDate), saleDuration - 1), 'yyyy-MM-dd')
+    return format(addDays(parseISO(newStartDate), saleDuration), 'yyyy-MM-dd')
   }, [newStartDate, saleDuration])
   
   // Get available platforms (excluding current)
