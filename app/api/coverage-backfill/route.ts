@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { tavily } from '@tavily/core'
 import { inferTerritory } from '@/lib/territory'
-import { classifyCoverageType } from '@/lib/coverage-utils'
+import { classifyCoverageType, INFORMATIONAL_DOMAINS } from '@/lib/coverage-utils'
 import { generateLanguageQueries } from '@/lib/keyword-variants'
 
 export const dynamic = 'force-dynamic'
@@ -11,30 +11,22 @@ export const maxDuration = 300 // 5 minutes for historical backfill
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
+// Strips ALL query params, not just utm_*. Storefront/CDN links carry locale
+// and referral params (Steam's `l=`, `snr=`, `curator_clanid=`, `sender_campaign=`...)
+// that vary per hit on the exact same page, so keeping any of them let the same
+// article/page get inserted repeatedly as "new" — 130 "new" backfill results for
+// shapez 2 turned out to be ~20 real pages hit under different query strings.
 function normalizeUrl(url: string): string {
   try {
     const u = new URL(url)
-    u.searchParams.delete('utm_source')
-    u.searchParams.delete('utm_medium')
-    u.searchParams.delete('utm_campaign')
-    u.searchParams.delete('utm_term')
-    u.searchParams.delete('utm_content')
     let normalized = u.origin + u.pathname
     if (normalized.endsWith('/') && normalized.length > 1) {
       normalized = normalized.slice(0, -1)
     }
-    const remaining = u.searchParams.toString()
-    if (remaining) normalized += '?' + remaining
     return normalized
   } catch {
     return url.trim()
   }
-}
-
-function determineApprovalStatus(score: number): string {
-  if (score >= 80) return 'auto_approved'
-  if (score >= 50) return 'pending_review'
-  return 'rejected'
 }
 
 // Generate comprehensive search queries for historical backfill.
@@ -181,13 +173,21 @@ export async function POST(request: Request) {
       if (Date.now() - startTime > 270000) break
 
       try {
+        // topic: 'news' — general web search returns storefronts/wikis/forums
+        // and rarely a publishedDate; news search is tuned for actual press
+        // coverage and is the only mode that reliably populates it.
+        // startDate/endDate are the real Tavily SDK field names — the previous
+        // publishedAfterDate/publishedBeforeDate aren't real options, so the
+        // date range picked in the UI was silently doing nothing.
         const searchOpts: Record<string, unknown> = {
           maxResults: 20,
           searchDepth: 'advanced',
           includeAnswer: false,
+          topic: 'news',
+          excludeDomains: INFORMATIONAL_DOMAINS,
         }
-        if (dateFrom) searchOpts.publishedAfterDate = dateFrom
-        if (dateTo) searchOpts.publishedBeforeDate = dateTo
+        if (dateFrom) searchOpts.startDate = dateFrom
+        if (dateTo) searchOpts.endDate = dateTo
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const response = await tvly.search(searchQuery, searchOpts as any)
@@ -203,25 +203,23 @@ export async function POST(request: Request) {
           const text = `${result.title} ${result.content || ''}`.toLowerCase()
           if (blacklistGlobal.some((bk: string) => text.includes(bk))) continue
 
-          // Scoring: higher bar for backfill since game name should appear
-          let score = 50
+          // Hard relevance floor: the game name must appear somewhere, or this
+          // result isn't about the game at all (query drift). This is a filter,
+          // not a scoring decision — actual approval is left to AI review below,
+          // same as the daily Tavily scan cron. Self-approving off a crude
+          // "title contains game name" heuristic was exactly why storefront and
+          // CD-key-reseller pages (which always contain the game name) sailed
+          // through as auto_approved with zero review.
           const titleLower = result.title.toLowerCase()
           const gameLower = game.name.toLowerCase()
+          const nameMatches = titleLower.includes(gameLower) || text.includes(gameLower)
+            || titleLower.includes('we were here') || text.includes('we were here')
+          if (!nameMatches) continue
 
-          if (titleLower.includes(gameLower)) {
-            score += 30
-          } else if (text.includes(gameLower)) {
-            score += 15
-          }
-
-          // Check for series mentions
-          if (titleLower.includes('we were here') || text.includes('we were here')) {
-            score += 10
-          }
-
-          if (result.score && result.score > 0.7) score += 10
-          if (result.score && result.score > 0.9) score += 5
-          score = Math.min(score, 100)
+          // Kept for source_metadata/diagnostics only — not used for approval.
+          let keywordScore = titleLower.includes(gameLower) ? 80 : 65
+          if (result.score && result.score > 0.7) keywordScore += 10
+          keywordScore = Math.min(keywordScore, 100)
 
           existingUrls.add(normalizedUrl)
 
@@ -233,10 +231,13 @@ export async function POST(request: Request) {
             territory = inferTerritory(resultDomain)
             const { data: outlet } = await supabase
               .from('outlets')
-              .select('id')
+              .select('id, is_blacklisted')
               .eq('domain', resultDomain)
               .single()
-            if (outlet) outletId = outlet.id
+            if (outlet) {
+              if (outlet.is_blacklisted) continue
+              outletId = outlet.id
+            }
           } catch { /* ignore */ }
 
           newItems.push({
@@ -248,14 +249,17 @@ export async function POST(request: Request) {
             publish_date: result.publishedDate ? result.publishedDate.split('T')[0] : null,
             coverage_type: classifyCoverageType('news', normalizedUrl),
             territory,
-            relevance_score: score,
-            relevance_reasoning: `Historical backfill: "${searchQuery}"`,
-            approval_status: determineApprovalStatus(score),
+            // Left null for AI enrichment (coverage-enrich cron), same as the
+            // daily Tavily scan — don't self-approve off a keyword heuristic.
+            relevance_score: null,
+            relevance_reasoning: null,
+            approval_status: 'pending_review',
             source_type: 'tavily',
             source_metadata: {
               search_query: searchQuery,
               backfill: true,
               tavily_score: result.score || null,
+              keyword_score: keywordScore,
               content_snippet: result.content?.substring(0, 300) || null
             },
             discovered_at: new Date().toISOString()
@@ -310,11 +314,9 @@ export async function POST(request: Request) {
       total_new_items: newItems.length,
       inserted: insertedCount,
       cost_estimate_usd: queriesMade * 0.02, // advanced search costs ~2x
-      approval_breakdown: {
-        auto_approved: newItems.filter(i => i.approval_status === 'auto_approved').length,
-        pending_review: newItems.filter(i => i.approval_status === 'pending_review').length,
-        rejected: newItems.filter(i => i.approval_status === 'rejected').length
-      },
+      // All inserted items land as pending_review for AI enrichment (coverage-enrich
+      // cron) to score — see the nameMatches/keywordScore comment above.
+      pending_review: newItems.length,
       query_details: queryResults,
       ...(dryRun ? { items_preview: newItems.slice(0, 10).map(i => ({ title: i.title, url: i.url, score: i.relevance_score, status: i.approval_status })) } : {})
     })

@@ -90,7 +90,7 @@ export function matchesWord(text: string, keyword: string): boolean {
 /** Domains that should be auto-classified as 'informational' coverage type.
  *  These are non-press pages (game storefronts, wikis, databases) that
  *  inflate UMV numbers and aren't real press coverage. */
-const INFORMATIONAL_DOMAINS = [
+export const INFORMATIONAL_DOMAINS = [
   'wikipedia.org',
   'store.steampowered.com',
   'steamcommunity.com',

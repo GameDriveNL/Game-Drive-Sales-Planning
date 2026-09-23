@@ -58,20 +58,17 @@ function shouldScanNow(source: CoverageSource): boolean {
   }
 }
 
+// Strips ALL query params, not just utm_*. Storefront/CDN links carry locale
+// and referral params that vary per hit on the same page (Steam's `l=`,
+// `snr=`, `curator_clanid=`...) — keeping any of them lets the same page get
+// re-inserted as "new" on every scan. See card 7f792cb7 investigation.
 function normalizeUrl(url: string): string {
   try {
     const u = new URL(url)
-    u.searchParams.delete('utm_source')
-    u.searchParams.delete('utm_medium')
-    u.searchParams.delete('utm_campaign')
-    u.searchParams.delete('utm_term')
-    u.searchParams.delete('utm_content')
     let normalized = u.origin + u.pathname
     if (normalized.endsWith('/') && normalized.length > 1) {
       normalized = normalized.slice(0, -1)
     }
-    const remaining = u.searchParams.toString()
-    if (remaining) normalized += '?' + remaining
     return normalized
   } catch {
     return url.trim()
