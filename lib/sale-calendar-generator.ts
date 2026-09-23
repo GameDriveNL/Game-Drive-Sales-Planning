@@ -175,7 +175,7 @@ function findNextAvailableDate(
   while (candidate <= periodEnd && iterations < maxIterations) {
     iterations++
 
-    const potentialEnd = addDays(candidate, saleDuration - 1)
+    const potentialEnd = addDays(candidate, saleDuration)
     const actualEnd = potentialEnd > periodEnd ? periodEnd : potentialEnd
 
     const conflict = hasConflict(candidate, actualEnd, newSaleCooldownDays, existingSales, platformId)
@@ -185,7 +185,7 @@ function findNextAvailableDate(
       if (preferredStartDay !== undefined) {
         const snapped = snapToPreferredDay(candidate, preferredStartDay)
         if (snapped > periodEnd) return null
-        const snappedEnd = addDays(snapped, saleDuration - 1)
+        const snappedEnd = addDays(snapped, saleDuration)
         const snappedActualEnd = snappedEnd > periodEnd ? periodEnd : snappedEnd
         if (!hasConflict(snapped, snappedActualEnd, newSaleCooldownDays, existingSales, platformId)) {
           return snapped
