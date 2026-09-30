@@ -803,7 +803,7 @@ export default function ClientKeysPage() {
                           <strong style={{ color: '#1e40af' }}>Auto-sync enabled</strong>
                         </div>
                         <div style={{ color: '#1e3a8a', fontSize: '11px' }}>
-                          <div>Syncing from {key.sync_start_date} to present</div>
+                          <div>Daily sync covers the last 30 days. History from {key.sync_start_date || 'the start'} loads once.</div>
                           <div>Every {key.sync_frequency_hours}h • Next: {formatNextSync(key.next_sync_due)}</div>
                         </div>
                         <button

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { serverSupabase as supabase } from '@/lib/supabase';
+import { loadAgencyFallback } from '@/lib/steam-partner-routing';
 
 // POST - Trigger a background Steam sync job
 export async function POST(request: Request) {
@@ -22,7 +23,8 @@ export async function POST(request: Request) {
       .eq('is_active', true)
       .single();
 
-    if (keyError || !keyData) {
+    // No key of its own is fine when the client shares its apps with Game Drive's Steamworks account.
+    if ((keyError || !keyData) && !(await loadAgencyFallback(supabase, client_id))) {
       return NextResponse.json(
         { error: 'No active Steam API key found for this client' },
         { status: 404 }

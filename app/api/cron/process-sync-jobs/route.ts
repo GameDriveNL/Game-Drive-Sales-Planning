@@ -119,44 +119,40 @@ async function processSingleJob(job: any): Promise<Record<string, unknown>> {
     }
 
     // Default: Steam sync
-    const { data: keyData, error: keyError } = await supabase
+    const { data: keyData } = await supabase
       .from('steam_api_keys')
       .select('*')
       .eq('client_id', job.client_id)
       .eq('is_active', true)
-      .single();
+      .maybeSingle();
 
-    if (keyError || !keyData) {
-      await supabase
-        .from('sync_jobs')
-        .update({
-          status: 'failed',
-          completed_at: new Date().toISOString(),
-          error_message: 'No active Steam API key found'
-        })
-        .eq('id', job.id);
-      return { error: 'No API key found' };
-    }
-
-    let financialApiKey = keyData.publisher_key || keyData.api_key;
-    const useHighwatermark = job.force_full_sync ? '0' : (keyData.highwatermark || '0');
-    // Set when the client's own key is dead and we read its data through Game
+    // A client that only shares its apps with Game Drive has no key of its own (empty string here).
+    let financialApiKey: string = keyData?.publisher_key || keyData?.api_key || '';
+    const useHighwatermark = job.force_full_sync ? '0' : (keyData?.highwatermark || '0');
+    // Set when the client's own key is dead or missing and we read its data through Game
     // Drive's Steamworks account instead (view grant). Only that client's
     // partner id is kept from the agency feed.
     let onlyPartnerId: string | null = null;
 
     // Later batches of a job already running via the agency skip the own-key probe.
     const alreadyViaAgency = job.result_data?.via === 'agency_view_grant';
-    let changedDates: Awaited<ReturnType<typeof getChangedDatesForPartner>> = alreadyViaAgency
-      ? { success: false, keyRejected: true, error: 'Game Drive\'s Steamworks account could not read this client\'s data. Check that the client still shares its apps with financial view rights.' }
-      : await getChangedDatesForPartner(financialApiKey, useHighwatermark);
+    let changedDates: Awaited<ReturnType<typeof getChangedDatesForPartner>> =
+      alreadyViaAgency || !financialApiKey
+        ? {
+            success: false,
+            keyRejected: true,
+            error: financialApiKey
+              ? 'Game Drive\'s Steamworks account could not read this client\'s data. Check that the client still shares its apps with financial view rights.'
+              : 'No active Steam API key found, and Game Drive\'s Steamworks account cannot read this client. Set its Steam Partner ID in Settings → Clients and have it share its apps with Game Drive with financial view rights.'
+          }
+        : await getChangedDatesForPartner(financialApiKey, useHighwatermark);
 
     if (!changedDates.success && changedDates.keyRejected) {
       const fallback = await loadAgencyFallback(supabase, job.client_id);
       if (fallback) {
         const viaAgency = await getChangedDatesForPartner(fallback.key, '0');
         if (viaAgency.success) {
-          console.log(`[Cron] Client ${job.client_id}'s own Steam key was rejected; syncing partner ${fallback.partnerId} via the agency account`);
+          console.log(`[Cron] Client ${job.client_id}'s own Steam key was rejected or missing; syncing partner ${fallback.partnerId} via the agency account`);
           changedDates = viaAgency;
           financialApiKey = fallback.key;
           onlyPartnerId = fallback.partnerId;
@@ -260,8 +256,30 @@ async function processSingleJob(job: any): Promise<Record<string, unknown>> {
       })
       .eq('id', job.id);
 
+    // One-time deep backfill finished: stop the scheduler from queueing it again.
+    // Through the agency with zero rows means Game Drive's account has no view of
+    // this client, so call that a failure instead of pretending history is loaded.
+    let backfillFailed = false;
+    if (isComplete && job.is_history_backfill) {
+      if (onlyPartnerId && totalImported === 0) {
+        backfillFailed = true;
+        await supabase
+          .from('sync_jobs')
+          .update({
+            status: 'failed',
+            error_message: `Game Drive's Steamworks account returned no data for this client (Steam partner ${onlyPartnerId}). Ask them to share their apps with Game Drive with "share financial view rights" ticked, or add their own Financial API key.`
+          })
+          .eq('id', job.id);
+      } else {
+        await supabase
+          .from('clients')
+          .update({ steam_history_backfilled_at: new Date().toISOString() })
+          .eq('id', job.client_id);
+      }
+    }
+
     // Settings > Client Keys shows this date on the client's card.
-    if (isComplete) {
+    if (isComplete && !backfillFailed) {
       await supabase
         .from('steam_api_keys')
         .update({ last_sync_date: new Date().toISOString().split('T')[0] })

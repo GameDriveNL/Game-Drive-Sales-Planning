@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
       // Trigger an immediate manual sync
       const { data: apiKey } = await supabase
         .from('steam_api_keys')
-        .select('sync_start_date, auto_sync_enabled')
+        .select('auto_sync_enabled')
         .eq('client_id', client_id)
         .single();
 
@@ -129,8 +129,10 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Create a sync job from start_date to today
+      // Same rolling window as the daily job. Full history is a one-time backfill
+      // queued by schedule_steam_history_backfills(), not something to redo on demand.
       const today = new Date().toISOString().split('T')[0];
+      const rollingStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
       const { data: job, error: jobError } = await supabase
         .from('sync_jobs')
@@ -138,7 +140,7 @@ export async function POST(request: NextRequest) {
           client_id,
           job_type: 'steam_sync',
           status: 'pending',
-          start_date: apiKey.sync_start_date,
+          start_date: rollingStart,
           end_date: today,
           force_full_sync: false,
           is_auto_sync: false // This is a manual trigger
