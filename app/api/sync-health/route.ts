@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 import { serverSupabase as supabase } from '@/lib/supabase'
 
+// Without this, Next prerenders the GET at build time and Vercel serves that
+// snapshot until the next deploy, so a "Sync failing" banner never cleared.
+export const dynamic = 'force-dynamic'
+
 /**
  * Returns sync health status per client — used to show warnings
  * on the API keys settings page when syncs are failing.
