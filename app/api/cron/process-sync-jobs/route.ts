@@ -260,6 +260,14 @@ async function processSingleJob(job: any): Promise<Record<string, unknown>> {
       })
       .eq('id', job.id);
 
+    // Settings > Client Keys shows this date on the client's card.
+    if (isComplete) {
+      await supabase
+        .from('steam_api_keys')
+        .update({ last_sync_date: new Date().toISOString().split('T')[0] })
+        .eq('client_id', job.client_id);
+    }
+
     // The agency feed's highwatermark says nothing about the client's own key.
     if (changedDates.highwatermark && !onlyPartnerId) {
       await supabase
