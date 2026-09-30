@@ -9,7 +9,7 @@ const DOMO_AUTH_URL = 'https://api.domo.com/oauth/token';
 const DOMO_DATASETS_URL = 'https://api.domo.com/v1/datasets';
 const DOMO_EXPORT_URL = 'https://api.domo.com/v1/datasets/{datasetId}/data';
 const DOMO_QUERY_URL = 'https://api.domo.com/v1/datasets/query/execute/{datasetId}';
-const MAX_DATES_PER_RUN = 10; // Process 10 dates per cron execution (runs every minute)
+const MAX_DATES_PER_RUN = 20; // Dates per cron execution (runs every minute); STEAM_BATCH_BUDGET_MS cuts a run short if Steam is slow
 const MAX_PAGES_PER_DATE = 50; // Steam pages GetDetailedSales at 1000 rows; safety cap on the cursor loop
 const STEAM_BATCH_BUDGET_MS = 40_000; // stop starting new dates past this so the 60s function limit is never hit
 const LARGE_DATASET_THRESHOLD = 50000; // Datasets above this use SQL query API with date chunking
@@ -176,8 +176,9 @@ async function processSingleJob(job: any): Promise<Record<string, unknown>> {
       return { error: changedDates.error };
     }
 
-    // Filter dates to requested range
-    let datesToSync = changedDates.dates || [];
+    // Filter dates to requested range. With view grants Steam lists a date once
+    // per partner (2-3x), so dedupe or every day is fetched repeatedly.
+    let datesToSync = Array.from(new Set(changedDates.dates || []));
     if (job.start_date || job.end_date) {
       datesToSync = datesToSync.filter((date: string) => {
         const d = date.replace(/\//g, '-');
