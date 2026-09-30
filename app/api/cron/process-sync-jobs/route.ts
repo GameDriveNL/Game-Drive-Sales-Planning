@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { serverSupabase as supabase } from '@/lib/supabase';
 import { verifyCronAuth } from '@/lib/cron-auth';
 import { checkSteamFinancialKey, describeKeyFailure } from '@/lib/steam-key-check';
-import { loadPartnerClientMap, clientForPartner, learnOwnPartnerId, learnPartnerIdsFromCatalog, type PartnerClientMap } from '@/lib/steam-partner-routing';
+import { loadPartnerClientMap, clientForPartner, learnOwnPartnerId, learnPartnerIdsFromCatalog, loadAgencyFallback, type PartnerClientMap } from '@/lib/steam-partner-routing';
 
 const STEAM_PARTNER_API = 'https://partner.steam-api.com';
 const DOMO_AUTH_URL = 'https://api.domo.com/oauth/token';
@@ -10,6 +10,8 @@ const DOMO_DATASETS_URL = 'https://api.domo.com/v1/datasets';
 const DOMO_EXPORT_URL = 'https://api.domo.com/v1/datasets/{datasetId}/data';
 const DOMO_QUERY_URL = 'https://api.domo.com/v1/datasets/query/execute/{datasetId}';
 const MAX_DATES_PER_RUN = 10; // Process 10 dates per cron execution (runs every minute)
+const MAX_PAGES_PER_DATE = 50; // Steam pages GetDetailedSales at 1000 rows; safety cap on the cursor loop
+const STEAM_BATCH_BUDGET_MS = 40_000; // stop starting new dates past this so the 60s function limit is never hit
 const LARGE_DATASET_THRESHOLD = 50000; // Datasets above this use SQL query API with date chunking
 const DATES_PER_PS_RUN = 15; // Process 15 dates per cron run for large datasets
 
@@ -136,10 +138,31 @@ async function processSingleJob(job: any): Promise<Record<string, unknown>> {
       return { error: 'No API key found' };
     }
 
-    const financialApiKey = keyData.publisher_key || keyData.api_key;
+    let financialApiKey = keyData.publisher_key || keyData.api_key;
     const useHighwatermark = job.force_full_sync ? '0' : (keyData.highwatermark || '0');
+    // Set when the client's own key is dead and we read its data through Game
+    // Drive's Steamworks account instead (view grant). Only that client's
+    // partner id is kept from the agency feed.
+    let onlyPartnerId: string | null = null;
 
-    const changedDates = await getChangedDatesForPartner(financialApiKey, useHighwatermark);
+    // Later batches of a job already running via the agency skip the own-key probe.
+    const alreadyViaAgency = job.result_data?.via === 'agency_view_grant';
+    let changedDates: Awaited<ReturnType<typeof getChangedDatesForPartner>> = alreadyViaAgency
+      ? { success: false, keyRejected: true, error: 'Game Drive\'s Steamworks account could not read this client\'s data. Check that the client still shares its apps with financial view rights.' }
+      : await getChangedDatesForPartner(financialApiKey, useHighwatermark);
+
+    if (!changedDates.success && changedDates.keyRejected) {
+      const fallback = await loadAgencyFallback(supabase, job.client_id);
+      if (fallback) {
+        const viaAgency = await getChangedDatesForPartner(fallback.key, '0');
+        if (viaAgency.success) {
+          console.log(`[Cron] Client ${job.client_id}'s own Steam key was rejected; syncing partner ${fallback.partnerId} via the agency account`);
+          changedDates = viaAgency;
+          financialApiKey = fallback.key;
+          onlyPartnerId = fallback.partnerId;
+        }
+      }
+    }
 
     if (!changedDates.success) {
       await supabase
@@ -195,12 +218,17 @@ async function processSingleJob(job: any): Promise<Record<string, unknown>> {
     // Route rows by Steam partnerid so view-granted data (a client that shared
     // its apps with Game Drive's own partner account) lands under that client.
     const partnerMap = await loadPartnerClientMap(supabase);
-    const learnState = { done: Array.from(partnerMap.values()).includes(job.client_id) };
+    // Via the agency the job's client is not the key owner, so its own partner id is already known.
+    const learnState = { done: !!onlyPartnerId || Array.from(partnerMap.values()).includes(job.client_id) };
     const unmappedPartners = new Set<string>();
 
+    const batchDeadline = Date.now() + STEAM_BATCH_BUDGET_MS;
+    let attempted = 0;
     for (const dateStr of datesToProcess) {
+      if (attempted > 0 && Date.now() > batchDeadline) break; // the rest carries over to the next cron run
+      attempted++;
       try {
-        const result = await processSingleDate(financialApiKey, dateStr, job.client_id, partnerMap, learnState);
+        const result = await processSingleDate(financialApiKey, dateStr, job.client_id, partnerMap, learnState, onlyPartnerId);
         totalImported += result.imported;
         totalSkipped += result.skipped;
         result.unmappedPartnerIds.forEach(p => unmappedPartners.add(p));
@@ -215,7 +243,7 @@ async function processSingleJob(job: any): Promise<Record<string, unknown>> {
       errors.push(`Unmapped Steam partner id(s) ${Array.from(unmappedPartners).join(', ')}: rows stored under this client. Set the Steam Partner ID on the owning client in Settings → Clients and re-sync.`);
     }
 
-    const newDatesProcessed = alreadyProcessed + datesToProcess.length;
+    const newDatesProcessed = alreadyProcessed + attempted;
     const isComplete = newDatesProcessed >= datesToSync.length;
 
     await supabase
@@ -226,11 +254,13 @@ async function processSingleJob(job: any): Promise<Record<string, unknown>> {
         rows_imported: totalImported,
         rows_skipped: totalSkipped,
         completed_at: isComplete ? new Date().toISOString() : null,
-        error_message: errors.length > 0 ? errors.join('; ') : null
+        error_message: errors.length > 0 ? errors.join('; ') : null,
+        ...(onlyPartnerId ? { result_data: { via: 'agency_view_grant', partner_id: onlyPartnerId } } : {})
       })
       .eq('id', job.id);
 
-    if (changedDates.highwatermark) {
+    // The agency feed's highwatermark says nothing about the client's own key.
+    if (changedDates.highwatermark && !onlyPartnerId) {
       await supabase
         .from('steam_api_keys')
         .update({ highwatermark: changedDates.highwatermark })
@@ -271,7 +301,7 @@ async function processSingleJob(job: any): Promise<Record<string, unknown>> {
 async function getChangedDatesForPartner(
   apiKey: string,
   highwatermark: string
-): Promise<{ success: boolean; dates?: string[]; highwatermark?: string; error?: string }> {
+): Promise<{ success: boolean; dates?: string[]; highwatermark?: string; error?: string; keyRejected?: boolean }> {
   try {
     const url = `${STEAM_PARTNER_API}/IPartnerFinancialsService/GetChangedDatesForPartner/v001/?key=${apiKey}&highwatermark=${highwatermark}&include_view_grants=1`;
     const response = await fetch(url);
@@ -282,7 +312,7 @@ async function getChangedDatesForPartner(
         // IP-locked) vs. valid key without Financial API Group permission.
         const check = await checkSteamFinancialKey(apiKey);
         console.error(`[Cron] Steam 403 for key ${check.fingerprint}: ${check.status}`);
-        return { success: false, error: describeKeyFailure(check) };
+        return { success: false, error: describeKeyFailure(check), keyRejected: true };
       }
       return {
         success: false,
@@ -310,36 +340,50 @@ async function processSingleDate(
   dateStr: string,
   clientId: string,
   partnerMap: PartnerClientMap,
-  learnState: { done: boolean }
+  learnState: { done: boolean },
+  onlyPartnerId: string | null = null
 ): Promise<{ imported: number; skipped: number; unmappedPartnerIds: Set<string> }> {
   const unmappedPartnerIds = new Set<string>();
-  // Use GetDetailedSales endpoint (same as the working sync route)
-  const url = `${STEAM_PARTNER_API}/IPartnerFinancialsService/GetDetailedSales/v001/?key=${apiKey}&date=${dateStr}&highwatermark_id=0&include_view_grants=1`;
+  // Use GetDetailedSales endpoint (same as the working sync route). Steam
+  // returns at most 1000 rows per call and a max_id cursor for the next page;
+  // without following it, busy days were silently cut off at 1000 rows.
   console.log(`[Cron] Fetching data for date: ${dateStr}`);
-  console.log(`[Cron] API URL: ${url.replace(apiKey, 'REDACTED')}`);
-  const response = await fetch(url);
+  const allResults: any[] = [];
+  const packages = new Map();
+  const apps = new Map();
+  let cursor = '0';
+  for (let page = 0; page < MAX_PAGES_PER_DATE; page++) {
+    const url = `${STEAM_PARTNER_API}/IPartnerFinancialsService/GetDetailedSales/v001/?key=${apiKey}&date=${dateStr}&highwatermark_id=${cursor}&include_view_grants=1`;
+    const response = await fetch(url);
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error(`[Cron] Steam API error for ${dateStr}: ${response.status}`);
-    console.error(`[Cron] Error body: ${errorText}`);
-    throw new Error(`Steam API returned status ${response.status} for date ${dateStr}`);
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[Cron] Steam API error for ${dateStr}: ${response.status}`);
+      console.error(`[Cron] Error body: ${errorText}`);
+      throw new Error(`Steam API returned status ${response.status} for date ${dateStr}`);
+    }
+
+    const data = await response.json();
+    const pageResults = data.response?.results || [];
+    allResults.push(...pageResults);
+    data.response?.package_info?.forEach((p: any) => packages.set(p.packageid, p.package_name));
+    data.response?.app_info?.forEach((a: any) => apps.set(a.appid, a.app_name));
+
+    const nextCursor = data.response?.max_id ? String(data.response.max_id) : null;
+    if (pageResults.length === 0 || !nextCursor || nextCursor === cursor) break;
+    cursor = nextCursor;
   }
 
-  const data = await response.json();
-  const results = data.response?.results || [];
-  console.log(`[Cron] Date ${dateStr}: Found ${results.length} sales records`);
+  // Via the agency account the feed also carries other partners' rows; keep only the requested client's.
+  const results = onlyPartnerId
+    ? allResults.filter(r => String(r.partnerid) === onlyPartnerId)
+    : allResults;
+  console.log(`[Cron] Date ${dateStr}: Found ${results.length} sales records${onlyPartnerId ? ` for partner ${onlyPartnerId} (of ${allResults.length})` : ''}`);
 
   if (!learnState.done && results.length > 0) {
     learnState.done = !!(await learnOwnPartnerId(supabase, clientId, results, partnerMap));
   }
   await learnPartnerIdsFromCatalog(supabase, results, partnerMap);
-
-  // Create metadata maps from response
-  const packages = new Map();
-  const apps = new Map();
-  data.response?.package_info?.forEach((p: any) => packages.set(p.packageid, p.package_name));
-  data.response?.app_info?.forEach((a: any) => apps.set(a.appid, a.app_name));
 
   // Batch process all records at once instead of individual upserts
   const salesDataMap = new Map<string, any>();

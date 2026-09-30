@@ -17,6 +17,46 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 export type PartnerClientMap = Map<string, string> // partnerid -> client uuid
 
+/** Game Drive's own Steamworks partner account — the one clients share their apps with. */
+export const AGENCY_STEAM_PARTNER_ID = '352871'
+
+/**
+ * When a client's own Financial key is dead (regenerated, mis-copied, IP-locked)
+ * but the client has shared its apps with Game Drive's Steamworks account, the
+ * agency key can still read that client's data. Returns the agency key plus the
+ * client's own partner id, so the caller can keep only that client's rows.
+ * Null when the fallback cannot apply (no partner id on the client, no agency
+ * client/key configured, or the client is the agency itself).
+ */
+export async function loadAgencyFallback(
+  supabase: SupabaseClient,
+  clientId: string
+): Promise<{ key: string; partnerId: string } | null> {
+  const { data: client } = await supabase
+    .from('clients')
+    .select('steam_partner_id')
+    .eq('id', clientId)
+    .maybeSingle()
+  const partnerId = client?.steam_partner_id ? String(client.steam_partner_id) : null
+  if (!partnerId || partnerId === AGENCY_STEAM_PARTNER_ID) return null
+
+  const { data: agency } = await supabase
+    .from('clients')
+    .select('id')
+    .eq('steam_partner_id', AGENCY_STEAM_PARTNER_ID)
+    .maybeSingle()
+  if (!agency) return null
+
+  const { data: keyRow } = await supabase
+    .from('steam_api_keys')
+    .select('publisher_key, api_key')
+    .eq('client_id', agency.id)
+    .eq('is_active', true)
+    .maybeSingle()
+  const key = keyRow?.publisher_key || keyRow?.api_key
+  return key ? { key, partnerId } : null
+}
+
 export async function loadPartnerClientMap(supabase: SupabaseClient): Promise<PartnerClientMap> {
   const map: PartnerClientMap = new Map()
   const { data } = await supabase
