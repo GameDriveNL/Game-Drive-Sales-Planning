@@ -87,6 +87,10 @@ export default function AnalyticsPage() {
   const [serverTotalDays, setServerTotalDays] = useState(0)
   const [countryTotals, setCountryTotals] = useState<{ country_code: string | null; country: string | null; net_steam_sales_usd: number | string; net_units_sold: number | string }[]>([])
   const isSummarised = dataGrain !== 'raw'
+  // Product breakdown table: set when its (heavy) request fails, so the page says so instead of showing stale rows
+  const [propositionError, setPropositionError] = useState(false)
+  const lastPropositionKey = useRef<string>('')
+  const [propositionRetry, setPropositionRetry] = useState(0)
   const [showBundleImportModal, setShowBundleImportModal] = useState(false)
   const [bundleImportGames, setBundleImportGames] = useState<{id: string; name: string; client_id: string}[]>([])
   const [bundleImportGameId, setBundleImportGameId] = useState('')
@@ -265,12 +269,19 @@ export default function AnalyticsPage() {
     fetchWishlistData()
   }, [supabase, selectedClient, selectedProduct, dateRange])
 
-  // Fetch proposition breakdown for Proposition Comparison section
+  // Fetch proposition breakdown for Proposition Comparison section.
+  // Runs after the main data has finished loading (not alongside it): both scan the same big table, and
+  // doing them at once doubles the load on the database for large clients.
   useEffect(() => {
     if (selectedClient === 'all') {
       setPropositionRows([])
+      setPropositionError(false)
       return
     }
+    if (isLoading) return
+    const propKey = `${selectedClient}|${dateRange.start?.toISOString() || ''}|${dateRange.end?.toISOString() || ''}|${propositionRetry}`
+    if (lastPropositionKey.current === propKey) return
+    lastPropositionKey.current = propKey
     const fetchPropositions = async () => {
       const params = new URLSearchParams({
         client_id: selectedClient,
@@ -286,11 +297,19 @@ export default function AnalyticsPage() {
         if (res.ok) {
           const json = await res.json()
           setPropositionRows(json.rows || [])
+          setPropositionError(false)
+        } else {
+          // Never leave another client's or range's rows on screen
+          setPropositionRows([])
+          setPropositionError(true)
         }
-      } catch { /* ignore */ }
+      } catch {
+        setPropositionRows([])
+        setPropositionError(true)
+      }
     }
     fetchPropositions()
-  }, [selectedClient, dateRange])
+  }, [selectedClient, dateRange, isLoading, propositionRetry])
 
   // Load demo product names for the current client so we can decorate the product dropdown
   // and badge rows in the table. Demos live in the products table with product_type='demo'.
@@ -3382,6 +3401,13 @@ export default function AnalyticsPage() {
         )}
 
         {/* Proposition Comparison — shows all products for current client side-by-side */}
+        {propositionError && propositionRows.length === 0 && (
+          <div style={{ marginTop: '16px', padding: '12px 16px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', fontSize: '13px', color: '#92400e' }}>
+            Couldn&apos;t load the product breakdown for this range (it is a heavy query for clients with a lot of history). Try a shorter range, or{' '}
+            <button onClick={() => setPropositionRetry(n => n + 1)} style={{ background: 'none', border: 'none', color: '#b45309', textDecoration: 'underline', cursor: 'pointer', fontSize: '13px', padding: 0 }}>try again</button>.
+          </div>
+        )}
+
         {propositionRows.length > 1 && (
           <div style={{
             backgroundColor: '#fff',
