@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Sidebar } from '../components/Sidebar'
 
 // Comprehensive in-app manual. Single page, anchor-linked TOC. Aimed at PR/marketing
@@ -297,8 +297,79 @@ const SECTIONS: Section[] = [
   },
 ]
 
+// --- Search -----------------------------------------------------------------
+// Live filter: a section is shown when every typed word appears somewhere in it
+// (title or body, any order, case-insensitive). Matches are highlighted.
+
+function sectionText(s: Section): string[] {
+  const parts: string[] = [s.title]
+  for (const b of s.blocks) {
+    if (b.kind === 'list' || b.kind === 'steps') parts.push(...b.items)
+    else parts.push(b.text)
+  }
+  return parts
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function highlight(text: string, re: RegExp | null): React.ReactNode {
+  if (!re) return text
+  // split() with a capture group returns the matches at the odd indexes
+  return text.split(re).map((part, i) =>
+    i % 2 === 1
+      ? <mark key={i} style={{ backgroundColor: '#fde68a', color: 'inherit', borderRadius: '2px', padding: '0 1px' }}>{part}</mark>
+      : part
+  )
+}
+
 export default function ManualPage() {
   const [activeId, setActiveId] = useState<string>(SECTIONS[0].id)
+  const [query, setQuery] = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
+
+  const terms = useMemo(() => query.trim().toLowerCase().split(/\s+/).filter(Boolean), [query])
+  const re = useMemo(
+    () => (terms.length ? new RegExp(`(${terms.map(escapeRegExp).join('|')})`, 'gi') : null),
+    [terms]
+  )
+  const results = useMemo(
+    () =>
+      SECTIONS.map(section => {
+        if (!re) return { section, show: true, count: 0 }
+        const text = sectionText(section).join('\n')
+        const hay = text.toLowerCase()
+        const show = terms.every(t => hay.includes(t))
+        return { section, show, count: show ? (text.split(re).length - 1) / 2 : 0 }
+      }).filter(r => r.show),
+    [re, terms]
+  )
+  const visibleKey = results.map(r => r.section.id).join('|')
+  const totalMatches = results.reduce((n, r) => n + r.count, 0)
+  const hl = (text: string) => highlight(text, re)
+
+  // "/" or Ctrl/Cmd+K jumps to the search box from anywhere on the page
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null
+      const typing = !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
+      if ((e.key === '/' && !typing) || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k')) {
+        e.preventDefault()
+        searchRef.current?.focus()
+        searchRef.current?.select()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  // Results reflow as you type, so start from the top of them
+  const firstRender = useRef(true)
+  useEffect(() => {
+    if (firstRender.current) { firstRender.current = false; return }
+    window.scrollTo({ top: 0 })
+  }, [query])
 
   // Highlight the current section in the sticky TOC as the user scrolls
   useEffect(() => {
@@ -309,12 +380,12 @@ export default function ManualPage() {
       },
       { rootMargin: '-20% 0px -70% 0px', threshold: 0 }
     )
-    SECTIONS.forEach(s => {
-      const el = document.getElementById(s.id)
+    visibleKey.split('|').filter(Boolean).forEach(id => {
+      const el = document.getElementById(id)
       if (el) obs.observe(el)
     })
     return () => obs.disconnect()
-  }, [])
+  }, [visibleKey])
 
   const card: React.CSSProperties = {
     backgroundColor: 'white',
@@ -337,11 +408,32 @@ export default function ManualPage() {
             boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
             maxHeight: 'calc(100vh - 64px)', overflowY: 'auto',
           }}>
+            <input
+              ref={searchRef}
+              type="search"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Escape') { setQuery(''); e.currentTarget.blur() } }}
+              placeholder="Search the manual  ( / )"
+              aria-label="Search the manual"
+              style={{
+                width: '100%', boxSizing: 'border-box', padding: '8px 10px', marginBottom: '6px',
+                fontSize: '13px', color: '#0f172a', border: '1px solid #cbd5e1', borderRadius: '8px',
+                outline: 'none', backgroundColor: '#f8fafc',
+              }}
+            />
+            <div style={{ fontSize: '11px', color: '#94a3b8', minHeight: '16px', marginBottom: '8px' }}>
+              {terms.length === 0
+                ? ''
+                : results.length === 0
+                  ? 'No matches'
+                  : `${totalMatches} match${totalMatches === 1 ? '' : 'es'} in ${results.length} section${results.length === 1 ? '' : 's'}`}
+            </div>
             <div style={{ fontSize: '11px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }}>
-              Contents
+              {terms.length === 0 ? 'Contents' : 'Matching sections'}
             </div>
             <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-              {SECTIONS.map(s => (
+              {results.map(({ section: s, count }) => (
                 <li key={s.id}>
                   <a
                     href={`#${s.id}`}
@@ -357,7 +449,7 @@ export default function ManualPage() {
                       marginBottom: '2px',
                     }}
                   >
-                    {s.title}
+                    {s.title}{terms.length > 0 && <span style={{ color: '#94a3b8', fontWeight: 400 }}> ({count})</span>}
                   </a>
                 </li>
               ))}
@@ -375,23 +467,30 @@ export default function ManualPage() {
               </p>
             </header>
 
-            {SECTIONS.map(section => (
+            {terms.length > 0 && results.length === 0 && (
+              <div style={{ ...card, textAlign: 'center', color: '#64748b', fontSize: '14px' }}>
+                Nothing in the manual matches <strong>&ldquo;{query.trim()}&rdquo;</strong>. Try fewer or different words, or{' '}
+                <button onClick={() => setQuery('')} style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontSize: '14px', padding: 0, textDecoration: 'underline' }}>clear the search</button>.
+              </div>
+            )}
+
+            {results.map(({ section }) => (
               <section key={section.id} id={section.id} style={card}>
                 <h2 style={{ fontSize: '24px', fontWeight: 700, color: '#0f172a', margin: '0 0 16px 0' }}>
-                  {section.title}
+                  {hl(section.title)}
                 </h2>
                 {section.blocks.map((b, i) => {
                   if (b.kind === 'p') {
-                    return <p key={i} style={{ fontSize: '14px', lineHeight: 1.6, color: '#334155', margin: '0 0 12px 0' }}>{b.text}</p>
+                    return <p key={i} style={{ fontSize: '14px', lineHeight: 1.6, color: '#334155', margin: '0 0 12px 0' }}>{hl(b.text)}</p>
                   }
                   if (b.kind === 'h3') {
-                    return <h3 key={i} style={{ fontSize: '16px', fontWeight: 600, color: '#0f172a', margin: '20px 0 8px 0' }}>{b.text}</h3>
+                    return <h3 key={i} style={{ fontSize: '16px', fontWeight: 600, color: '#0f172a', margin: '20px 0 8px 0' }}>{hl(b.text)}</h3>
                   }
                   if (b.kind === 'list') {
                     return (
                       <ul key={i} style={{ paddingLeft: '20px', margin: '0 0 12px 0' }}>
                         {b.items.map((item, j) => (
-                          <li key={j} style={{ fontSize: '14px', lineHeight: 1.6, color: '#334155', margin: '0 0 4px 0' }}>{item}</li>
+                          <li key={j} style={{ fontSize: '14px', lineHeight: 1.6, color: '#334155', margin: '0 0 4px 0' }}>{hl(item)}</li>
                         ))}
                       </ul>
                     )
@@ -400,7 +499,7 @@ export default function ManualPage() {
                     return (
                       <ol key={i} style={{ paddingLeft: '24px', margin: '0 0 12px 0' }}>
                         {b.items.map((item, j) => (
-                          <li key={j} style={{ fontSize: '14px', lineHeight: 1.6, color: '#334155', margin: '0 0 6px 0' }}>{item}</li>
+                          <li key={j} style={{ fontSize: '14px', lineHeight: 1.6, color: '#334155', margin: '0 0 6px 0' }}>{hl(item)}</li>
                         ))}
                       </ol>
                     )
@@ -416,7 +515,7 @@ export default function ManualPage() {
                         color: '#1e40af',
                         margin: '8px 0 12px 0',
                       }}>
-                        <strong>Tip.</strong> {b.text}
+                        <strong>Tip.</strong> {hl(b.text)}
                       </div>
                     )
                   }
@@ -431,7 +530,7 @@ export default function ManualPage() {
                         color: '#92400e',
                         margin: '8px 0 12px 0',
                       }}>
-                        <strong>Heads up.</strong> {b.text}
+                        <strong>Heads up.</strong> {hl(b.text)}
                       </div>
                     )
                   }
