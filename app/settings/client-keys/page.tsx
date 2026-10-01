@@ -27,6 +27,19 @@ interface SteamApiKey {
   sync_frequency_hours?: number;
   last_auto_sync?: string;
   next_sync_due?: string;
+  /** Set on the key-less cards for clients that sync through Game Drive's Steamworks account. */
+  via_game_drive?: boolean;
+}
+
+// From GET /api/steam-connections (see lib/steam-connection.ts)
+interface SteamConnection {
+  client_id: string;
+  client_name: string;
+  mode: 'own' | 'game_drive' | 'needs_attention';
+  key_id: string | null;
+  own_key_fingerprint: string | null;
+  own_key_message: string | null;
+  last_data_date: string | null;
 }
 
 interface PlayStationApiKey {
@@ -86,6 +99,23 @@ function formatRawResponse(rawResponse: unknown): string {
   }
 }
 
+// Shown instead of key errors when a client's data reaches us through Game Drive's own Steamworks account.
+function GameDriveRoute({ conn, hasOldKey }: { conn: SteamConnection; hasOldKey: boolean }) {
+  return (
+    <div style={{ marginTop: '8px', padding: '10px 12px', background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '6px', fontSize: '12px', lineHeight: 1.45 }}>
+      <strong style={{ color: '#065f46' }}>&#x2713; Connected through Game Drive&apos;s Steamworks account</strong>
+      <div style={{ color: '#064e3b', fontSize: '11px', marginTop: '4px' }}>
+        {conn.client_name} shares its apps with Game Drive, so no key from them is needed.
+        {conn.last_data_date ? <> Latest data: <strong>{conn.last_data_date}</strong>.</> : null}
+        {' '}The daily sync covers the last 30 days; use Sync to pull a specific range.
+        {hasOldKey && conn.own_key_fingerprint ? (
+          <> The key stored below ({conn.own_key_fingerprint}) is no longer accepted by Steam and is not used. You can remove it.</>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export default function ClientKeysPage() {
   const { hasAccess, loading: authLoading } = useAuth();
   const canView = hasAccess('api_settings', 'view');
@@ -118,6 +148,9 @@ export default function ClientKeysPage() {
   const [showAutoSyncModal, setShowAutoSyncModal] = useState(false);
   const [autoSyncLoading, setAutoSyncLoading] = useState(false);
   const [autoSyncError, setAutoSyncError] = useState<string | null>(null);
+
+  // How each client's Steam data reaches us (own key / through Game Drive / needs attention), keyed by client id
+  const [connections, setConnections] = useState<Record<string, SteamConnection>>({});
 
   // Sync health: track recent failures per client
   const [syncHealth, setSyncHealth] = useState<Record<string, { status: string; error: string | null; failCount: number; lastFailure: string | null }>>({});
@@ -197,6 +230,14 @@ export default function ClientKeysPage() {
         const healthData = await healthRes.json();
         setSyncHealth(healthData);
       }
+
+      // Not awaited: this asks Steam about each stored key, so the cards render first and update when it returns.
+      fetch('/api/steam-connections')
+        .then(res => (res.ok ? res.json() : []))
+        .then((list: SteamConnection[]) => {
+          setConnections(Object.fromEntries((Array.isArray(list) ? list : []).map(c => [c.client_id, c])));
+        })
+        .catch(err => console.error('Error fetching Steam connections:', err));
     } catch (error) {
       console.error('Error fetching data:', error);
     }
@@ -404,8 +445,11 @@ export default function ClientKeysPage() {
     }
   };
 
-  const handleDeleteKey = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this API key?')) return;
+  const handleDeleteKey = async (id: string, viaGameDrive = false) => {
+    const message = viaGameDrive
+      ? 'Remove the old key? This client stays connected through Game Drive\'s Steamworks account and keeps syncing as before.'
+      : 'Are you sure you want to delete this API key?';
+    if (!confirm(message)) return;
     try {
       const res = await fetch(`/api/steam-api-keys?id=${id}`, { method: 'DELETE' });
       if (res.ok) {
@@ -765,7 +809,7 @@ export default function ClientKeysPage() {
             <div className={styles.spinner}></div>
             <p>Loading...</p>
           </div>
-        ) : !apiKeys || apiKeys.length === 0 ? (
+        ) : (!apiKeys || apiKeys.length === 0) && !Object.values(connections).some(c => c.key_id === null) ? (
           <div className={styles.emptyState}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
               <rect x="3" y="11" width="18" height="11" rx="2"/>
@@ -778,16 +822,19 @@ export default function ClientKeysPage() {
           </div>
         ) : (
           <div className={styles.keysList}>
-            {apiKeys?.map((key) => (
+            {apiKeys?.map((key) => {
+              const conn = connections[key.client_id];
+              const viaGameDrive = conn?.mode === 'game_drive';
+              return (
               <div key={key.id} className={styles.keyCard}>
                 <div className={styles.keyInfo}>
                   <span className={styles.clientBadge}>{key.clients?.name || 'Unknown Client'}</span>
                   <div className={styles.keyDetails}>
-                    <span className={styles.keyMasked} title="First and last 4 characters of the stored Financial key — compare with the key shown on the Financial API Group page in Steamworks">
+                    <span className={styles.keyMasked} style={viaGameDrive ? { opacity: 0.45, textDecoration: 'line-through' } : undefined} title="First and last 4 characters of the stored Financial key — compare with the key shown on the Financial API Group page in Steamworks">
                       {maskApiKey(key.publisher_key || key.api_key)}
                     </span>
                     <div className={styles.keyMeta}>
-                      <span>{key.publisher_key ? '✓ Financial API Key' : '○ No Financial Key'}</span>
+                      <span>{viaGameDrive ? '○ Old key (not used)' : key.publisher_key ? '✓ Financial API Key' : '○ No Financial Key'}</span>
                       <span>{key.app_ids?.length || 0} App IDs</span>
                       {key.last_sync_date && <span>Last sync: {key.last_sync_date}</span>}
                     </div>
@@ -825,7 +872,8 @@ export default function ClientKeysPage() {
                         </button>
                       </div>
                     )}
-                    {syncHealth[key.client_id]?.failCount > 0 && (
+                    {viaGameDrive && conn && <GameDriveRoute conn={conn} hasOldKey />}
+                    {!viaGameDrive && syncHealth[key.client_id]?.failCount > 0 && (
                       <div style={{
                         marginTop: '8px',
                         padding: '10px 12px',
@@ -844,6 +892,9 @@ export default function ClientKeysPage() {
                           <div style={{ marginBottom: '4px' }}>{syncHealth[key.client_id].error}</div>
                           {syncHealth[key.client_id].error?.includes('403') && (
                             <div style={{ marginTop: '6px', padding: '6px 8px', background: '#fff', borderRadius: '4px', border: '1px solid #fde8e8' }}>
+                              <strong>Easiest fix, no key needed:</strong> the client shares its apps with Game Drive&apos;s Steamworks account
+                              (Users &amp; Permissions &rarr; Application Management Sharing, tick &quot;share financial view rights&quot;).
+                              Data then flows in automatically.<br /><br />
                               <strong>What a 403 means:</strong> Steam is rejecting the key itself — it is <em>not</em> a problem with our servers or their IP address.
                               Either Steam no longer knows this key (regenerated, mis-copied, or the key has entries under &quot;Allowed IP addresses&quot;),
                               or the key comes from a normal publisher group instead of the <strong>Financial API Group</strong>.
@@ -932,7 +983,8 @@ export default function ClientKeysPage() {
                   </button>
                   <button
                     className={`${styles.actionButton} ${styles.delete}`}
-                    onClick={() => handleDeleteKey(key.id)}
+                    onClick={() => handleDeleteKey(key.id, viaGameDrive)}
+                    title={viaGameDrive ? 'Remove the old key (this client stays connected through Game Drive)' : 'Delete key'}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <polyline points="3 6 5 6 21 6"/>
@@ -940,6 +992,50 @@ export default function ClientKeysPage() {
                       <path d="M10 11v6"/>
                       <path d="M14 11v6"/>
                     </svg>
+                  </button>
+                </div>
+              </div>
+              );
+            })}
+            {/* Clients that sync through Game Drive's Steamworks account and have no key of their own */}
+            {Object.values(connections).filter(c => c.mode === 'game_drive' && c.key_id === null).map(conn => (
+              <div key={`gd-${conn.client_id}`} className={styles.keyCard}>
+                <div className={styles.keyInfo}>
+                  <span className={styles.clientBadge}>{conn.client_name}</span>
+                  <div className={styles.keyDetails}>
+                    <div className={styles.keyMeta}>
+                      <span>No key needed</span>
+                      {conn.last_data_date && <span>Latest data: {conn.last_data_date}</span>}
+                    </div>
+                    <GameDriveRoute conn={conn} hasOldKey={false} />
+                  </div>
+                </div>
+                <div className={styles.keyActions}>
+                  <button
+                    className={`${styles.actionButton} ${styles.sync}`}
+                    onClick={() => {
+                      setSelectedKey({
+                        id: '',
+                        client_id: conn.client_id,
+                        api_key: '',
+                        publisher_key: null,
+                        app_ids: [],
+                        is_active: true,
+                        last_sync_date: null,
+                        clients: { id: conn.client_id, name: conn.client_name },
+                        via_game_drive: true,
+                      });
+                      setShowSyncModal(true);
+                      setSyncResult(null);
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M23 4v6h-6"/>
+                      <path d="M1 20v-6h6"/>
+                      <path d="M3.51 9a9 9 0 0114.85-3.36L23 10"/>
+                      <path d="M20.49 15a9 9 0 01-14.85 3.36L1 14"/>
+                    </svg>
+                    Sync
                   </button>
                 </div>
               </div>
@@ -1381,7 +1477,7 @@ export default function ClientKeysPage() {
               </div>
             )}
 
-            {!selectedKey.publisher_key && (
+            {!selectedKey.publisher_key && !selectedKey.via_game_drive && (
               <div style={{ padding: '12px', background: '#fef3c7', borderRadius: '6px', fontSize: '14px', marginTop: '12px' }}>
                 <strong>No Financial API Key:</strong> Add a Financial Web API Key to sync sales data.
                 <a href="https://partner.steamgames.com/pub/groups/" target="_blank" rel="noopener noreferrer" style={{ marginLeft: '4px', color: '#1b2838' }}>

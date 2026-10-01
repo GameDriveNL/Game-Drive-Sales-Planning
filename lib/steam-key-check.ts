@@ -170,7 +170,9 @@ export async function checkSteamFinancialKey(rawKey: string | null | undefined):
     message:
       `Steam does not recognise key ${fingerprint} at all — it fails even the most basic key check, from every network we have tried.`,
     fix:
-      'Open the Financial API Group page in Steamworks (Users & Permissions → Manage Groups) and compare the key shown there ' +
+      'Easiest fix, no key needed: in Steamworks open Users & Permissions → Application Management Sharing, share your apps with ' +
+      'Game Drive\'s Steamworks account and tick "share financial view rights". Or fix the key: ' +
+      'open the Financial API Group page in Steamworks (Users & Permissions → Manage Groups) and compare the key shown there ' +
       `with ${fingerprint}. If they differ, the key was regenerated or mis-copied — paste the current one. ` +
       'If they match, look at "Allowed IP addresses" under Manage WebAPI Key on that page and remove EVERY entry: any entry ' +
       'at all locks the key to those addresses, and our servers do not have a fixed address. Then click Test again here.',

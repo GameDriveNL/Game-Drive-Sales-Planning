@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { serverSupabase as supabase } from '@/lib/supabase';
 import { matchProducts, ExternalProduct } from '@/lib/product-matching';
 import { checkSteamFinancialKey, describeKeyFailure } from '@/lib/steam-key-check';
+import { getSteamConnections } from '@/lib/steam-connection';
 import { loadPartnerClientMap, partitionRowsByClient, learnOwnPartnerId, learnPartnerIdsFromCatalog } from '@/lib/steam-partner-routing';
 
 // Steam Partner API endpoint for financial data
@@ -324,6 +325,23 @@ export async function GET(request: Request) {
     // Test the Financial API key — two probes so we can say WHICH kind of 403 this is
     const financialApiKey = keyData.publisher_key || keyData.api_key;
     const check = await checkSteamFinancialKey(financialApiKey);
+
+    // A rejected key is not an error when the client's data reaches us through
+    // Game Drive's Steamworks account: say that instead of showing the dead key's 403.
+    if (!check.ok) {
+      const [connection] = await getSteamConnections(supabase, clientId);
+      if (connection?.mode === 'game_drive') {
+        return NextResponse.json({
+          valid: true,
+          status: 'via_game_drive',
+          message: `Connected through Game Drive's Steamworks account. ${connection.client_name} shares its apps with Game Drive, so no key from them is needed. Latest data: ${connection.last_data_date}.`,
+          fix: '',
+          fingerprint: check.fingerprint,
+          lastSync: keyData.last_sync_date,
+          hasFinancialKey: !!keyData.publisher_key,
+        });
+      }
+    }
 
     return NextResponse.json({
       valid: check.ok,
