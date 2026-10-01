@@ -451,6 +451,13 @@ async function processSingleDate(
       net_revenue: parseFloat(result.net_sales_usd || '0')
     };
 
+    // Rows with no units and no revenue at all (key activations, zero-price listings) carry nothing
+    // the app shows: the analytics query already discards them. Storing them roughly doubled
+    // steam_sales for some clients and the database is small, so don't write them.
+    if (salesData.units_sold === 0 && salesData.gross_revenue === 0 && salesData.net_revenue === 0) {
+      return;
+    }
+
     // Create unique key from constraint fields to deduplicate
     const key = `${salesData.client_id}|${salesData.sale_date}|${salesData.app_id}|${salesData.product_type}|${salesData.country_code}`;
 

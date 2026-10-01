@@ -80,6 +80,13 @@ export default function AnalyticsPage() {
   const [dataAvailable, setDataAvailable] = useState(false)
   // Set when loading the performance data fails (e.g. a very large range timing out), so the page says so
   const [loadError, setLoadError] = useState<string | null>(null)
+  // Very large ranges come back from the database as monthly summaries instead of daily rows
+  // (see get_analytics_performance_rows_v2). 'raw' = the normal daily rows with country detail.
+  const [dataGrain, setDataGrain] = useState<'raw' | 'monthly_region'>('raw')
+  const [rawRowCount, setRawRowCount] = useState(0)
+  const [serverTotalDays, setServerTotalDays] = useState(0)
+  const [countryTotals, setCountryTotals] = useState<{ country_code: string | null; country: string | null; net_steam_sales_usd: number | string; net_units_sold: number | string }[]>([])
+  const isSummarised = dataGrain !== 'raw'
   const [showBundleImportModal, setShowBundleImportModal] = useState(false)
   const [bundleImportGames, setBundleImportGames] = useState<{id: string; name: string; client_id: string}[]>([])
   const [bundleImportGameId, setBundleImportGameId] = useState('')
@@ -451,19 +458,36 @@ export default function AnalyticsPage() {
       // returns every matching row as one jsonb array in a single query
       // instead — no pagination needed, since PostgREST's row-count cap only
       // applies to table/view REST requests, not a single RPC call.
-      const { data, error } = await supabase.rpc('get_analytics_performance_rows', {
+      const rpcArgs = {
         p_client_id: selectedClient,
         p_date_from: dateRange.start ? dateRange.start.toISOString().split('T')[0] : null,
         p_date_to: dateRange.end ? dateRange.end.toISOString().split('T')[0] : null,
         p_product_name: selectedProduct !== 'all' ? selectedProduct : null,
         p_region: selectedRegion !== 'all' ? selectedRegion : null,
         p_platform: selectedPlatform !== 'all' ? selectedPlatform : null,
-      })
+      }
+
+      // Never returns more than ~40k rows: big ranges come back as monthly summaries. There is
+      // deliberately no fallback to the old unbounded function: if this one is missing, show the error.
+      const { data, error } = await supabase.rpc('get_analytics_performance_rows_v2', rpcArgs)
 
       if (error) throw error
 
-      const allData = (data || []) as PerformanceData[]
+      // { grain, raw_row_count, total_days, rows, country_totals }
+      const payload = (Array.isArray(data) ? { grain: 'raw', rows: data } : (data || {})) as {
+        grain?: 'raw' | 'monthly_region'
+        raw_row_count?: number
+        total_days?: number
+        rows?: PerformanceData[]
+        country_totals?: typeof countryTotals
+      }
+      const allData = (payload.rows || []) as PerformanceData[]
+      const grain = payload.grain === 'monthly_region' ? 'monthly_region' : 'raw'
 
+      setDataGrain(grain)
+      setRawRowCount(payload.raw_row_count ?? allData.length)
+      setServerTotalDays(grain === 'raw' ? 0 : (payload.total_days ?? 0))
+      setCountryTotals(grain === 'raw' ? [] : (payload.country_totals || []))
       setPerformanceData(allData)
       setDataAvailable(allData.length > 0)
 
@@ -474,7 +498,7 @@ export default function AnalyticsPage() {
         const totalChargebacks = allData.reduce((sum, row) => sum + toNumber(row.chargebacks_returns), 0)
 
         const uniqueDates = new Set(allData.map(row => row.date))
-        const totalDays = uniqueDates.size || 1
+        const totalDays = (grain === 'raw' ? uniqueDates.size : (payload.total_days ?? uniqueDates.size)) || 1
 
         setSummaryStats({
           totalRevenue,
@@ -508,6 +532,8 @@ export default function AnalyticsPage() {
       setPerformanceData([])
       setSummaryStats(null)
       setDataAvailable(false)
+      setDataGrain('raw')
+      setCountryTotals([])
       setLoadError((error as { message?: string } | null)?.message || 'Unknown error')
     } finally {
       setIsLoading(false)
@@ -521,9 +547,10 @@ export default function AnalyticsPage() {
   // Charts group by month only for the longer presets with enough days of data; the date labels
   // follow this same rule so a single day is never labelled as a month.
   const dataIsGroupedByMonth = useMemo(() => {
+    if (dataGrain !== 'raw') return true
     const isDailyView = selectedDatePreset === '7d' || selectedDatePreset === '30d' || selectedDatePreset === '60d'
     return !isDailyView && new Set(performanceData.map(r => r.date)).size > 45
-  }, [performanceData, selectedDatePreset])
+  }, [performanceData, selectedDatePreset, dataGrain])
 
   // Compute daily time series data with smart grouping
   const dailyData = useMemo((): DailyData[] => {
@@ -618,7 +645,11 @@ export default function AnalyticsPage() {
     const byCountry = new Map<string, { revenue: number; units: number }>()
     let totalRevenue = 0
 
-    performanceData.forEach(row => {
+    // Summarised rows carry no country, so use the server's per-country totals
+    const countrySource: { country: string | null; country_code: string | null; net_steam_sales_usd: number | string; net_units_sold: number | string }[] =
+      isSummarised ? countryTotals : performanceData
+
+    countrySource.forEach(row => {
       const country = row.country || row.country_code || 'Unknown'
       const existing = byCountry.get(country) || { revenue: 0, units: 0 }
       const rowRevenue = toNumber(row.net_steam_sales_usd)
@@ -640,7 +671,7 @@ export default function AnalyticsPage() {
       }))
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 10) // Top 10
-  }, [performanceData])
+  }, [performanceData, isSummarised, countryTotals])
 
   // Compute growth metrics (current period vs previous period)
   const growthData = useMemo((): GrowthData | null => {
@@ -739,7 +770,7 @@ export default function AnalyticsPage() {
   }
 
   const periodData = useMemo((): PeriodData[] => {
-    if (!performanceData.length) return []
+    if (!performanceData.length || isSummarised) return []
 
     const periods: PeriodData[] = []
     let currentPeriod: CurrentPeriodState | null = null
@@ -835,7 +866,7 @@ export default function AnalyticsPage() {
     }
 
     return periods
-  }, [performanceData, committedSaleLookup]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [performanceData, committedSaleLookup, isSummarised]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Export period analysis to Excel
   const handleExportPeriodAnalysis = useCallback(() => {
@@ -936,7 +967,9 @@ export default function AnalyticsPage() {
     if (!performanceData.length) return []
 
     const countryRevenue = new Map<string, number>()
-    performanceData.forEach(row => {
+    const countrySource: { country_code: string | null; net_steam_sales_usd: number | string }[] =
+      isSummarised ? countryTotals : performanceData
+    countrySource.forEach(row => {
       const country = row.country_code || 'Unknown'
       const revenue = toNumber(row.net_steam_sales_usd)
       countryRevenue.set(country, (countryRevenue.get(country) || 0) + revenue)
@@ -946,11 +979,11 @@ export default function AnalyticsPage() {
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 15) // Top 15 countries
-  }, [performanceData])
+  }, [performanceData, isSummarised, countryTotals])
 
   // Memoize sale vs regular performance data
   const salePerformanceData = useMemo(() => {
-    if (!performanceData.length) return { saleData: null, regularData: null }
+    if (!performanceData.length || isSummarised) return { saleData: null, regularData: null }
 
     const saleData = { revenue: 0, units: 0, days: 0 }
     const regularData = { revenue: 0, units: 0, days: 0 }
@@ -982,7 +1015,7 @@ export default function AnalyticsPage() {
     })
 
     return { saleData, regularData }
-  }, [performanceData, committedSaleLookup])
+  }, [performanceData, committedSaleLookup, isSummarised])
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -2009,7 +2042,16 @@ export default function AnalyticsPage() {
   }
 
   // Render heatmap widget - Calendar style
+  // Shown instead of widgets that need daily rows when the range was summarised by month
+  const renderNeedsDailyDetail = (widget: DashboardWidget) => (
+    <div className={styles.chartCard}>
+      <h3 className={styles.chartTitle}>{widget.title}</h3>
+      <div className={styles.noChartData}>Needs daily detail. Choose a shorter range (about a year or less) to see this.</div>
+    </div>
+  )
+
   const renderHeatmapWidget = (widget: DashboardWidget) => {
+    if (isSummarised) return renderNeedsDailyDetail(widget)
     if (!performanceData.length) {
       return (
         <div className={styles.chartCard}>
@@ -2421,6 +2463,7 @@ export default function AnalyticsPage() {
 
   // Render Sale Performance Analysis - Comparison card
   const renderSalePerformanceChart = (widget: DashboardWidget) => {
+    if (isSummarised) return renderNeedsDailyDetail(widget)
     const { saleData, regularData } = salePerformanceData
 
     if (!saleData || !regularData) {
@@ -2637,6 +2680,7 @@ export default function AnalyticsPage() {
   const multiGameTrends = useMemo(() => {
     if (propositionRows.length <= 1 || selectedProduct !== 'all') return []
     const TREND_PALETTE = ['#b8232f', '#2563eb', '#059669', '#d97706', '#7c3aed']
+    if (isSummarised) return []
     const topProds = [...propositionRows].sort((a, b) => b.net_revenue - a.net_revenue).slice(0, 5)
     const topProdNames = new Set(topProds.map(p => p.product_name))
 
@@ -2660,7 +2704,7 @@ export default function AnalyticsPage() {
       data: allWeeks.map(wk => weekRevMap[prod.product_name]?.[wk] || 0),
       weeks: allWeeks,
     }))
-  }, [propositionRows, performanceData, selectedProduct])
+  }, [propositionRows, performanceData, selectedProduct, isSummarised])
 
   // Render wishlist & bundles widget
   // Compute wishlist stats from filtered data
@@ -3152,6 +3196,14 @@ export default function AnalyticsPage() {
           </div>
         )}
 
+        {!isLoading && isSummarised && (
+          <div style={{ margin: '0 0 12px 0', padding: '10px 14px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', fontSize: '13px', color: '#1e3a8a', lineHeight: 1.45 }}>
+            <strong>Large range, shown as monthly totals.</strong> This range has {formatNumber(rawRowCount)} detailed records, too many to load at once,
+            so it is summarised by month, product and region (the 40 biggest products plus &ldquo;Other products&rdquo;). Totals, country and region
+            breakdowns are complete. Daily views, sale analysis and the calendar heatmap need a shorter range (about a year or less).
+          </div>
+        )}
+
         {isLoading ? (
           <div className={styles.statsGrid}>
             {[1, 2, 3, 4, 5].map(i => (
@@ -3297,7 +3349,11 @@ export default function AnalyticsPage() {
             </div>
 
             <div className={styles.dataInfo}>
-              <span className={styles.dataInfoText}>Showing {formatNumber(performanceData.length)} records across {summaryStats?.totalDays || 0} days</span>
+              <span className={styles.dataInfoText}>
+                {isSummarised
+                  ? `Showing monthly totals built from ${formatNumber(rawRowCount)} records across ${summaryStats?.totalDays || 0} days`
+                  : `Showing ${formatNumber(performanceData.length)} records across ${summaryStats?.totalDays || 0} days`}
+              </span>
             </div>
           </>
         )}
