@@ -510,6 +510,13 @@ export default function AnalyticsPage() {
     fetchPerformanceData()
   }, [fetchPerformanceData])
 
+  // Charts group by month only for the longer presets with enough days of data; the date labels
+  // follow this same rule so a single day is never labelled as a month.
+  const dataIsGroupedByMonth = useMemo(() => {
+    const isDailyView = selectedDatePreset === '7d' || selectedDatePreset === '30d' || selectedDatePreset === '60d'
+    return !isDailyView && new Set(performanceData.map(r => r.date)).size > 45
+  }, [performanceData, selectedDatePreset])
+
   // Compute daily time series data with smart grouping
   const dailyData = useMemo((): DailyData[] => {
     if (!performanceData.length) return []
@@ -987,10 +994,8 @@ export default function AnalyticsPage() {
     const [year, month, day] = dateStr.split('-').map(Number)
     const date = new Date(Date.UTC(year, month - 1, day))
 
-    // Determine if we're showing daily or monthly data based on the selected date range
-    // 7D, 30D, and 60D show daily bars, everything else (90D, YTD, All Time) shows monthly aggregated bars
-    const isDailyView = selectedDatePreset === '7d' || selectedDatePreset === '30d' || selectedDatePreset === '60d'
-    const isMonthlyAggregated = !isDailyView || (day === 1 && dailyData.length > 45)
+    // Monthly labels only when the data really was grouped by month (see dataIsGroupedByMonth)
+    const isMonthlyAggregated = dataIsGroupedByMonth
 
     // For monthly aggregated data (90D, YTD, All Time)
     if (isMonthlyAggregated) {
