@@ -31,6 +31,18 @@ import type {
 } from './types'
 import { toNumber, safeDivide, isSalePrice, calculateDiscountPct, DEFAULT_WIDGETS } from './utils'
 
+// Chart hover tooltips sit above their point, or below it when the point is near the top of the
+// chart, so a peak's tooltip is never cut off by the chart's edge.
+function chartTooltipPlacement(xPercent: number, yPercent: number): { left: string; top: string; transform: string } {
+  const left = Math.min(Math.max(xPercent, 10), 90)
+  const below = yPercent < 35
+  return {
+    left: `${left}%`,
+    top: `${below ? yPercent + 4 : yPercent - 4}%`,
+    transform: below ? 'translate(-50%, 0)' : 'translate(-50%, -100%)',
+  }
+}
+
 export default function AnalyticsPage() {
   const supabase = createClientComponentClient()
   const searchParams = useSearchParams()
@@ -1192,7 +1204,7 @@ export default function AnalyticsPage() {
       return (
         <div className={styles.chartCard}>
           <h3 className={styles.chartTitle}>{widget.title}</h3>
-          <div style={{ padding: '12px', overflowX: 'auto', position: 'relative' }}>
+          <div style={{ padding: '12px', position: 'relative' }}>
             <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet">
               {/* Y-axis grid lines only - no numbers */}
               {[0, 0.25, 0.5, 0.75, 1].map((fraction, i) => {
@@ -1322,15 +1334,10 @@ export default function AnalyticsPage() {
               const topPercent = (hoveredLinePoint.y / height) * 100
 
               // Keep tooltip within container bounds
-              const adjustedLeft = Math.min(Math.max(leftPercent, 10), 90)
-              const adjustedTop = Math.max(topPercent - 15, 5)
-
               return (
                 <div style={{
                   position: 'absolute',
-                  left: `${adjustedLeft}%`,
-                  top: `${adjustedTop}%`,
-                  transform: 'translate(-50%, -100%)',
+                  ...chartTooltipPlacement(leftPercent, topPercent),
                   backgroundColor: 'white',
                   padding: '8px 12px',
                   borderRadius: '6px',
@@ -1383,7 +1390,7 @@ export default function AnalyticsPage() {
       return (
         <div className={styles.chartCard}>
           <h3 className={styles.chartTitle}>{widget.title}</h3>
-          <div style={{ padding: '12px', overflowX: 'auto', position: 'relative' }}>
+          <div style={{ padding: '12px', position: 'relative' }}>
             <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet">
               {[0, 0.25, 0.5, 0.75, 1].map((fraction, i) => {
                 const y = padding.top + chartHeight - fraction * chartHeight
@@ -1430,10 +1437,8 @@ export default function AnalyticsPage() {
             {hoveredLinePoint !== null && (() => {
               const leftPercent = (hoveredLinePoint.x / width) * 100
               const topPercent = (hoveredLinePoint.y / height) * 100
-              const adjustedLeft = Math.min(Math.max(leftPercent, 10), 90)
-              const adjustedTop = Math.max(topPercent - 15, 5)
               return (
-                <div style={{ position: 'absolute', left: `${adjustedLeft}%`, top: `${adjustedTop}%`, transform: 'translate(-50%, -100%)', backgroundColor: 'white', padding: '8px 12px', borderRadius: '6px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', border: '1px solid #e2e8f0', pointerEvents: 'none', zIndex: 10, whiteSpace: 'nowrap' }}>
+                <div style={{ position: 'absolute', ...chartTooltipPlacement(leftPercent, topPercent), backgroundColor: 'white', padding: '8px 12px', borderRadius: '6px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', border: '1px solid #e2e8f0', pointerEvents: 'none', zIndex: 10, whiteSpace: 'nowrap' }}>
                   <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '2px' }}>{formatDate(sampledData[hoveredLinePoint.index].date)}</div>
                   <div style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>{formatCurrency(sampledData[hoveredLinePoint.index].revenue)}</div>
                 </div>
@@ -3194,7 +3199,7 @@ export default function AnalyticsPage() {
 
             {/* Charts Grid - Visualization widgets */}
             <div ref={gridRef} className={styles.chartsGrid}>
-              {widgets.filter(w => w.type !== 'stat').map(widget => (
+              {widgets.filter(w => w.type !== 'stat' && w.type !== 'wishlist').map(widget => (
                 <div
                   key={widget.id}
                   className={`${styles.widgetWrapper} ${widget.size.w === 2 ? styles.fullWidthWidget : ''} ${widget.size.h === 2 ? styles.tallWidget : ''} ${isEditMode ? styles.editableWidget : ''} ${draggedWidget === widget.id ? styles.dragging : ''}`}

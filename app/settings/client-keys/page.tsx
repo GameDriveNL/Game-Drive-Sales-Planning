@@ -109,7 +109,7 @@ function GameDriveRoute({ conn, hasOldKey }: { conn: SteamConnection; hasOldKey:
         {conn.last_data_date ? <> Latest data: <strong>{conn.last_data_date}</strong>.</> : null}
         {' '}The daily sync covers the last 30 days; use Sync to pull a specific range.
         {hasOldKey && conn.own_key_fingerprint ? (
-          <> The key stored below ({conn.own_key_fingerprint}) is no longer accepted by Steam and is not used. You can remove it.</>
+          <> The old key ({conn.own_key_fingerprint}) is no longer accepted by Steam and is not used. You can remove it.</>
         ) : null}
       </div>
     </div>
