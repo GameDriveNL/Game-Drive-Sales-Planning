@@ -314,6 +314,12 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+// A typed word matches where a word STARTS ("wish" finds "wishlist", but "app" does
+// not light up inside "disappear"). Terms that begin with a symbol match anywhere.
+function termPattern(term: string): string {
+  return (/^\w/.test(term) ? '\\b' : '') + escapeRegExp(term)
+}
+
 function highlight(text: string, re: RegExp | null): React.ReactNode {
   if (!re) return text
   // split() with a capture group returns the matches at the odd indexes
@@ -331,7 +337,7 @@ export default function ManualPage() {
 
   const terms = useMemo(() => query.trim().toLowerCase().split(/\s+/).filter(Boolean), [query])
   const re = useMemo(
-    () => (terms.length ? new RegExp(`(${terms.map(escapeRegExp).join('|')})`, 'gi') : null),
+    () => (terms.length ? new RegExp(`(${terms.map(termPattern).join('|')})`, 'gi') : null),
     [terms]
   )
   const results = useMemo(
@@ -339,8 +345,7 @@ export default function ManualPage() {
       SECTIONS.map(section => {
         if (!re) return { section, show: true, count: 0 }
         const text = sectionText(section).join('\n')
-        const hay = text.toLowerCase()
-        const show = terms.every(t => hay.includes(t))
+        const show = terms.every(t => new RegExp(termPattern(t), 'i').test(text))
         return { section, show, count: show ? (text.split(re).length - 1) / 2 : 0 }
       }).filter(r => r.show),
     [re, terms]
