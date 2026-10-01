@@ -78,6 +78,8 @@ export default function AnalyticsPage() {
   const [platforms, setPlatforms] = useState<string[]>([])
   const [showImportModal, setShowImportModal] = useState(false)
   const [dataAvailable, setDataAvailable] = useState(false)
+  // Set when loading the performance data fails (e.g. a very large range timing out), so the page says so
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [showBundleImportModal, setShowBundleImportModal] = useState(false)
   const [bundleImportGames, setBundleImportGames] = useState<{id: string; name: string; client_id: string}[]>([])
   const [bundleImportGameId, setBundleImportGameId] = useState('')
@@ -436,6 +438,7 @@ export default function AnalyticsPage() {
     if (selectedClient === 'all') return
 
     setIsLoading(true)
+    setLoadError(null)
     try {
       // Used to paginate unified_performance_view via sequential OFFSET in
       // the browser (1000 rows/request) and concatenate every batch — for a
@@ -501,6 +504,11 @@ export default function AnalyticsPage() {
       }
     } catch (error) {
       console.error('Error fetching performance data:', error)
+      // Never leave the previous client's or range's numbers on screen under the new selection
+      setPerformanceData([])
+      setSummaryStats(null)
+      setDataAvailable(false)
+      setLoadError((error as { message?: string } | null)?.message || 'Unknown error')
     } finally {
       setIsLoading(false)
     }
@@ -3160,14 +3168,28 @@ export default function AnalyticsPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
               </svg>
             </div>
-            <h3 className={styles.emptyTitle}>No Performance Data Yet</h3>
-            <p className={styles.emptyDescription}>Sync your platform data or import a CSV to see analytics and performance metrics.</p>
-            <button className={styles.emptyButton} onClick={() => setShowImportModal(true)}>
-              <svg className={styles.buttonIcon} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-              </svg>
-              Import CSV Data
-            </button>
+            {loadError ? (
+              <>
+                <h3 className={styles.emptyTitle}>Couldn&apos;t load this view</h3>
+                <p className={styles.emptyDescription}>
+                  This range has more data than can be loaded at once, which happens with long ranges for clients with a lot of sales.
+                  Try a shorter range such as 90D or YTD, or press Try again.
+                </p>
+                <p className={styles.emptyDescription} style={{ fontSize: '12px', opacity: 0.7 }}>Details: {loadError}</p>
+                <button className={styles.emptyButton} onClick={fetchPerformanceData}>Try again</button>
+              </>
+            ) : (
+              <>
+                <h3 className={styles.emptyTitle}>No Performance Data Yet</h3>
+                <p className={styles.emptyDescription}>Sync your platform data or import a CSV to see analytics and performance metrics.</p>
+                <button className={styles.emptyButton} onClick={() => setShowImportModal(true)}>
+                  <svg className={styles.buttonIcon} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                  Import CSV Data
+                </button>
+              </>
+            )}
           </div>
         ) : (
           <>
