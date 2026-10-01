@@ -509,7 +509,9 @@ export default function AnalyticsPage() {
           totalDays
         })
 
+        // 'Other products' is the summary's own bucket for the long tail, not a real product to filter by
         const uniqueProducts = Array.from(new Set(allData.map(row => row.product_name).filter(Boolean)))
+          .filter(name => grain === 'raw' || name !== 'Other products')
         const uniqueRegions = Array.from(new Set(allData.map(row => row.region).filter(Boolean))) as string[]
         const dataPlatforms = Array.from(new Set(allData.map(row => row.platform).filter(Boolean)))
 
