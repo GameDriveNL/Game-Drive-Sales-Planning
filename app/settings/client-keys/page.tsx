@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import styles from '../settings.module.css';
@@ -129,6 +129,9 @@ export default function ClientKeysPage() {
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [selectedKey, setSelectedKey] = useState<SteamApiKey | null>(null);
   const [testingKey, setTestingKey] = useState<string | null>(null);
+  // The previous Test click's 15s "hide result" timer must be cancelled, or it wipes the result of a newer click
+  const testTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const psTestTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [testResult, setTestResult] = useState<{valid: boolean; message: string; fix?: string; status?: string; debug?: SyncDebugInfo} | null>(null);
   // Pre-save validation inside the Add Key modal
   const [addKeyCheck, setAddKeyCheck] = useState<KeyCheck | null>(null);
@@ -317,7 +320,8 @@ export default function ClientKeysPage() {
     } catch (error) {
       setTestResult({ valid: false, message: 'Failed to test API key' });
     }
-    setTimeout(() => {
+    if (testTimer.current) clearTimeout(testTimer.current);
+    testTimer.current = setTimeout(() => {
       setTestingKey(null);
     }, 15000);
   };
@@ -599,7 +603,8 @@ export default function ClientKeysPage() {
     } catch (error) {
       setPsTestResult({ valid: false, message: 'Failed to test credentials' });
     }
-    setTimeout(() => {
+    if (psTestTimer.current) clearTimeout(psTestTimer.current);
+    psTestTimer.current = setTimeout(() => {
       setTestingPSKey(null);
     }, 15000);
   };
