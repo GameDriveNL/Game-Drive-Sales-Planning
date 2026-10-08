@@ -65,6 +65,7 @@ export default function UsersSettingsPage() {
   // Delete user
   const [deletingUser, setDeletingUser] = useState<UserProfile | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [mfaUserIds, setMfaUserIds] = useState<string[]>([])
 
   const fetchData = useCallback(async () => {
     try {
@@ -72,6 +73,7 @@ export default function UsersSettingsPage() {
       if (!res.ok) throw new Error('Failed to load users')
       const data = await res.json()
       setUsers(data.users)
+      setMfaUserIds(data.mfaUserIds ?? [])
       setPermissions(data.permissions)
       setClients(data.clients)
       setUserClients(data.userClients)
@@ -230,6 +232,22 @@ export default function UsersSettingsPage() {
     await fetchData()
   }
 
+  const handleResetMfa = async (user: UserProfile) => {
+    const name = user.display_name || user.email
+    if (!window.confirm(`Reset two-factor for ${name}? They will set up a new authenticator app at their next sign-in.`)) return
+    setError(null)
+    const res = await fetch('/api/admin/users', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: user.id, action: 'reset_mfa' }),
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      setError(data.error || 'Failed to reset two-factor')
+    }
+    await fetchData()
+  }
+
   const handleDeleteUser = async () => {
     if (!deletingUser) return
     setDeleting(true)
@@ -309,6 +327,7 @@ export default function UsersSettingsPage() {
               <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--color-text)' }}>Role</th>
               <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--color-text)' }}>Clients</th>
               <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--color-text)' }}>Status</th>
+              <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--color-text)' }}>2FA</th>
               <th style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 600, color: 'var(--color-text)' }}>Actions</th>
             </tr>
           </thead>
@@ -353,6 +372,25 @@ export default function UsersSettingsPage() {
                     <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>
                       {user.is_active ? 'Active' : 'Inactive'}
                     </span>
+                  </td>
+                  <td style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--color-text-muted)' }}>
+                    {mfaUserIds.includes(user.id) ? (
+                      <>
+                        <span style={{ color: 'var(--color-success)', fontWeight: 500 }}>On</span>
+                        <button
+                          onClick={() => handleResetMfa(user)}
+                          style={{
+                            marginLeft: '8px', padding: 0, fontSize: '12px',
+                            color: 'var(--color-text-muted)', background: 'none',
+                            border: 'none', textDecoration: 'underline', cursor: 'pointer',
+                          }}
+                        >
+                          Reset
+                        </button>
+                      </>
+                    ) : (
+                      <span>Not set up</span>
+                    )}
                   </td>
                   <td style={{ padding: '12px 16px', textAlign: 'right' }}>
                     <button

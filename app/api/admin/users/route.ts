@@ -2,12 +2,19 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
+import { getAal, isMfaEnforced } from '@/lib/mfa'
 
 // Verify the caller is a superadmin
 async function verifySuperAdmin() {
   const supabase = createRouteHandlerClient({ cookies })
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return false
+
+  // Password-only sessions never count as admin once two-factor is on
+  if (isMfaEnforced()) {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (getAal(session?.access_token) !== 'aal2') return false
+  }
 
   const serverSupabase = getServerSupabase()
   const { data: profile } = await serverSupabase
@@ -34,8 +41,18 @@ export async function GET() {
     serverSupabase.from('user_clients').select('*'),
   ])
 
+  // Which users have a verified authenticator app
+  const mfaUserIds: string[] = []
+  await Promise.all(
+    (profilesRes.data || []).map(async (p: { id: string }) => {
+      const { data } = await serverSupabase.auth.admin.mfa.listFactors({ userId: p.id })
+      if (data?.factors?.some((f) => f.status === 'verified')) mfaUserIds.push(p.id)
+    })
+  )
+
   return NextResponse.json({
     users: profilesRes.data || [],
+    mfaUserIds,
     permissions: permissionsRes.data || [],
     clients: clientsRes.data || [],
     userClients: userClientsRes.data || [],
@@ -142,7 +159,31 @@ export async function PUT(request: Request) {
         .eq('id', userId)
 
       if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+
+      // Deactivating also blocks sign-in and session refresh at the auth
+      // provider, since is_active alone is only checked in the UI.
+      if (is_active !== undefined) {
+        const { error: banError } = await serverSupabase.auth.admin.updateUserById(userId, {
+          ban_duration: is_active ? 'none' : '876000h',
+        })
+        if (banError) return NextResponse.json({ error: banError.message }, { status: 400 })
+      }
       return NextResponse.json({ success: true })
+    }
+
+    case 'reset_mfa': {
+      // Removes the user's authenticator app so they set up a new one at next sign-in
+      const { data, error } = await serverSupabase.auth.admin.mfa.listFactors({ userId })
+      if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+
+      for (const factor of data?.factors ?? []) {
+        const { error: delError } = await serverSupabase.auth.admin.mfa.deleteFactor({
+          userId,
+          id: factor.id,
+        })
+        if (delError) return NextResponse.json({ error: delError.message }, { status: 400 })
+      }
+      return NextResponse.json({ success: true, removed: data?.factors?.length ?? 0 })
     }
 
     case 'set_permissions': {

@@ -1,6 +1,29 @@
 import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { getAal, isMfaEnforced } from '@/lib/mfa'
+
+// The auth cookie is readable by the browser, so a cookie alone proves
+// nothing. Confirm the access token with the auth server, and remember
+// the answer briefly so every request does not pay a round trip.
+const TOKEN_TTL_MS = 60_000
+const validTokens = new Map<string, number>()
+
+async function isValidToken(
+  supabase: ReturnType<typeof createMiddlewareClient>,
+  token: string
+): Promise<boolean> {
+  const now = Date.now()
+  const until = validTokens.get(token)
+  if (until && until > now) return true
+
+  const { data, error } = await supabase.auth.getUser(token)
+  if (error || !data.user) return false
+
+  if (validTokens.size > 500) validTokens.clear()
+  validTokens.set(token, now + TOKEN_TTL_MS)
+  return true
+}
 
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next()
@@ -13,7 +36,7 @@ export async function middleware(req: NextRequest) {
   const supabase = createMiddlewareClient({ req, res })
 
   // Refresh the session (this handles token refresh via cookies)
-  const { data: { session } } = await supabase.auth.getSession()
+  const { data: { session: cookieSession } } = await supabase.auth.getSession()
 
   const pathname = req.nextUrl.pathname
 
@@ -112,6 +135,29 @@ export async function middleware(req: NextRequest) {
   // Allow SullyGnome collect webhook (called by Apify, no auth)
   if (pathname.startsWith('/api/sullygnome-collect')) {
     return res
+  }
+
+  const session =
+    cookieSession && (await isValidToken(supabase, cookieSession.access_token))
+      ? cookieSession
+      : null
+
+  // Signed in with a password only: everything except the login and
+  // two-factor pages is closed until the second factor is verified.
+  if (session && isMfaEnforced() && getAal(session.access_token) !== 'aal2') {
+    if (pathname === '/auth/mfa' || pathname === '/login') {
+      return res
+    }
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json(
+        { error: 'Two-factor authentication required', code: 'mfa_required' },
+        { status: 401 }
+      )
+    }
+    const mfaUrl = req.nextUrl.clone()
+    mfaUrl.pathname = '/auth/mfa'
+    mfaUrl.search = ''
+    return NextResponse.redirect(mfaUrl)
   }
 
   // If no session and not on login page, redirect to login

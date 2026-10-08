@@ -50,8 +50,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [supabase])
 
   useEffect(() => {
-    // Skip loading auth on login page
-    if (pathname === '/login') {
+    // Skip loading auth on the login and two-factor pages
+    if (pathname === '/login' || pathname === '/auth/mfa') {
       setLoading(false)
       return
     }
