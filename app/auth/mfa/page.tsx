@@ -20,6 +20,7 @@ export default function MfaPage() {
   const [code, setCode] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -146,8 +147,13 @@ export default function MfaPage() {
         {step === 'enroll' && enrollment && (
           <div style={{ marginBottom: '16px', fontSize: '13px', color: 'var(--color-text-muted)' }}>
             <p style={{ marginBottom: '12px' }}>
-              Your account needs a second sign-in step. Scan this code with an authenticator
-              app (Google Authenticator, 1Password, Authy), then enter the 6 digit code it shows.
+              Your account needs a second sign-in step. Open your authenticator app (Google
+              Authenticator, 1Password, Authy), choose to add an account, and scan this code from
+              inside that app. Then enter the 6 digit code it shows.
+            </p>
+            <p style={{ marginBottom: '12px' }}>
+              Do not scan it with your phone&apos;s camera app. That offers to save it in your
+              password manager instead. If scanning does not work, use the key below.
             </p>
             <div style={{ textAlign: 'center', marginBottom: '12px' }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -159,7 +165,10 @@ export default function MfaPage() {
                 style={{ background: '#fff', padding: '8px', borderRadius: '8px' }}
               />
             </div>
-            <p style={{ marginBottom: '4px' }}>Cannot scan? Enter this key by hand:</p>
+            <p style={{ marginBottom: '4px' }}>
+              Cannot scan? In Google Authenticator tap + then &quot;Enter a setup key&quot;, and
+              paste this key (account name and type &quot;Time based&quot;):
+            </p>
             <code
               style={{
                 display: 'block',
@@ -173,6 +182,30 @@ export default function MfaPage() {
             >
               {enrollment.secret}
             </code>
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(enrollment.secret)
+                  setCopied(true)
+                  setTimeout(() => setCopied(false), 2000)
+                } catch {
+                  /* clipboard blocked: the key above is selectable */
+                }
+              }}
+              style={{
+                marginTop: '8px',
+                padding: '4px 12px',
+                fontSize: '13px',
+                color: 'var(--color-text)',
+                background: 'var(--color-bg)',
+                border: '1px solid var(--color-border)',
+                borderRadius: 'var(--radius-md)',
+                cursor: 'pointer',
+              }}
+            >
+              {copied ? 'Copied' : 'Copy key'}
+            </button>
             <p style={{ marginTop: '12px' }}>
               If you ever lose access to your app, a Game Drive superadmin can reset it for you.
             </p>
