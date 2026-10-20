@@ -464,6 +464,13 @@ async function processSingleDate(
       return;
     }
 
+    // Activation-only rows (free DLC, demos, key redemptions) are stored once per day and package, not per
+    // country: nothing shows activations by country, and one row per country made up 45% of Total Mayhem's
+    // table, which pushed its All Time analytics query past the statement timeout. 'XX' is the unknown-country code.
+    if (salesData.units_sold === 0 && salesData.gross_revenue === 0 && salesData.net_revenue === 0) {
+      salesData.country_code = 'XX';
+    }
+
     // Create unique key from constraint fields to deduplicate
     const key = `${salesData.client_id}|${salesData.sale_date}|${salesData.app_id}|${salesData.product_type}|${salesData.country_code}|${salesData.steam_package_id}`;
 
