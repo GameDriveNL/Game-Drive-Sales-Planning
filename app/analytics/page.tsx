@@ -124,6 +124,12 @@ export default function AnalyticsPage() {
   }>>([])
   const [propositionSortKey, setPropositionSortKey] = useState<string>('net_revenue')
   const [propositionSortDir, setPropositionSortDir] = useState<'asc' | 'desc'>('desc')
+  // Products Steam reports only as activations (free DLC, demos, key redemptions): no sales, so the main
+  // performance query never returns them. They are listed in the product filter from the breakdown instead.
+  const noSalesProducts = useMemo(
+    () => propositionRows.filter(r => r.net_units === 0 && r.net_revenue === 0 && r.activations > 0),
+    [propositionRows]
+  )
 
   // Sale comparison picker state — set of period startDates for selected sale periods (up to 5)
   const [selectedComparisonPeriods, setSelectedComparisonPeriods] = useState<Set<string>>(new Set())
@@ -3105,6 +3111,13 @@ export default function AnalyticsPage() {
                   {product}{demoProductNames.has(product) ? ' — Demo' : ''}
                 </option>
               ))}
+              {noSalesProducts
+                .filter(r => !products.includes(r.product_name))
+                .map(r => (
+                  <option key={`nosales-${r.product_name}`} value={r.product_name}>
+                    {r.product_name} — no sales
+                  </option>
+                ))}
             </select>
             {selectedProduct !== 'all' && demoProductNames.has(selectedProduct) && (
               <span style={{ display: 'inline-block', marginLeft: '6px', fontSize: '11px', padding: '2px 6px', borderRadius: '4px', backgroundColor: '#ede9fe', color: '#6b21a8', fontWeight: 600 }}>
@@ -3235,6 +3248,23 @@ export default function AnalyticsPage() {
               </div>
             ))}
           </div>
+        ) : !dataAvailable && !loadError && selectedProduct !== 'all' && noSalesProducts.some(r => r.product_name === selectedProduct) ? (
+          (() => {
+            const row = noSalesProducts.find(r => r.product_name === selectedProduct)!
+            return (
+              <div className={styles.emptyState}>
+                <h3 className={styles.emptyTitle}>{row.product_name}</h3>
+                <p className={styles.emptyDescription} style={{ fontSize: '28px', fontWeight: 700, color: '#2563eb' }}>
+                  {row.activations.toLocaleString()} activations
+                </p>
+                <p className={styles.emptyDescription}>
+                  No sales in this date range. Steam reports free DLC, demos, retail key redemptions and pre-release access as
+                  activations only, with no units sold and no revenue. The Proposition Comparison table lists it for the whole client.
+                </p>
+                <button className={styles.emptyButton} onClick={() => setSelectedProduct('all')}>Show all products</button>
+              </div>
+            )
+          })()
         ) : !dataAvailable ? (
           <div className={styles.emptyState}>
             <div className={styles.emptyIcon}>
