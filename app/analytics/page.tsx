@@ -3499,12 +3499,12 @@ export default function AnalyticsPage() {
                             {row.net_units.toLocaleString()}
                           </td>
                           <td
-                            title="Free claims reported by Steam: free DLC and demos, plus retail key redemptions. Not counted as sales."
+                            title="Activations reported by Steam: free DLC and demos, retail key redemptions and pre-release access. Not counted as sales."
                             style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', color: row.activations > 0 ? '#2563eb' : '#94a3b8' }}
                           >
                             {row.activations > 0 ? row.activations.toLocaleString() : '—'}
                             {row.activations > 0 && row.net_units === 0 && row.net_revenue === 0 && (
-                              <span style={{ marginLeft: '6px', padding: '1px 6px', borderRadius: '9999px', fontSize: '10px', fontWeight: 600, backgroundColor: '#dcfce7', color: '#166534' }}>free</span>
+                              <span style={{ marginLeft: '6px', padding: '1px 6px', borderRadius: '9999px', fontSize: '10px', fontWeight: 600, backgroundColor: '#f1f5f9', color: '#475569' }}>no sales</span>
                             )}
                           </td>
                           <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', color: '#16a34a', fontWeight: 600 }}>
