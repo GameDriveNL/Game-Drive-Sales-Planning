@@ -78,6 +78,7 @@ export async function GET(request: NextRequest) {
       net_units: number
       chargebacks: number
       vat: number
+      activations: number
       row_count: number
       // D12: weighted sum of base_price_usd * net_units, used to derive a
       // discount-adjusted "margin" figure (net_revenue as a % of what full
@@ -93,6 +94,7 @@ export async function GET(request: NextRequest) {
       net_units: Number(r.net_units || 0),
       chargebacks: Number(r.chargebacks || 0),
       vat: Number(r.vat || 0),
+      activations: Number(r.activations || 0),
       full_price_revenue: Number(r.full_price_revenue || 0),
       row_count: Number(r.row_count || 0),
     }))

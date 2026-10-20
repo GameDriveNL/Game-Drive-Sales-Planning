@@ -448,18 +448,24 @@ async function processSingleDate(
       country_code: result.country_code || 'XX',
       units_sold: result.net_units_sold || 0,
       gross_revenue: parseFloat(result.gross_sales_usd || '0'),
-      net_revenue: parseFloat(result.net_sales_usd || '0')
+      net_revenue: parseFloat(result.net_sales_usd || '0'),
+      // Steam reports free products (free DLC, demos, retail keys) ONLY as activations:
+      // units and revenue are 0 on those rows.
+      units_activated: Number(result.gross_units_activated) || 0,
+      // One row per package: without this every package of a game (base game, DLCs, editions)
+      // collapsed into a single row per day and country, named after whichever came first.
+      steam_package_id: result.packageid ? Number(result.packageid) : 0
     };
 
-    // Rows with no units and no revenue at all (key activations, zero-price listings) carry nothing
-    // the app shows: the analytics query already discards them. Storing them roughly doubled
-    // steam_sales for some clients and the database is small, so don't write them.
-    if (salesData.units_sold === 0 && salesData.gross_revenue === 0 && salesData.net_revenue === 0) {
+    // Rows with no units, no revenue and no activations carry nothing, so don't write them. Rows
+    // with activations only must be kept: that is how a free DLC (e.g. Gallipoli - Long March
+    // Pack, ~9,600 claims in 5 days) shows up at all. Dropping them hid it from analytics.
+    if (salesData.units_sold === 0 && salesData.gross_revenue === 0 && salesData.net_revenue === 0 && salesData.units_activated === 0) {
       return;
     }
 
     // Create unique key from constraint fields to deduplicate
-    const key = `${salesData.client_id}|${salesData.sale_date}|${salesData.app_id}|${salesData.product_type}|${salesData.country_code}`;
+    const key = `${salesData.client_id}|${salesData.sale_date}|${salesData.app_id}|${salesData.product_type}|${salesData.country_code}|${salesData.steam_package_id}`;
 
     // If duplicate, sum the values
     if (salesDataMap.has(key)) {
@@ -467,6 +473,7 @@ async function processSingleDate(
       existing.units_sold += salesData.units_sold;
       existing.gross_revenue += salesData.gross_revenue;
       existing.net_revenue += salesData.net_revenue;
+      existing.units_activated += salesData.units_activated;
     } else {
       salesDataMap.set(key, salesData);
     }
@@ -479,7 +486,7 @@ async function processSingleDate(
   const { error, count } = await supabase
     .from('steam_sales')
     .upsert(salesDataBatch, {
-      onConflict: 'client_id,sale_date,app_id,product_type,country_code',
+      onConflict: 'client_id,sale_date,app_id,product_type,country_code,steam_package_id',
       ignoreDuplicates: false,
       count: 'exact'
     });
@@ -487,6 +494,27 @@ async function processSingleDate(
   if (error) {
     console.error(`[Cron] Error batch upserting:`, error);
     return { imported: 0, skipped: results.length, unmappedPartnerIds };
+  }
+
+  // Rows written before steam_package_id existed (steam_package_id = 0) merged every package of a
+  // game into one row. Now that this date holds the real per-package rows, drop the merged ones
+  // or the day would be counted twice. Only after a successful upsert, and only for clients that
+  // actually got per-package rows for this date.
+  const clientsWithPackageRows = Array.from(new Set(
+    salesDataBatch.filter(r => r.steam_package_id !== 0).map(r => r.client_id as string)
+  ));
+  const saleDate = dateStr.replace(/\//g, '-');
+  for (const cid of clientsWithPackageRows) {
+    const { error: cleanupError } = await supabase
+      .from('steam_sales')
+      .delete()
+      .eq('client_id', cid)
+      .eq('sale_date', saleDate)
+      .eq('product_type', 'package')
+      .eq('steam_package_id', 0);
+    if (cleanupError) {
+      console.error(`[Cron] Could not remove merged legacy rows for ${cid} on ${saleDate}:`, cleanupError);
+    }
   }
 
   return { imported: count || salesDataBatch.length, skipped: 0, unmappedPartnerIds };

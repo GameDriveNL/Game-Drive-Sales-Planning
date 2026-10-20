@@ -120,6 +120,7 @@ export default function AnalyticsPage() {
     row_count: number
     full_price_revenue: number
     margin_pct: number | null
+    activations: number
   }>>([])
   const [propositionSortKey, setPropositionSortKey] = useState<string>('net_revenue')
   const [propositionSortDir, setPropositionSortDir] = useState<'asc' | 'desc'>('desc')
@@ -3431,6 +3432,7 @@ export default function AnalyticsPage() {
                       { key: 'product_name', label: 'Product', align: 'left' },
                       { key: 'product_type', label: 'Type', align: 'left' },
                       { key: 'net_units', label: 'Net Units', align: 'right' },
+                      { key: 'activations', label: 'Activations', align: 'right' },
                       { key: 'net_revenue', label: 'Net Revenue', align: 'right' },
                       { key: 'avg_price', label: 'Avg Price', align: 'right' },
                       { key: 'margin_pct', label: 'Margin', align: 'right' },
@@ -3496,6 +3498,15 @@ export default function AnalyticsPage() {
                           <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', color: '#1e293b' }}>
                             {row.net_units.toLocaleString()}
                           </td>
+                          <td
+                            title="Free claims reported by Steam: free DLC and demos, plus retail key redemptions. Not counted as sales."
+                            style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', color: row.activations > 0 ? '#2563eb' : '#94a3b8' }}
+                          >
+                            {row.activations > 0 ? row.activations.toLocaleString() : '—'}
+                            {row.activations > 0 && row.net_units === 0 && row.net_revenue === 0 && (
+                              <span style={{ marginLeft: '6px', padding: '1px 6px', borderRadius: '9999px', fontSize: '10px', fontWeight: 600, backgroundColor: '#dcfce7', color: '#166534' }}>free</span>
+                            )}
+                          </td>
                           <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', color: '#16a34a', fontWeight: 600 }}>
                             ${row.net_revenue.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                           </td>
@@ -3518,6 +3529,9 @@ export default function AnalyticsPage() {
                     <td />
                     <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#1e293b' }}>
                       {propositionRows.reduce((s, r) => s + r.net_units, 0).toLocaleString()}
+                    </td>
+                    <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#2563eb' }}>
+                      {propositionRows.reduce((s, r) => s + (r.activations || 0), 0).toLocaleString()}
                     </td>
                     <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#16a34a' }}>
                       ${propositionRows.reduce((s, r) => s + r.net_revenue, 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
