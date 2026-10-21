@@ -52,6 +52,8 @@
   "overrides": {
     "next": {
       "postcss": "$postcss"
-    }
+    },
+    "image-size": "^2.0.4",
+    "uuid": "^11.1.1"
   }
 }
