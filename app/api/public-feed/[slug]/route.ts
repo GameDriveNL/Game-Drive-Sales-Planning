@@ -8,10 +8,10 @@ function getSupabase() {
 // GET /api/public-feed/[slug] — Public coverage feed data for a game
 export async function GET(
   request: NextRequest,
-  { params }: { params: { slug: string } }
+  { params }: { params: Promise<{ slug: string }> }
 ) {
   const supabase = getSupabase()
-  const { slug } = params
+  const { slug } = await params
   const { searchParams } = new URL(request.url)
 
   const password = searchParams.get('password')

@@ -25,15 +25,15 @@
     "clsx": "^2.0.0",
     "date-fns": "^2.30.0",
     "html2canvas": "^1.4.1",
-    "jspdf": "^2.5.1",
+    "jspdf": "^4.2.1",
     "lucide-react": "^0.294.0",
-    "next": "14.0.4",
+    "next": "15.5.28",
     "pptxgenjs": "^3.12.0",
     "react": "^18",
     "react-dom": "^18",
     "rss-parser": "^3.13.0",
     "tailwind-merge": "^2.1.0",
-    "xlsx": "^0.18.5",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "youtubei.js": "^17.0.1",
     "zod": "^4.3.6",
     "zod-to-json-schema": "^3.25.1"
@@ -44,9 +44,14 @@
     "@types/react-dom": "^18",
     "autoprefixer": "^10.4.23",
     "eslint": "^8",
-    "eslint-config-next": "14.0.4",
+    "eslint-config-next": "15.5.28",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.19",
     "typescript": "5.9.3"
+  },
+  "overrides": {
+    "next": {
+      "postcss": "$postcss"
+    }
   }
 }
