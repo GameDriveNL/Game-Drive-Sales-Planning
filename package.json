@@ -35,7 +35,7 @@
     "tailwind-merge": "^2.1.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "youtubei.js": "^17.0.1",
-    "zod": "^4.3.6",
+    "zod": "^4.6.7",
     "zod-to-json-schema": "^3.25.1"
   },
   "devDependencies": {
