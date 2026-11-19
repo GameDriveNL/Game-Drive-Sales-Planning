@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { inferTerritory } from '@/lib/territory'
 import { detectOutletCountry } from '@/lib/outlet-country'
-import { checkApifyCredits, notifyLowCredits, checkApifyDailyBudget, logApifyRun, apifyCronGate } from '@/lib/apify-utils'
+import { checkApifyCredits, notifyLowCredits, checkApifyDailyBudget, logApifyRun, apifyCronGate, recordApifySkip } from '@/lib/apify-utils'
 import { verifyCronAuth } from '@/lib/cron-auth'
 
 function getSupabase() {
@@ -30,7 +30,11 @@ export async function GET(request: NextRequest) {
     // Per-platform gate + rotation pick. One game per run keeps daily
     // Apify spend bounded; rotation cycles all games over ~7 days.
     const gate = await apifyCronGate(supabase, 'tiktok')
-    if (gate.skip) return NextResponse.json(gate.data)
+    if (gate.skip) {
+      // A switched off platform is expected; anything else deserves a record
+      if (gate.reason !== 'apify_tiktok_enabled=false') await recordApifySkip(supabase, 'tiktok-scan', gate.reason)
+      return NextResponse.json({ ...gate.data, skip_reason: gate.reason })
+    }
     const targetGameId = gate.targetGameId
 
     // Get Apify API key
@@ -42,7 +46,8 @@ export async function GET(request: NextRequest) {
       .single()
 
     if (!keyData?.api_key) {
-      return NextResponse.json({ message: 'Apify API key not configured, skipping' })
+      await recordApifySkip(supabase, 'tiktok-scan', 'Apify API key not configured or inactive')
+      return NextResponse.json({ message: 'Apify API key not configured, skipping', skip_reason: 'no_key' })
     }
 
     const apifyKey = keyData.api_key
@@ -53,15 +58,26 @@ export async function GET(request: NextRequest) {
       if (creditCheck.remainingUsd !== null) {
         await notifyLowCredits(creditCheck.remainingUsd)
       }
+      // creditCheck.error separates a rejected key (HTTP 401) from genuinely low credit
+      await recordApifySkip(
+        supabase,
+        'tiktok-scan',
+        creditCheck.error ? `credit check failed: ${creditCheck.error}` : `credits low ($${creditCheck.remainingUsd?.toFixed(2)})`,
+        { remaining_usd: creditCheck.remainingUsd }
+      )
       return NextResponse.json({
-        message: `Apify credits low ($${creditCheck.remainingUsd?.toFixed(2) ?? 'unknown'} remaining), skipping scan`,
-        credits_remaining: creditCheck.remainingUsd
+        message: creditCheck.error
+          ? `Apify credit check failed (${creditCheck.error}), skipping scan`
+          : `Apify credits low ($${creditCheck.remainingUsd?.toFixed(2) ?? 'unknown'} remaining), skipping scan`,
+        credits_remaining: creditCheck.remainingUsd,
+        skip_reason: creditCheck.error ? 'credit_check_failed' : 'credits_low'
       })
     }
 
     // Daily call budget — backstop against runaway spend.
     const budget = await checkApifyDailyBudget(supabase)
     if (!budget.ok) {
+      await recordApifySkip(supabase, 'tiktok-scan', `daily call cap reached (${budget.callsToday}/${budget.limit})`)
       return NextResponse.json({
         message: `Daily Apify call cap reached (${budget.callsToday}/${budget.limit}), skipping scan`,
         calls_today: budget.callsToday,

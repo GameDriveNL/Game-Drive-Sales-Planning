@@ -364,3 +364,28 @@ export async function notifyLowCredits(remainingUsd: number): Promise<void> {
     })
   } catch { /* best effort */ }
 }
+
+/**
+ * Leave a trace when an Apify cron skips its run for a reason that needs
+ * attention (key missing or rejected, credits low, daily cap). A skip used to
+ * return HTTP 200 with a message and write nothing, so TikTok could go silent
+ * for days with no record of why. Expected skips (platform switched off) should
+ * not call this. Best effort: never throws.
+ */
+export async function recordApifySkip(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  scanner: string,
+  reason: string,
+  context: Record<string, unknown> = {}
+): Promise<void> {
+  try {
+    const { recordScannerError } = await import('@/lib/scanner-errors')
+    await recordScannerError(supabase, {
+      scanner,
+      category: 'unknown',
+      message: `skipped: ${reason}`,
+      context,
+    })
+  } catch { /* never throw from a logger */ }
+}

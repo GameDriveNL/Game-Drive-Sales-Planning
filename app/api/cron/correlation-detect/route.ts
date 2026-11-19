@@ -44,6 +44,45 @@ export async function GET(request: NextRequest) {
 
       const existingItemIds = new Set((existingCandidates || []).map(c => c.coverage_item_id))
 
+      // Daily net units per game, loaded once per game for the whole span.
+      // The old code queried unified_performance_view for game_id / net_units
+      // columns that do not exist (the view has `game` as a name and
+      // net_units_sold), so it failed ~117 times a day and never detected a
+      // sales effect. steam_sales has no game_id populated either, so match on
+      // app_name = the game's name within the client.
+      const pending = recentMentions.filter(m => m.game_id && !existingItemIds.has(m.id))
+      const gameIds = Array.from(new Set(pending.map(m => m.game_id as string)))
+      const { data: gameRows } = gameIds.length
+        ? await db.from('games').select('id, name, client_id').in('id', gameIds)
+        : { data: [] as Array<{ id: string; name: string; client_id: string }> }
+      const dailyUnitsByGame = new Map<string, Map<string, number>>()
+      for (const g of gameRows || []) {
+        const dates = pending
+          .filter(m => m.game_id === g.id)
+          .map(m => (m.publish_date || (m.discovered_at ? m.discovered_at.split('T')[0] : null)) as string | null)
+          .filter((d): d is string => !!d)
+        if (dates.length === 0) continue
+        const spanStart = new Date(new Date(dates.reduce((a, b) => (a < b ? a : b))).getTime() - WINDOW_DAYS * 86400000).toISOString().split('T')[0]
+        const spanEnd = new Date(new Date(dates.reduce((a, b) => (a > b ? a : b))).getTime() + WINDOW_DAYS * 86400000).toISOString().split('T')[0]
+        const { data: rows, error: salesErr } = await db
+          .from('steam_sales')
+          .select('sale_date, units_sold')
+          .eq('client_id', g.client_id)
+          .eq('app_name', g.name)
+          .gte('sale_date', spanStart)
+          .lte('sale_date', spanEnd)
+          .limit(20000)
+        if (salesErr) {
+          console.error(`[correlation-detect] sales query failed for ${g.name}:`, salesErr.message)
+          continue
+        }
+        const perDay = new Map<string, number>()
+        for (const r of rows || []) {
+          perDay.set(r.sale_date as string, (perDay.get(r.sale_date as string) || 0) + (Number(r.units_sold) || 0))
+        }
+        dailyUnitsByGame.set(g.id, perDay)
+      }
+
       for (const mention of recentMentions) {
         if (existingItemIds.has(mention.id)) continue
         if (!mention.game_id) continue
@@ -55,13 +94,13 @@ export async function GET(request: NextRequest) {
         const windowEnd = new Date(new Date(mentionDate).getTime() + WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
 
         // Check sales data in the window
-        const { data: salesData } = await db
-          .from('unified_performance_view')
-          .select('date, net_units, net_revenue_usd')
-          .eq('game_id', mention.game_id)
-          .gte('date', windowStart)
-          .lte('date', windowEnd)
-          .order('date')
+        const perDay = dailyUnitsByGame.get(mention.game_id)
+        const salesData = perDay
+          ? Array.from(perDay.entries())
+              .filter(([date]) => date >= windowStart && date <= windowEnd)
+              .map(([date, net_units]) => ({ date, net_units }))
+              .sort((a, b) => (a.date < b.date ? -1 : 1))
+          : []
 
         if (salesData && salesData.length >= 3) {
           const beforeMention = salesData.filter(d => d.date < mentionDate)

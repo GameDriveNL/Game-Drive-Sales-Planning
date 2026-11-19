@@ -25,7 +25,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { verifyCronAuth } from '@/lib/cron-auth'
-import { checkApifyCredits, checkApifyDailyBudget, isApifyPlatformEnabled, type ApifyPlatform } from '@/lib/apify-utils'
+import { checkApifyCredits, checkApifyDailyBudget, isApifyPlatformEnabled, recordApifySkip, type ApifyPlatform } from '@/lib/apify-utils'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -51,10 +51,17 @@ export async function GET(request: NextRequest) {
     .eq('is_active', true)
     .maybeSingle()
   if (!keyData?.api_key) {
+    await recordApifySkip(supabase, 'apify-deep-scan-orchestrator', 'Apify API key not configured or inactive')
     return NextResponse.json({ message: 'Apify key not configured, skipping' })
   }
   const credits = await checkApifyCredits(keyData.api_key, 5.0)
   if (!credits.hasCredits) {
+    await recordApifySkip(
+      supabase,
+      'apify-deep-scan-orchestrator',
+      credits.error ? `credit check failed: ${credits.error}` : `credits low ($${credits.remainingUsd?.toFixed(2)}), needs more than $5`,
+      { remaining_usd: credits.remainingUsd }
+    )
     return NextResponse.json({
       message: `Apify credits low ($${credits.remainingUsd?.toFixed(2) ?? '?'}); orchestrator skipping`,
       remaining_usd: credits.remainingUsd,
@@ -62,6 +69,7 @@ export async function GET(request: NextRequest) {
   }
   const budget = await checkApifyDailyBudget(supabase)
   if (!budget.ok) {
+    await recordApifySkip(supabase, 'apify-deep-scan-orchestrator', `daily call cap (${budget.callsToday}/${budget.limit})`)
     return NextResponse.json({
       message: `Apify daily call cap (${budget.callsToday}/${budget.limit}); orchestrator skipping`,
     })

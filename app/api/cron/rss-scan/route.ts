@@ -10,7 +10,7 @@ import { autoDiscoverAndCreateRssSource } from '@/lib/rss-discovery'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
-export const maxDuration = 60
+export const maxDuration = 300
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -169,7 +169,13 @@ export async function GET(request: Request) {
       .sort((a, b) => {
         const aPriority = (a as CoverageSource & { outlet?: { is_priority?: boolean } }).outlet?.is_priority ? 1 : 0
         const bPriority = (b as CoverageSource & { outlet?: { is_priority?: boolean } }).outlet?.is_priority ? 1 : 0
-        return bPriority - aPriority
+        if (bPriority !== aPriority) return bPriority - aPriority
+        // Then the most overdue first (never run = oldest). Without this the
+        // order was arbitrary, so hundreds of never scanned feeds were starved
+        // behind sources that were merely due again.
+        const aRun = a.last_run_at ? new Date(a.last_run_at).getTime() : 0
+        const bRun = b.last_run_at ? new Date(b.last_run_at).getTime() : 0
+        return aRun - bRun
       })
 
     if (dueForScan.length === 0) {
@@ -226,10 +232,13 @@ export async function GET(request: Request) {
     Array.from(whitelistByClient.values()).forEach(terms => allWhitelistTerms.push(...terms))
 
     // 4. Fetch existing URLs for deduplication
+    // Ordered by publish_date (indexed). Ordering by created_at had no index and
+    // sorted the whole table (1.8s on average, up to the 8s timeout). The
+    // unique url index still guards against duplicates on insert.
     const { data: existingItems } = await supabase
       .from('coverage_items')
       .select('url')
-      .order('created_at', { ascending: false })
+      .order('publish_date', { ascending: false, nullsFirst: false })
       .limit(10000)
 
     const existingUrls = new Set<string>()
@@ -265,8 +274,9 @@ export async function GET(request: Request) {
     // Track newly created outlets for RSS auto-discovery
     const newOutlets: Array<{ id: string; domain: string; name: string }> = []
 
-    // Limit to 10 sources per cron run to stay within 60s
-    const batch = dueForScan.slice(0, 10)
+    // Up to 60 sources per run, bounded by the time guard below (300s function
+    // limit). Hourly runs now cover roughly 700 feeds a day instead of 240.
+    const batch = dueForScan.slice(0, 60)
 
     for (const source of batch) {
       const feedUrl = source.config?.url
@@ -281,8 +291,8 @@ export async function GET(request: Request) {
         continue
       }
 
-      // Time guard: stop if we're approaching the 60s limit
-      if (Date.now() - startTime > 50000) {
+      // Time guard: stop if we're approaching the 300s limit
+      if (Date.now() - startTime > 270000) {
         console.log('[RSS Scan] Approaching time limit, stopping early')
         break
       }

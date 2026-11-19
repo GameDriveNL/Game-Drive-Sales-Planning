@@ -8,6 +8,7 @@ import { CoverageImporter } from '../components/CoverageImporter'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import AnnotationSidebar, { CorrelationCandidate } from '@/app/components/AnnotationSidebar'
 import CoverageHealth from '../components/CoverageHealth'
+import { decodeEntities } from '@/lib/decode-entities'
 
 function getOutletDisplayName(item: CoverageItem): string {
   if (item.outlet?.name && item.outlet.name !== 'Unknown') return item.outlet.name
@@ -133,6 +134,8 @@ export default function CoverageFeedPage() {
   const [items, setItems] = useState<CoverageItem[]>([])
   const [totalCount, setTotalCount] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
 
   // Reference data
   const [clients, setClients] = useState<ClientOption[]>([])
@@ -231,9 +234,8 @@ export default function CoverageFeedPage() {
     load()
   }, [canView, supabase])
 
-  // Fetch coverage items
-  const fetchItems = useCallback(async () => {
-    setIsLoading(true)
+  // Build the query string for the current filters
+  const buildParams = useCallback(() => {
     const params = new URLSearchParams()
     if (clientFilter) params.set('client_id', clientFilter)
     if (gameFilter) params.set('game_id', gameFilter)
@@ -253,19 +255,58 @@ export default function CoverageFeedPage() {
     params.set('sort_by', sortBy)
     params.set('sort_dir', sortDir)
     params.set('limit', '200')
+    return params
+  }, [clientFilter, gameFilter, typeFilter, sentimentFilter, approvalFilter, sourceFilter, tierFilter, territoryFilter, campaignFilter, aiFilter, debouncedDateFrom, debouncedDateTo, debouncedSearch, sortBy, sortDir, viewMode, hideDuplicates])
 
+  // Fetch coverage items. Shows an error (with Retry) when the request fails,
+  // instead of an empty list that looks like "no coverage".
+  const fetchItems = useCallback(async () => {
+    setIsLoading(true)
+    setLoadError(null)
     try {
-      const res = await fetch(`/api/coverage-items?${params}`)
+      const res = await fetch(`/api/coverage-items?${buildParams()}`)
       if (res.ok) {
         const json = await res.json()
         setItems(json.data || [])
         setTotalCount(json.count || 0)
+      } else {
+        const body = await res.json().catch(() => ({}))
+        setItems([])
+        setTotalCount(0)
+        setLoadError(body?.error || `Could not load coverage (error ${res.status})`)
       }
     } catch (err) {
       console.error('Failed to fetch coverage items:', err)
+      setItems([])
+      setTotalCount(0)
+      setLoadError('Could not reach the server. Check your connection and retry.')
     }
     setIsLoading(false)
-  }, [clientFilter, gameFilter, typeFilter, sentimentFilter, approvalFilter, sourceFilter, tierFilter, territoryFilter, campaignFilter, aiFilter, debouncedDateFrom, debouncedDateTo, debouncedSearch, sortBy, sortDir, viewMode, hideDuplicates])
+  }, [buildParams])
+
+  // Append the next page of 200 to the list
+  const loadMore = useCallback(async () => {
+    setIsLoadingMore(true)
+    try {
+      const params = buildParams()
+      params.set('offset', String(items.length))
+      const res = await fetch(`/api/coverage-items?${params}`)
+      if (res.ok) {
+        const json = await res.json()
+        const seen = new Set(items.map(i => i.id))
+        const fresh = (json.data || []).filter((i: CoverageItem) => !seen.has(i.id))
+        setItems(prev => [...prev, ...fresh])
+        setTotalCount(json.count || 0)
+      } else {
+        const body = await res.json().catch(() => ({}))
+        setLoadError(body?.error || `Could not load more (error ${res.status})`)
+      }
+    } catch (err) {
+      console.error('Failed to load more coverage items:', err)
+      setLoadError('Could not load more. Retry.')
+    }
+    setIsLoadingMore(false)
+  }, [buildParams, items])
 
   useEffect(() => {
     if (canView) fetchItems()
@@ -627,7 +668,7 @@ export default function CoverageFeedPage() {
                                 <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
                                   {c.coverage_item.url ? (
                                     <a href={c.coverage_item.url} target="_blank" rel="noopener noreferrer" style={{ color: '#64748b', textDecoration: 'none' }}>
-                                      {c.coverage_item.title.length > 50 ? c.coverage_item.title.substring(0, 50) + '...' : c.coverage_item.title}
+                                      {decodeEntities(c.coverage_item.title).length > 50 ? decodeEntities(c.coverage_item.title).substring(0, 50) + '...' : decodeEntities(c.coverage_item.title)}
                                     </a>
                                   ) : c.coverage_item.title.length > 50 ? c.coverage_item.title.substring(0, 50) + '...' : c.coverage_item.title}
                                 </div>
@@ -872,7 +913,20 @@ export default function CoverageFeedPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {items.length === 0 ? (
+                  {items.length === 0 && loadError ? (
+                    <tr>
+                      <td colSpan={canEdit ? 12 : 10} style={{ padding: '60px 16px', textAlign: 'center', color: '#b91c1c' }}>
+                        <div style={{ fontWeight: 600 }}>Coverage could not be loaded</div>
+                        <div style={{ marginTop: '6px', fontSize: '13px', color: '#64748b' }}>{loadError}</div>
+                        <button
+                          onClick={() => fetchItems()}
+                          style={{ marginTop: '12px', padding: '6px 14px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer', fontSize: '13px' }}
+                        >
+                          Retry
+                        </button>
+                      </td>
+                    </tr>
+                  ) : items.length === 0 ? (
                     <tr>
                       <td colSpan={canEdit ? 12 : 10} style={{ padding: '60px 16px', textAlign: 'center', color: '#94a3b8' }}>
                         {viewMode === 'pending' ? 'No items pending review.' : 'No coverage items found.'}
@@ -939,7 +993,7 @@ export default function CoverageFeedPage() {
                               style={{ color: '#b8232f', textDecoration: 'none', fontSize: '13px', lineHeight: '1.3', fontWeight: 500 }}
                               title={item.url}
                             >
-                              {item.title}
+                              {decodeEntities(item.title)}
                             </a>
                             {item.is_ai_generated && (
                               <span style={{
@@ -1151,6 +1205,18 @@ export default function CoverageFeedPage() {
             </div>
             <div style={{ padding: '12px 16px', borderTop: '1px solid #f1f5f9', fontSize: '13px', color: '#64748b' }}>
               Showing {items.length} of {totalCount} items
+              {items.length > 0 && items.length < totalCount && (
+                <button
+                  onClick={loadMore}
+                  disabled={isLoadingMore}
+                  style={{ marginLeft: '12px', padding: '4px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff', cursor: isLoadingMore ? 'wait' : 'pointer', fontSize: '13px' }}
+                >
+                  {isLoadingMore ? 'Loading...' : 'Load more'}
+                </button>
+              )}
+              {loadError && items.length > 0 && (
+                <span style={{ marginLeft: '12px', color: '#b91c1c' }}>{loadError}</span>
+              )}
             </div>
           </div>}
         </div>

@@ -22,7 +22,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { verifyCronAuth } from '@/lib/cron-auth'
-import { searchSubreddit, searchReddit, getSubredditNew, postMentions, type RedditPost } from '@/lib/reddit-public-api'
+import { searchSubreddit, searchReddit, getSubredditNew, postMentions, resetRedditHealth, getRedditHealth, type RedditPost } from '@/lib/reddit-public-api'
+import { recordScannerError } from '@/lib/scanner-errors'
 import { detectOutletCountry } from '@/lib/outlet-country'
 
 export const dynamic = 'force-dynamic'
@@ -112,6 +113,7 @@ export async function GET(request: NextRequest) {
       continue
     }
     const topVariants = variants.slice(0, VARIANTS_PER_GAME)
+    resetRedditHealth()
 
     // Phase 1: per-subreddit keyword search
     const candidates: RedditPost[] = []
@@ -186,12 +188,32 @@ export async function GET(request: NextRequest) {
       if (!error) r.new_inserted++
     }
 
+    // Was Reddit actually reachable? Zero OK responses means we were blocked or
+    // rate limited, which must not be reported as "success, +0 items".
+    const health = getRedditHealth()
+    const blocked = health.requests > 0 && health.ok === 0
+    const statusSummary = Object.entries(health.statuses).map(([k, n]) => `HTTP ${k} x${n}`).join(', ')
+    if (blocked) {
+      const first = Object.keys(health.statuses)[0]
+      await recordScannerError(supabase, {
+        scanner: 'reddit-public-scan',
+        target: game.name,
+        game_id: game.id,
+        category: first === '429' ? 'rate_limit' : first === '401' || first === '403' ? 'auth_error' : 'fetch_error',
+        http_status: Number.isFinite(Number(first)) ? Number(first) : null,
+        message: `Reddit unreachable: ${statusSummary}${health.usingOAuth ? '' : ' (public API, no OAuth configured)'}`,
+        context: { statuses: health.statuses, oauth: health.usingOAuth },
+      })
+    }
+
     // Refresh the reddit source's run metadata
     if (redditSrc) {
       await supabase.from('coverage_sources').update({
         last_run_at: new Date().toISOString(),
-        last_run_status: 'success',
-        last_run_message: `Reddit JSON API: +${r.new_inserted} items from ${r.queries_made} queries`,
+        last_run_status: blocked ? 'failed' : 'success',
+        last_run_message: blocked
+          ? `Reddit blocked or unreachable: ${statusSummary}${health.usingOAuth ? '' : '. Set REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET to use OAuth.'}`
+          : `Reddit ${health.usingOAuth ? 'OAuth' : 'JSON'} API: +${r.new_inserted} items from ${r.queries_made} queries (${health.ok}/${health.requests} requests ok)`,
         items_found_last_run: r.new_inserted,
       }).eq('game_id', game.id).eq('source_type', 'reddit')
     }
