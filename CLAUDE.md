@@ -110,6 +110,7 @@ The middleware only proves *some* user is signed in. Every API route that reads 
 - `requireFeature('api_settings', 'edit')` / `requireSuperAdmin()` / `requireUser()` for people
 - `requireCronOrUser(request)` etc. for routes machines also call (server to server fetches send `cronAuthHeaders()`)
 - `verifyCronAuth(request)` for scheduled crons (fails closed)
+Access is enforced centrally in `middleware.ts` using `lib/access-policy.ts` (route to feature, read versus write, client scope) and `lib/access-context.ts`. Viewers are read only, users without `all_clients` can only touch their own clients (`client_id` or `game_id` must be named), and any `/api` route missing from `ROUTE_POLICIES` is **superadmin only**, so when you add an API route, add it to the policy table (a POST that only computes needs `readPost`). Role changes take up to 60 seconds to apply (cache). List routes that return many clients must also filter with `getAllowedClientIds`.
 Never return full secrets to the browser (mask them), and never whitelist a route in `middleware.ts` unless it enforces its own auth. Webhooks use signed URLs (`lib/webhook-sig.ts`).
 
 ## Key Reference

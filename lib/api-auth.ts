@@ -125,6 +125,19 @@ export async function requireCronOrFeature(
   return requireFeature(feature, level)
 }
 
+/**
+ * Client ids this user may see, or null when they may see every client
+ * (superadmins and accounts with all_clients). Use it to filter list routes.
+ */
+export async function getAllowedClientIds(caller: Caller): Promise<string[] | null> {
+  if (caller.profile.role === 'superadmin' || caller.profile.all_clients) return null
+  const { data } = await getServerSupabase()
+    .from('user_clients')
+    .select('client_id')
+    .eq('user_id', caller.userId)
+  return (data || []).map((r: { client_id: string }) => r.client_id)
+}
+
 /** Headers for server to server calls into routes guarded by the cron secret. */
 export function cronAuthHeaders(): Record<string, string> {
   const secret = process.env.CRON_SECRET

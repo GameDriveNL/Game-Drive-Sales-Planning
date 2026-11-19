@@ -1,13 +1,19 @@
 import { NextResponse } from 'next/server';
 import { serverSupabase as supabase } from '@/lib/supabase';
+import { requireUser, getAllowedClientIds } from '@/lib/api-auth';
 
 // GET - Fetch all clients (with optional nested games/products)
 export async function GET(request: Request) {
+  const caller = await requireUser();
+  if (caller instanceof NextResponse) return caller;
+  // Client restricted accounts only see their own clients
+  const allowed = await getAllowedClientIds(caller);
+
   try {
     const { searchParams } = new URL(request.url);
     const include = searchParams.get('include');
 
-    let selectQuery = 'id, name, email, contact_person, steam_api_key, steam_partner_id, sales_planning_enabled, pr_tracking_enabled, created_at';
+    let selectQuery = 'id, name, email, contact_person, steam_partner_id, sales_planning_enabled, pr_tracking_enabled, created_at';
     if (include === 'nested') {
       // Include product_platforms so the settings page can show each product's
       // assigned platforms — without this nested join it always renders
@@ -15,14 +21,23 @@ export async function GET(request: Request) {
       selectQuery = '*, games(*, products(*, product_platforms(id, product_id, platform_id, platform:platforms(id, name, color_hex))))';
     }
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('clients')
       .select(selectQuery)
       .order('name', { ascending: true });
+    if (allowed) query = query.in('id', allowed);
+
+    const { data, error } = await query;
 
     if (error) throw error;
 
-    return NextResponse.json(data || []);
+    // The raw Steam key lives in steam_api_keys (masked there); never send the
+    // legacy clients.steam_api_key column to the browser.
+    const rows = (data || []).map((row: unknown) => {
+      const { steam_api_key: _legacyKey, ...rest } = row as Record<string, unknown>;
+      return rest;
+    });
+    return NextResponse.json(rows);
   } catch (error) {
     console.error('Error fetching clients:', error);
     return NextResponse.json(

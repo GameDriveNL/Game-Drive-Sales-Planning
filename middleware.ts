@@ -2,6 +2,7 @@ import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { getAal, isMfaEnforced } from '@/lib/mfa'
+import { enforceApiAccess } from '@/lib/access-context'
 
 // The auth cookie is readable by the browser, so a cookie alone proves
 // nothing. Confirm the access token with the auth server, and remember
@@ -112,6 +113,14 @@ export async function middleware(req: NextRequest) {
     const dashboardUrl = req.nextUrl.clone()
     dashboardUrl.pathname = '/'
     return NextResponse.redirect(dashboardUrl)
+  }
+
+  // API routes: a session only proves someone is signed in. Check what this
+  // user may do (feature access, read versus write, client restrictions).
+  // The policy lives in lib/access-policy.ts.
+  if (session && pathname.startsWith('/api/')) {
+    const blocked = await enforceApiAccess(req, session.user.id)
+    if (blocked) return blocked
   }
 
   return res

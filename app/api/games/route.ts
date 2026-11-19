@@ -1,10 +1,15 @@
 import { NextResponse } from 'next/server'
-import { cronAuthHeaders } from '@/lib/api-auth'
+import { cronAuthHeaders, requireUser, getAllowedClientIds } from '@/lib/api-auth'
 import { serverSupabase as supabase } from '@/lib/supabase'
 import { autoEnrollGameInScrapers } from '@/lib/auto-enroll'
 
 // GET - Fetch all games with client info
 export async function GET(request: Request) {
+  const caller = await requireUser()
+  if (caller instanceof NextResponse) return caller
+  // Client restricted accounts only see games of their own clients
+  const allowed = await getAllowedClientIds(caller)
+
   try {
     const { searchParams } = new URL(request.url)
     const clientId = searchParams.get('client_id')
@@ -17,6 +22,7 @@ export async function GET(request: Request) {
     if (clientId) {
       query = query.eq('client_id', clientId)
     }
+    if (allowed) query = query.in('client_id', allowed)
 
     const { data, error } = await query
     if (error) throw error
