@@ -1,6 +1,6 @@
 # GameDrive weekly audit (autonomous)
 
-You are running unattended, once a week, with nobody to ask. Audit the whole GameDrive Sales Planning system, fix what is safe to fix, and report plainly. Read CLAUDE.md first, then the notes file `docs/audits/NOTES.md` (Watching, Open items, the last two Run log lines).
+You are running unattended, once a week, with nobody to ask. Audit the whole GameDrive Sales Planning system, fix what is safe to fix, and report plainly. Read CLAUDE.md first. Your history and notes live in Supabase (see Log and tuning), not in the repo.
 
 Production: https://platform.game-drive.nl . Supabase project: `znueqcmlqfdhetnierno` (Supabase connector). Vercel: use the Vercel connector if present, team GameDriveNL, project game-drive-sales-planning.
 
@@ -12,7 +12,8 @@ Production: https://platform.game-drive.nl . Supabase project: `znueqcmlqfdhetni
 4. Never call an endpoint that spends credit (Apify, Tavily, YouTube, Gemini, scan or backfill routes) and never trigger crons. You do not have CRON_SECRET and must not look for it.
 5. Never message anyone, approve or reject coverage, or change who has access. Never relax `lib/access-policy.ts`, `middleware.ts` or `lib/api-auth.ts` on your own.
 6. No em dashes or en dashes in anything you write (report, commits, notes). Use "to" for ranges.
-7. If a step fails or a tool is missing, say so in the report and move on. Never invent a result. "Could not verify" is a valid finding.
+7. THE REPO IS PUBLIC. Never commit, push, or put in a branch name, commit message, PR title or PR body anything that describes an open vulnerability, a weakness, a secret, a credential location, or an unfixed security finding. Reports, findings, notes and metrics go only to the private Supabase tables. A security related fix is Tier 3 (report only) unless it is already fully fixed and verified, and then the commit message states only what changed, not what was wrong. Never create files under docs/audits other than editing the playbook when Josh asks.
+8. If a step fails or a tool is missing, say so in the report and move on. Never invent a result. "Could not verify" is a valid finding.
 
 ## Log and tuning (your memory across sessions)
 
@@ -31,7 +32,7 @@ Record every action you take as a row in `audit_fixes` (tier, kind, description,
 Record numbers worth trending in `audit_metrics`, at least: `noise_unclassified`, `relevance_unscored_estimate`, `rss_never_run`, `rss_active`, `coverage_items_estimate`, `scanner_errors_7d`, `apify_runs_30d`, `statement_timeouts_24h`, `steam_latest_sale_age_days_max`, `npm_audit_high`, `npm_audit_moderate`, `build_ok` (1 or 0), `smoke_failures`, `feed_all_clients_ms` if you can time it, plus any new number a finding needs.
 
 **At the end:**
-1. `update audit_runs set status = 'completed' (or 'partial' or 'failed'), finished_at = now(), verdicts = '{...}', summary = '<3 sentences>', report_path = 'docs/audits/YYYY-MM-DD.md', could_not_verify = array[...] where id = '<run id>';`
+1. `update audit_runs set status = 'completed' (or 'partial' or 'failed'), finished_at = now(), verdicts = '{...}', summary = '<3 sentences>', report_md = '<the full report markdown>', could_not_verify = array[...] where id = '<run id>';`
 2. **Tune.** Look at the history and decide whether the audit itself needs adjusting, and record why in `audit_runs.tuning_notes`. Allowed without asking: move a threshold in `audit_tuning` within its `bounds` (update `value`, `reason`, `updated_run`) when the data justifies it (a threshold that fired on 3 weeks of normal behaviour is too tight; one that missed a real problem is too loose); add a key to `muted_findings` only for a finding that has been `watching` and unchanged for 4 or more runs, and never mute a critical or high one; add metrics. NOT allowed: raising `tier1_max_changed_lines` above 120, loosening any Hard rule, or editing this playbook on main. For playbook changes (a new check, a removed step, a better query), append a suggestion to `audit_tuning` key `playbook_suggestions` as `{"run":"YYYY-MM-DD","change":"...","why":"..."}`, repeat the best ones in the report under "Needs Josh", and only open a draft PR for the playbook if Josh's notes ask for it.
 3. In the report include a short "Audit tuning" section: thresholds changed (old to new, why), metrics added, suggestions made, and a table of the last 4 weeks of the main metrics so the trend is visible.
 
@@ -70,15 +71,13 @@ Work through all steps. Keep a list of findings with evidence (query or file:lin
 10. **Runtime errors.** If the Vercel connector is available, list production runtime errors for the last 7 days grouped by route and message (do not dump logs). Otherwise use `query_logs` api service.
 11. **Regression check.** Compare every finding with `audit_findings` and the notes file. Mark each previous item fixed, still open, or worse. Anything that was green and is now red goes first in the report.
 
-## Known open items at the time of writing (2026-11-19)
+## Starting state
 
-The baseline run for 2026-11-19 is already in `audit_runs`, with 22 findings in `audit_findings` and 11 pending fixes in `audit_fixes` made by hand that day. Your first job is to check whether those fixes held (Log and tuning, step 4). The list below is the human summary of the same findings.
-
-Shared client report links redirect to /login. Public feed password is stored in plain text. No security headers (CSP, HSTS). Two accounts without 2FA and no aal2 RLS. npm audit: zod and follow-redirects. `coverage-digest` and a few manual routes are unscheduled. Analytics loads in 10 to 25 seconds. Coverage Dashboard shows too few items. Total Mayhem Games Steam auto-sync is off (data arrives through the agency key). Steam partner 354629 is not mapped to a client. Treat these as Watching, not new, and report only changes.
+The baseline run of 2026-11-19 is in `audit_runs`, with its findings in `audit_findings` and 11 pending fixes in `audit_fixes` made by hand that day. Your first job is to check whether those fixes held (Log and tuning, step 4). Treat findings already in `audit_findings` as Watching, not new, and report only changes.
 
 ## Report
 
-Write the report to `docs/audits/YYYY-MM-DD.md` and make it your final message. Keep it plain English, in this order:
+Store the report in `audit_runs.report_md` and make it your final message. Do not write it to the repo (the repo is public). Keep it plain English, in this order:
 
 1. **Verdict.** One line per area (scheduled jobs, data syncs, discovery, database, connections, code and security, production smoke): green, amber, or red, with the single most important fact.
 2. **What changed since last week.** Regressions first, then fixed items.
@@ -86,6 +85,6 @@ Write the report to `docs/audits/YYYY-MM-DD.md` and make it your final message. 
 4. **What needs Josh.** Ranked, each with evidence and the recommended action. Maximum 10 items, the rest go in Watching.
 5. **What I could not verify.**
 
-## Notes file protocol
+## Repo changes
 
-After the Supabase log is complete, also update `docs/audits/NOTES.md` as the human readable copy: refresh Watching and Open items, add one Run log line (date, verdicts, fixes, branches), keep only the last 8 run lines. Commit the notes and the report together ("Weekly audit YYYY-MM-DD") and push to main. These two files are the only things you may change on main outside a Tier 1 code fix.
+The only things you may push to main are Tier 1 code fixes that meet every condition above, with neutral commit messages. You do not write notes or reports to the repo. Your notes are the `tuning_notes` column, the findings table and `audit_tuning`.
