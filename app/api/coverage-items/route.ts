@@ -38,9 +38,18 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '100')
     const offset = parseInt(searchParams.get('offset') || '0')
 
+    // An exact count over the whole table (about 100k rows) took 2.6s on its own.
+    // With no filters an estimate is plenty ("All Coverage (103671)"); with any
+    // filter the planner uses an index and the exact count is cheap.
+    const hasFilters = [
+      clientId, gameId, outletId, campaignId, coverageType, sentiment, approvalStatus,
+      sourceType, territory, tier, isAiGenerated, search, dateFrom, dateTo,
+      searchParams.get('hide_duplicates') === 'true' ? 'x' : null,
+    ].some(Boolean)
+
     let query = supabase
       .from('coverage_items')
-      .select('*, outlet:outlets(id, name, domain, tier, monthly_unique_visitors), game:games(id, name), client:clients(id, name), campaign:coverage_campaigns(id, name)', { count: 'exact' })
+      .select('*, outlet:outlets(id, name, domain, tier, monthly_unique_visitors), game:games(id, name), client:clients(id, name), campaign:coverage_campaigns(id, name)', { count: hasFilters ? 'exact' : 'estimated' })
       .order(sortBy, { ascending: sortDir === 'asc', nullsFirst: false })
       .order('id', { ascending: true }) // stable tiebreaker — prevents shuffling on refresh
       .range(offset, offset + limit - 1)
