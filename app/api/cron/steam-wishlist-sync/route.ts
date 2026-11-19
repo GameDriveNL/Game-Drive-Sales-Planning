@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { runWishlistSync, resolveAgencyApiKey } from '@/lib/steam-wishlist-sync'
+import { requireCronOrFeature } from '@/lib/api-auth'
 
 const STEAM_PARTNER_API = 'https://partner.steam-api.com'
 
 // POST /api/cron/steam-wishlist-sync — Sync wishlist data from Steam Partner API
 // for one client (manual "Sync from Steam API" button on the Wishlists page).
 export async function POST(request: NextRequest) {
+  // This path sits under /api/cron, which the middleware lets through without
+  // a session, so the route checks for itself: the cron secret or a user who
+  // can edit Analytics.
+  const denied = await requireCronOrFeature(request, 'analytics', 'edit')
+  if (denied instanceof NextResponse) return denied
+
   const supabase = getServerSupabase()
 
   try {
@@ -28,6 +35,9 @@ export async function POST(request: NextRequest) {
 
 // GET — Test if wishlist API is accessible for a client
 export async function GET(request: NextRequest) {
+  const denied = await requireCronOrFeature(request, 'analytics', 'view')
+  if (denied instanceof NextResponse) return denied
+
   const supabase = getServerSupabase()
   const { searchParams } = new URL(request.url)
   const clientId = searchParams.get('client_id')

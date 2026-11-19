@@ -15,6 +15,7 @@
  */
 
 import { NextResponse } from 'next/server'
+import { requireSuperAdmin } from '@/lib/api-auth'
 import { getServerSupabase } from '@/lib/supabase'
 import { checkApifyCredits } from '@/lib/apify-utils'
 import { searchVideos } from '@/lib/youtube-data-api'
@@ -24,6 +25,9 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 export async function GET() {
+  const denied = await requireSuperAdmin()
+  if (denied instanceof NextResponse) return denied
+
   const supabase = getServerSupabase()
 
   // 1. Env presence (boolean only)

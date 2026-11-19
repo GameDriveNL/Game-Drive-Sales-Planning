@@ -4,6 +4,7 @@ import {
   parseApifyRow,
   processSullyGnomeRows,
 } from '@/lib/sullygnome'
+import { verifyCollectSig, isValidDatasetId } from '@/lib/webhook-sig'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -35,6 +36,12 @@ export async function POST(request: NextRequest) {
 
   if (!sourceId) {
     return NextResponse.json({ error: 'source_id is required' }, { status: 400 })
+  }
+
+  // Apify calls this with no session. The registered URL carries a signature
+  // of the source id; anything without a valid one is rejected.
+  if (!verifyCollectSig(sourceId, searchParams.get('sig'))) {
+    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
 
   const supabase = getServerSupabase()
@@ -84,6 +91,10 @@ export async function POST(request: NextRequest) {
     const datasetId = payload?.resource?.defaultDatasetId
       || config._apify_dataset_id as string
       || null
+
+    if (datasetId && !isValidDatasetId(datasetId)) {
+      return NextResponse.json({ error: 'Invalid dataset id' }, { status: 400 })
+    }
 
     if (!datasetId) {
       await supabase

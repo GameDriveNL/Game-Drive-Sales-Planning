@@ -34,3 +34,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .claude/
+
+# Pulled/exported env files (hold tokens). Only .env.example is tracked.
+.env.pulled
+.env.vercel

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
+import { verifyCronAuth } from '@/lib/cron-auth'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -10,11 +11,8 @@ export const runtime = 'nodejs'
  * without requiring manual cleanup.
  */
 export async function GET(request: Request) {
-  const authHeader = request.headers.get('authorization')
-  const expected = process.env.CRON_SECRET
-  if (expected && authHeader !== `Bearer ${expected}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const authError = verifyCronAuth(request)
+  if (authError) return authError
 
   const supabase = getServerSupabase()
   const today = new Date().toISOString().split('T')[0]

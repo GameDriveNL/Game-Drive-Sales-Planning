@@ -34,6 +34,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
+import { requireCronOrUser } from '@/lib/api-auth'
 import { detectOutletCountry } from '@/lib/outlet-country'
 import { inferTerritory } from '@/lib/territory'
 import {
@@ -97,6 +98,11 @@ function normalizeUrl(url: string): string {
 }
 
 export async function POST(request: NextRequest) {
+  // Spends YouTube, Tavily and Apify credit. Cron secret (game creation and
+  // the onboarding cron call this server to server) or a signed in user.
+  const denied = await requireCronOrUser(request)
+  if (denied instanceof NextResponse) return denied
+
   const t0 = Date.now()
   const url = new URL(request.url)
   const supabase = getServerSupabase()

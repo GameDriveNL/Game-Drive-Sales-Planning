@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { requireCronOrUser } from '@/lib/api-auth'
 import { getServerSupabase } from '@/lib/supabase'
 import { tavily } from '@tavily/core'
 import { inferTerritory } from '@/lib/territory'
@@ -85,6 +86,11 @@ function generateBackfillQueries(gameName: string, extraKeywords: string[]): str
 // ─── POST: Historical backfill scan ─────────────────────────────────────────
 
 export async function POST(request: Request) {
+  // Spends Tavily credit. Allowed for the cron secret (server to server call
+  // when a game is created) or a signed in user, never anonymously.
+  const denied = await requireCronOrUser(request)
+  if (denied instanceof NextResponse) return denied
+
   const startTime = Date.now()
   const supabase = getServerSupabase()
 

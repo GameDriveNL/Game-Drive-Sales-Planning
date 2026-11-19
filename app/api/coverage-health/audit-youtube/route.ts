@@ -21,6 +21,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { requireCronOrSuperAdmin } from '@/lib/api-auth'
 import { getServerSupabase } from '@/lib/supabase'
 import { detectOutletCountry } from '@/lib/outlet-country'
 import { inferTerritory } from '@/lib/territory'
@@ -50,6 +51,9 @@ function normalizeUrl(url: string): string {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await requireCronOrSuperAdmin(request)
+  if (denied instanceof NextResponse) return denied
+
   const t0 = Date.now()
   const supabase = getServerSupabase()
 

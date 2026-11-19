@@ -21,6 +21,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { cronAuthHeaders } from '@/lib/api-auth'
 import { getServerSupabase } from '@/lib/supabase'
 import { verifyCronAuth } from '@/lib/cron-auth'
 
@@ -92,7 +93,7 @@ export async function GET(request: NextRequest) {
       const timer = setTimeout(() => ctl.abort(), 2_000)
       const res = await fetch(`${baseUrl}/api/coverage-health/forced-historical-scan`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...cronAuthHeaders() },
         body: JSON.stringify({ game_id: g.id }),
         signal: ctl.signal,
       }).catch(err => {

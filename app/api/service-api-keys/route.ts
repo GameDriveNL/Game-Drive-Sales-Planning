@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireFeature } from '@/lib/api-auth'
 
 function getSupabase() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  // Service role only: falling back to the anon key hid misconfiguration
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
   if (!supabaseUrl || !supabaseKey) {
     throw new Error('Missing Supabase environment variables')
@@ -57,6 +59,9 @@ export async function GET() {
 
 // PUT - Update API key(s) for a service
 export async function PUT(request: NextRequest) {
+  const denied = await requireFeature('api_settings', 'edit')
+  if (denied instanceof NextResponse) return denied
+
   try {
     const supabase = getSupabase()
     const body = await request.json()
@@ -114,6 +119,9 @@ export async function PUT(request: NextRequest) {
 
 // POST - Test connection for a service
 export async function POST(request: NextRequest) {
+  const denied = await requireFeature('api_settings', 'edit')
+  if (denied instanceof NextResponse) return denied
+
   try {
     const supabase = getSupabase()
     const body = await request.json()

@@ -1,13 +1,17 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { runWishlistSync } from '@/lib/steam-wishlist-sync'
+import { verifyCronAuth } from '@/lib/cron-auth'
 
 // GET /api/cron/steam-wishlist-sync-daily — Vercel cron entry point.
 // Sweeps every client that has at least one game with a Steam App ID and pulls
 // the last few days of wishlist data, so a newly added game (or a game whose
 // client key just started/stopped working) doesn't need a human to remember to
 // click "Sync from Steam API" on the Wishlists page.
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const authError = verifyCronAuth(request)
+  if (authError) return authError
+
   const supabase = getServerSupabase()
 
   try {

@@ -14,7 +14,7 @@ GameDrive Sales Planning Tool — a Next.js 14 + Supabase app for a Dutch PR & m
 
 | Layer | Technology |
 |-------|------------|
-| Framework | Next.js 14.0.4 (App Router) |
+| Framework | Next.js 15.5 (App Router) |
 | Database | Supabase (PostgreSQL) — project `znueqcmlqfdhetnierno` |
 | Hosting | Vercel — project `prj_aKbiJdM5fbOPa8YeCc5aCEQWqzcK` |
 | Styling | CSS Modules (NO Tailwind — it fails silently on Vercel) |
@@ -41,7 +41,7 @@ Live production system, not a build-from-scratch project — 130+ commits from 2
 - **Twitch Helix** (`TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET`) — VODs, live streams, clips.
 - **Reddit** — public JSON API (`lib/reddit-public-api.ts`), no key needed.
 - **Google AI/Gemini** (`GOOGLE_AI_API_KEY`) — enrichment/classification, `app/api/cron/coverage-enrich` (every 15 min).
-- **Apify is intentionally NOT used.** It was the original plan (see architecture doc) but was abandoned for quota-cost reasons — `app/api/cron/full-backfill/route.ts` has a comment explaining why, and commit `2fecb7b` moved Creator Watch off a paid Apify actor onto the free YouTube Data API.
+- **Apify is a gated, low-volume add-on, not the main engine.** The key lives in Supabase `service_api_keys` (Settings > System API Keys), not in env. `service_settings` flags gate each platform (only TikTok and deep scan are on as of 2026-11-19) with daily call and dollar caps (`lib/apify-utils.ts`). Most discovery moved to free sources; commit `2fecb7b` moved Creator Watch to the YouTube Data API.
 
 ### Routes under `app/coverage/`
 
@@ -93,7 +93,7 @@ See `.env.example` for all required keys. PR coverage uses:
 - `YOUTUBE_DATA_API_KEY` — YouTube video search + Creator Watch channel polling
 - `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET` — Twitch VODs/streams/clips
 - Reddit uses the public JSON API — no key needed
-- `APIFY_API_KEY` is NOT used (abandoned for quota-cost reasons; do not reintroduce without checking with Josh first)
+- Apify's key is stored in the `service_api_keys` table, not an env var (`APIFY_API_KEY` in `.env.example` is unused)
 - `DISCORD_WEBHOOK_URL` — Coverage alert notifications (optional)
 
 ## Commands
@@ -103,6 +103,14 @@ npm run dev -- -p 3003    # Dev server on port 3003
 npm run build             # Production build
 npm run lint              # ESLint
 ```
+
+## API route authorization (important)
+
+The middleware only proves *some* user is signed in. Every API route that reads or changes sensitive data must check who is calling, using `lib/api-auth.ts`:
+- `requireFeature('api_settings', 'edit')` / `requireSuperAdmin()` / `requireUser()` for people
+- `requireCronOrUser(request)` etc. for routes machines also call (server to server fetches send `cronAuthHeaders()`)
+- `verifyCronAuth(request)` for scheduled crons (fails closed)
+Never return full secrets to the browser (mask them), and never whitelist a route in `middleware.ts` unless it enforces its own auth. Webhooks use signed URLs (`lib/webhook-sig.ts`).
 
 ## Key Reference
 

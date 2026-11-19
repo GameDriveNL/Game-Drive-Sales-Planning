@@ -60,79 +60,19 @@ export async function middleware(req: NextRequest) {
     return res
   }
 
-  // Allow backfill endpoint through (uses service role key internally)
-  if (pathname.startsWith('/api/coverage-backfill')) {
+  // These two are called server to server (game creation, onboarding cron)
+  // without a browser session, so the middleware lets them through. Each
+  // route checks for itself: `Authorization: Bearer CRON_SECRET` or a signed
+  // in user (see lib/api-auth.ts requireCronOrUser).
+  if (
+    pathname.startsWith('/api/coverage-backfill') ||
+    pathname === '/api/coverage-health/forced-historical-scan'
+  ) {
     return res
   }
 
-  // Allow public diagnostic endpoint — read-only, no secrets, returns scanner
-  // stack state so we can verify config changes without needing CRON_SECRET.
-  if (pathname === '/api/coverage-health/diagnostic') {
-    return res
-  }
-
-  // Allow one-shot Dark Pals backfill — self-locks after first run via
-  // service_settings.oneshot_darkpals_backfill_done. Will be removed after
-  // we verify parity.
-  if (pathname === '/api/coverage-health/oneshot-darkpals') {
-    return res
-  }
-
-  // Sibling oneshots for the YouTube/Reddit and TikTok phases that didn't
-  // complete inside the original 300s Vercel timeout. Each self-locks via
-  // its own service_settings flag.
-  if (pathname === '/api/coverage-health/oneshot-darkpals-yt') {
-    return res
-  }
-  if (pathname === '/api/coverage-health/oneshot-darkpals-tiktok') {
-    return res
-  }
-  if (pathname === '/api/coverage-health/oneshot-darkpals-sullygnome') {
-    return res
-  }
-  // Forced historical onboarding scanner — public, self-locks per-game.
-  // Used both at game-add time (auto-trigger) and as a manual "re-baseline"
-  // tool. Whitelisted because the work is gated by service_settings lock,
-  // not auth.
-  if (pathname === '/api/coverage-health/forced-historical-scan') {
-    return res
-  }
-  // Standalone YouTube audit via Innertube. Decoupled from the main scanner
-  // so it gets its own 300s budget — Innertube needs 110-160s on its own.
-  if (pathname === '/api/coverage-health/audit-youtube') {
-    return res
-  }
-  if (pathname === '/api/coverage-health/audit-tiktok') {
-    return res
-  }
-  // Scanner Health JSON used by the dashboard ScannerHealthPanel. Public,
-  // read-only aggregate stats — no secrets, no item-level data. Required
-  // because the dashboard polls every 60s and the auth check would
-  // otherwise gate it behind the user's session.
-  if (pathname === '/api/coverage-health/scanner-health') {
-    return res
-  }
-  // Noise-flag backfill — retro-classifies every coverage_item with the
-  // shared noise patterns. Public, idempotent.
-  if (pathname === '/api/coverage-health/noise-backfill') {
-    return res
-  }
-  if (pathname === '/api/coverage-health/oneshot-darkpals-import') {
-    return res
-  }
-
-  // Raw YouTube Data API debug — returns Google's verbatim error response
-  // so we can see why the key returns 0 items even for popular queries.
-  if (pathname === '/api/coverage-health/yt-raw') {
-    return res
-  }
-
-  // Apify-based YouTube backfill since YT Data API quota is dead.
-  if (pathname === '/api/coverage-health/oneshot-darkpals-apify-yt') {
-    return res
-  }
-
-  // Allow SullyGnome collect webhook (called by Apify, no auth)
+  // Allow SullyGnome collect webhook (called by Apify). The route verifies a
+  // signature in the URL (lib/webhook-sig.ts), so it needs no session.
   if (pathname.startsWith('/api/sullygnome-collect')) {
     return res
   }

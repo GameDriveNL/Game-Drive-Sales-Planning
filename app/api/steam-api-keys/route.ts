@@ -1,9 +1,22 @@
 import { NextResponse } from 'next/server';
+import { requireFeature } from '@/lib/api-auth';
 import { serverSupabase as supabase } from '@/lib/supabase';
 import { checkSteamFinancialKey, normalizeSteamKey } from '@/lib/steam-key-check';
 
+// Show only the first and last 4 characters. The Settings page masks keys the
+// same way, so nothing it displays changes, but full secrets no longer travel
+// to the browser.
+function maskSecret(value: string | null | undefined): string | null {
+  if (!value) return null
+  if (value.length <= 8) return '••••••••'
+  return `${value.slice(0, 4)}${'•'.repeat(Math.min(value.length - 8, 20))}${value.slice(-4)}`
+}
+
 // GET - Fetch all Steam API keys with client info
 export async function GET() {
+  const denied = await requireFeature('api_settings', 'view');
+  if (denied instanceof NextResponse) return denied;
+
   try {
     const { data, error } = await supabase
       .from('steam_api_keys')
@@ -18,7 +31,12 @@ export async function GET() {
 
     if (error) throw error;
 
-    return NextResponse.json(data || []);
+    const masked = (data || []).map(row => ({
+      ...row,
+      api_key: maskSecret(row.api_key),
+      publisher_key: maskSecret(row.publisher_key),
+    }));
+    return NextResponse.json(masked);
   } catch (error) {
     console.error('Error fetching Steam API keys:', error);
     return NextResponse.json(
@@ -30,6 +48,9 @@ export async function GET() {
 
 // POST - Create or update Steam API key for a client
 export async function POST(request: Request) {
+  const denied = await requireFeature('api_settings', 'edit');
+  if (denied instanceof NextResponse) return denied;
+
   try {
     const body = await request.json();
     const { client_id, app_ids, force } = body;
@@ -110,6 +131,9 @@ export async function POST(request: Request) {
 
 // DELETE - Remove Steam API key
 export async function DELETE(request: Request) {
+  const denied = await requireFeature('api_settings', 'edit');
+  if (denied instanceof NextResponse) return denied;
+
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');

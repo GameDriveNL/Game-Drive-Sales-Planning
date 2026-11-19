@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { cronAuthHeaders } from '@/lib/api-auth'
 import { serverSupabase as supabase } from '@/lib/supabase'
 import { autoEnrollGameInScrapers } from '@/lib/auto-enroll'
 
@@ -81,12 +82,12 @@ async function triggerRetroactiveBackfill(gameId: string) {
   await Promise.allSettled([
     fetch(`${base}/api/coverage-backfill`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...cronAuthHeaders() },
       body: JSON.stringify({ game_id: gameId, max_queries: 20 }),
     }),
     fetch(`${base}/api/coverage-health/forced-historical-scan`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...cronAuthHeaders() },
       body: JSON.stringify({ game_id: gameId }),
     }),
   ])

@@ -3,6 +3,7 @@ import { getServerSupabase } from '@/lib/supabase'
 import { buildSullyGnomeUrl } from '@/lib/sullygnome'
 import { checkApifyCredits, notifyLowCredits, checkApifyDailyBudget, logApifyRun, isApifyPlatformEnabled } from '@/lib/apify-utils'
 import { verifyCronAuth } from '@/lib/cron-auth'
+import { signedCollectUrl } from '@/lib/webhook-sig'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -244,7 +245,7 @@ async function handleScan(request: NextRequest) {
         const targetUrl = buildSullyGnomeUrl(slug, timeRange)
 
         // Webhook URL includes source_id so the collect endpoint knows which source it's for
-        const webhookUrl = `${baseUrl}/api/sullygnome-collect?source_id=${source.id}`
+        const webhookUrl = signedCollectUrl(baseUrl, source.id)
 
         // Start Apify actor run ASYNC (returns immediately with run ID)
         const input = {

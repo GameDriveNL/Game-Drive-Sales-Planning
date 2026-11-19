@@ -1,5 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
+import { requireFeature } from '@/lib/api-auth'
+
+// The server later POSTs to whatever URL is stored here, so only real Discord
+// webhook URLs are accepted. Anything else could point the server at internal
+// services (server side request forgery).
+function isDiscordWebhookUrl(value: unknown): boolean {
+  if (typeof value !== 'string') return false
+  try {
+    const u = new URL(value)
+    return (
+      u.protocol === 'https:' &&
+      ['discord.com', 'discordapp.com', 'canary.discord.com', 'ptb.discord.com'].includes(u.hostname) &&
+      u.pathname.startsWith('/api/webhooks/')
+    )
+  } catch {
+    return false
+  }
+}
 
 function getSupabase() {
   return getServerSupabase()
@@ -7,6 +25,9 @@ function getSupabase() {
 
 // GET /api/discord-webhooks — List webhooks for a client
 export async function GET(request: NextRequest) {
+  const denied = await requireFeature('pr_coverage', 'view')
+  if (denied instanceof NextResponse) return denied
+
   const supabase = getSupabase()
   const { searchParams } = new URL(request.url)
   const clientId = searchParams.get('client_id')
@@ -22,10 +43,12 @@ export async function GET(request: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   // Mask webhook URLs for display
-  const masked = (data || []).map(row => ({
+  // The full URL is a secret (anyone holding it can post to the channel), so it
+  // is not returned, only the masked display form.
+  const masked = (data || []).map(({ webhook_url: _secret, ...row }) => ({
     ...row,
-    webhook_url_display: row.webhook_url
-      ? `${row.webhook_url.slice(0, 40)}...${row.webhook_url.slice(-10)}`
+    webhook_url_display: _secret
+      ? `${_secret.slice(0, 40)}...${_secret.slice(-10)}`
       : '',
   }))
 
@@ -34,12 +57,19 @@ export async function GET(request: NextRequest) {
 
 // POST /api/discord-webhooks — Create or update a webhook
 export async function POST(request: NextRequest) {
+  const denied = await requireFeature('pr_coverage', 'edit')
+  if (denied instanceof NextResponse) return denied
+
   const supabase = getSupabase()
   const body = await request.json()
   const { id, client_id, game_id, webhook_url, label, min_tier, coverage_types, is_active } = body
 
   if (!client_id || !webhook_url) {
     return NextResponse.json({ error: 'client_id and webhook_url are required' }, { status: 400 })
+  }
+
+  if (!isDiscordWebhookUrl(webhook_url)) {
+    return NextResponse.json({ error: 'webhook_url must be a https://discord.com/api/webhooks/... URL' }, { status: 400 })
   }
 
   const record = {

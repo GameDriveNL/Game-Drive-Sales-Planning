@@ -1,11 +1,24 @@
 import { NextResponse } from 'next/server';
+import { requireFeature } from '@/lib/api-auth';
 import { serverSupabase as supabase } from '@/lib/supabase';
 
 // Domo-powered analytics API (PlayStation Partners uses Domo under the hood)
 const PSN_AUTH_URL = 'https://api.domo.com/oauth/token';
 
+// Show only the first and last 4 characters. The Settings page masks keys the
+// same way, so nothing it displays changes, but full secrets no longer travel
+// to the browser.
+function maskSecret(value: string | null | undefined): string | null {
+  if (!value) return null
+  if (value.length <= 8) return '••••••••'
+  return `${value.slice(0, 4)}${'•'.repeat(Math.min(value.length - 8, 20))}${value.slice(-4)}`
+}
+
 // GET - Fetch all PlayStation API credentials with client info
 export async function GET() {
+  const denied = await requireFeature('api_settings', 'view');
+  if (denied instanceof NextResponse) return denied;
+
   try {
     const { data, error } = await supabase
       .from('playstation_api_keys')
@@ -20,7 +33,12 @@ export async function GET() {
 
     if (error) throw error;
 
-    return NextResponse.json(data || []);
+    const masked = (data || []).map(row => ({
+      ...row,
+      ps_client_id: maskSecret(row.ps_client_id),
+      client_secret: maskSecret(row.client_secret),
+    }));
+    return NextResponse.json(masked);
   } catch (error) {
     console.error('Error fetching PlayStation API keys:', error);
     return NextResponse.json(
@@ -32,6 +50,9 @@ export async function GET() {
 
 // POST - Create or update PlayStation API credentials for a client
 export async function POST(request: Request) {
+  const denied = await requireFeature('api_settings', 'edit');
+  if (denied instanceof NextResponse) return denied;
+
   try {
     const body = await request.json();
     const { client_id, ps_client_id, client_secret, scope } = body;
@@ -89,6 +110,9 @@ export async function POST(request: Request) {
 
 // DELETE - Remove PlayStation API credentials
 export async function DELETE(request: Request) {
+  const denied = await requireFeature('api_settings', 'edit');
+  if (denied instanceof NextResponse) return denied;
+
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
